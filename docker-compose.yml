@@ -1,0 +1,29 @@
+services:
+  passport-issuer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: passport-issuer
+    ports:
+      - "8080:8080"
+    expose:
+      - 8080
+    volumes:
+      - ./local-secrets:/secrets
+    restart: unless-stopped
+    networks:
+      - app_network
+    depends_on: [redis]
+
+  redis:
+    image: 'bitnami/redis:latest'
+    environment:
+      # - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_PASSWORD=password
+      - REDIS_PORT_NUMBER=6379
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge

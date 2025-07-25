@@ -1,0 +1,9 @@
+FROM golang:1.23 AS builder
+
+WORKDIR /app
+
+COPY . .
+
+RUN cd server && go mod download
+
+CMD cd server && go test ./... -v
