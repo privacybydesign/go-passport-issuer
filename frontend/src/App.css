@@ -1,0 +1,308 @@
+@font-face {
+	font-family: 'Alexandria';
+	src: url('/fonts/alexandria-v1-latin-regular.woff2') format('woff2'),
+		url('/fonts/alexandria-v1-latin-regular.woff') format('woff');
+	font-weight: normal;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'Alexandria';
+	src: url('/fonts/alexandria-v1-latin-600.woff2') format('woff2'),
+		url('/fonts/alexandria-v1-latin-600.woff') format('woff');
+	font-weight: bold;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'Open Sans';
+	src: url('/fonts/open-sans-v34-latin-regular.woff2') format('woff2'),
+		url('/fonts/open-sans-v34-latin-regular.woff') format('woff');
+	font-weight: normal;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'Open Sans';
+	src: url('/fonts/open-sans-v34-latin-700.woff2') format('woff2'),
+		url('/fonts/open-sans-v34-latin-700.woff') format('woff');
+	font-weight: bold;
+	font-style: normal;
+}
+
+@font-face {
+	font-family: 'IrmaIcons';
+	src: url('/fonts/irma-icons.ttf') format('truetype');
+	font-weight: bold;
+	font-style: normal;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+	font-size: 16px;
+	line-height: 24px;
+	background-color: #F7F5F3;
+	font-family: 'Open Sans', Verdana, Arial, sans-serif;
+}
+
+form, #container {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+}
+
+header {
+	background: #FFFFFF;
+	color: #484747;
+	border-bottom: 1px solid #CFE4EF;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	justify-content: center;
+}
+
+header h1 {
+	text-align: center;
+	padding: 16px;
+}
+
+h1 {
+	display: block;
+	margin: 0;
+	font-size: 18px;
+	line-height: 22px;
+	padding: 16px 0;
+	font-weight: bold;
+	font-family: 'Alexandria', Verdana, Arial, sans-serif;
+}
+
+.sms-form {
+	display: block;
+	padding: 16px;
+	color: #484747;
+	max-width: 600px;
+	margin: auto;
+}
+
+.alert {
+	max-width: 600px;
+	margin: 16px auto 16px auto;
+	padding: 20px;
+	color: #FFFFFF;
+	border-radius: 6px;
+}
+
+.status-container {
+	display: flex;
+	align-items: center;
+}
+
+.hidden {
+	display: none;
+}
+
+.button-hidden {
+	visibility: hidden;
+}
+
+.alert-info {
+	background-color: #96C5E1;
+}
+
+.alert-danger {
+	background-color: #C30025;
+}
+
+.alert-warning {
+	background-color: #CE5700;
+}
+
+.alert-success {
+	background-color: #00973A;
+}
+
+.alert-success .status-container:before {
+	font-family: 'IrmaIcons';
+	font-size: 24px;
+	font-style: normal;
+	line-height: initial;
+	vertical-align: middle;
+	content: '\E026';
+	margin-right: 16px;
+}
+
+main {
+	flex: 1;
+}
+
+label {
+	margin-top: 2rem;
+	margin-bottom: 0.5rem;
+	display: block;
+	color: #484747;
+	font-weight: bold;
+}
+
+input {
+	height: 32px;
+	display: block;
+	border: none;
+	border-bottom: 2px solid #484747;
+	width: 100%;
+	font-size: 16px;
+	line-height: 24px;
+	background-color: transparent;
+}
+
+footer {
+	padding: 16px;
+	background: #FFFFFF;
+	box-shadow: 0px -4px 12px rgba(0, 0, 0, 0.1);
+}
+
+footer .actions {
+	max-width: 600px;
+	margin: auto;
+	display: flex;
+	justify-content: space-between;
+}
+
+footer a,
+footer button {
+	font-family: 'Alexandria', Verdana, Arial, sans-serif;
+	display: inline-block;
+	text-align: center;
+	font-size: 16px;
+	font-weight: bold;
+	cursor: pointer;
+	border-radius: 6px;
+	box-sizing: border-box;
+	width: 48%;
+	height: 48px;
+	line-height: 48px;
+	max-width: 343px;
+}
+
+footer a {
+	background-color: #FFFFFF;
+	text-decoration: none;
+	color: #484747;
+	border: 1px solid #484747;
+}
+
+footer button {
+	border: none;
+	color: #FFFFFF;
+	background: #E12747 url('/images/button-primary.svg') no-repeat right top;
+}
+
+footer button[disabled] {
+	opacity: 0.5;
+}
+.warning {
+	color: #C30025;
+	font-size: small;
+}
+.success {
+	color: #00973A;
+	font-size: small;
+}
+.verification-code-input {
+	text-transform: uppercase;
+}
+
+.status-container {
+	display: flex;
+	align-items: center;
+}
+
+.alert-info {
+	background-color: #96C5E1;
+}
+
+.alert-danger {
+	background-color: #C30025;
+}
+
+.alert-warning {
+	background-color: #CE5700;
+}
+
+.alert-success {
+	background-color: #00973A;
+}
+
+.alert-success .status-container:before {
+	font-family: 'IrmaIcons';
+	font-size: 24px;
+	font-style: normal;
+	line-height: initial;
+	vertical-align: middle;
+	content: '\E026';
+	margin-right: 16px;
+}
+
+@media only screen and (max-width: 640px) {
+	.alert {
+		margin: 16px;
+	}
+}
+
+@media only screen and (max-width: 340px) {
+
+	html,
+	body,
+	footer a,
+	footer button,
+	input {
+		font-size: 14px;
+	}
+}
+
+#ideal-bank-element {
+	background-color: #FFFFFF;
+	padding: 1rem;
+}
+
+.details {
+	font-size: small;
+	font-style: italic;
+}
+
+.imageContainer {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+}
+
+.imageContainer img {
+	max-width: 300px;
+}
+
+.logo-img {
+	height: 5rem;
+}
+
+select {
+  display: block;
+  border: none;
+  border-bottom-width: medium;
+  border-bottom-style: none;
+  border-bottom-color: currentcolor;
+  border-bottom: 2px solid #484747;
+  background-color: transparent;
+  padding: 0.5rem 0;
+  width: 100%;
+}
+
+.table {
+	width: 100%;
+}
+.table th,
+.table td {
+	width: 50%;
+	text-align: left;
+}

@@ -1,0 +1,17 @@
+.secrets
+.DS_Store
+frontend/build
+frontend/node_modules
+info.log
+error.log
+
+vendor
+
+.vite
+# Node files
+node_modules/
+build/
+
+local-secrets/
+.env
+local-secrets/sms-issuer/config.json
