@@ -95,6 +95,9 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/validate", func(w http.ResponseWriter, r *http.Request) {
 		handleValidatePassport(state, w, r)
 	})
+	router.HandleFunc("/issue", func(w http.ResponseWriter, r *http.Request) {
+		handleIssuePassport(state, w, r)
+	})
 	spa := SpaHandler{staticPath: "../frontend/build", indexPath: "index.html"}
 	router.PathPrefix("/").Handler(spa)
 
@@ -111,6 +114,88 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 		server: srv,
 		config: config,
 	}, nil
+}
+
+type PassportIssuanceRequest struct {
+	SessionId string `json:"session_id"`
+	Nonce     string `json:"nonce"`
+	// Passport details
+	Photo                string    `json:"photo,omitempty"` // base64 or image URL, optional
+	DocumentNumber       string    `json:"document_number"`
+	DocumentType         string    `json:"document_type"`
+	FirstName            string    `json:"first_name"`
+	LastName             string    `json:"last_name"`
+	Nationality          string    `json:"nationality"`
+	DateOfBirth          time.Time `json:"date_of_birth"`
+	DateOfExpiry         time.Time `json:"date_of_expiry"`
+	Gender               string    `json:"gender"`
+	Country              string    `json:"country"`
+	Over12               bool      `json:"over12"`
+	Over16               bool      `json:"over16"`
+	Over18               bool      `json:"over18"`
+	Over21               bool      `json:"over21"`
+	Over65               bool      `json:"over65"`
+	ActiveAuthentication bool      `json:"active_authentication"`
+}
+
+type PassportIssuanceResponse struct {
+	Jwt           string `json:"jwt"`
+	IrmaServerURL string `json:"irma_server_url"`
+}
+
+func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			log.Error.Printf("failed to close request body: %v", err)
+		}
+	}()
+
+	if r.Method != http.MethodPost {
+		respondWithErr(w, http.StatusMethodNotAllowed, "method not allowed", "invalid method", nil)
+		return
+	}
+
+	var request PassportIssuanceRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request body", "failed to decode request body", err)
+		return
+	}
+
+	// Check if the sessionId and nonce are in the cache
+	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to get nonce from storage", err)
+		return
+	}
+
+	if nonce == "" || nonce != request.Nonce {
+		respondWithErr(w, http.StatusBadRequest, "invalid session or nonce", "session or nonce is invalid", nil)
+		return
+	}
+
+	jwt, err := state.jwtCreator.CreateJwt(request)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, "failed to create JWT", "failed to create JWT", err)
+		return
+	}
+
+	responseMessage := PassportIssuanceResponse{
+		Jwt:           jwt,
+		IrmaServerURL: state.irmaServerURL,
+	}
+
+	payload, err := json.Marshal(responseMessage)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to marshal response message", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	_, err = w.Write(payload)
+	if err != nil {
+		log.Error.Fatalf("failed to write body to http response: %v", err)
+	}
 }
 
 // -----------------------------------------------------------------------------------
