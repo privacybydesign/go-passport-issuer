@@ -15,3 +15,5 @@ build/
 local-secrets/
 .env
 local-secrets/sms-issuer/config.json
+
+research/certs/
