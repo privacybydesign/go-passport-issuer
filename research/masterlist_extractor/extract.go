@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/x509"
 	"encoding/asn1"
 	"fmt"
 	"log"
@@ -57,7 +58,13 @@ type Attribute struct {
 // The eContent directly contains a SEQUENCE with version and certificate set
 type MasterList struct {
 	Version        int
-	CertificateSet []asn1.RawValue `asn1:"set"`
+	CertificateSet []Entry `asn1:"set"`
+}
+
+type Entry struct {
+	Certificate asn1.RawValue             // full DER-encoded certificate
+	OID         DigestAlgorithmIdentifier // second element
+	Signature   asn1.BitString            // third element
 }
 
 // CertificateEntry represents a parsed certificate entry
@@ -92,18 +99,38 @@ func main() {
 	fmt.Printf("Successfully parsed master list with version %d and %d certificate entries\n", masterList.Version, len(masterList.CertificateSet))
 
 	// Example: Print first few certificate raw data lengths
-	for i, certRaw := range masterList.CertificateSet {
+	for i, entry := range masterList.CertificateSet {
 		if i >= 5 { // Only show first 5 entries
 			break
 		}
-		fmt.Printf("Certificate %d: %d bytes\n", i+1, len(certRaw.Bytes))
-		// certEntry, err := parseCertificate(certRaw.Bytes)
-		// if err != nil {
-		// 	log.Printf("Failed to parse certificate %d: %v", i+1, err)
-		// 	continue
-		// }
-		// fmt.Printf("Parsed Certificate %d: %+v\n", i+1, certEntry)
+		fmt.Printf("Certificate %d raw data length: %d bytes\n", i+1, len(entry.Certificate.Bytes))
+		fmt.Printf("Certificate %d OID: %s\n", i+1, entry.OID.Algorithm.String())
+
+		var result interface{}
+		_, err = asn1.Unmarshal(entry.Certificate.FullBytes, &result)
+		if err != nil {
+			fmt.Println("Failed to unmarshal:", err)
+			return
+		}
+
+		fmt.Printf("Parsed result: %+v\n", result)
+
+		cert, err := entry.ToX509Certificate()
+		if err != nil {
+			fmt.Printf("Failed to parse certificate %d: %v\n", i, err)
+			continue
+		}
+		// fmt.Printf("Certificate %d:\n", i+1)
+		// fmt.Printf("  Subject: %s\n", cert.Subject.String())
+		// fmt.Printf("  Issuer:  %s\n", cert.Issuer.String())
+		// fmt.Printf("  Valid From: %s\n", cert.NotBefore)
+		fmt.Printf("  Valid To:   %s\n", cert.NotAfter)
+
 	}
+}
+
+func (e *Entry) ToX509Certificate() (*x509.Certificate, error) {
+	return x509.ParseCertificate(e.Certificate.Bytes)
 }
 
 func parseMasterList(derData []byte) (*MasterList, error) {
