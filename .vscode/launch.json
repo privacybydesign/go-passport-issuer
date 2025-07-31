@@ -18,7 +18,23 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}/research",
-            "args": ["icaopkd-001-complete-009229.ldif"]
+            "args": ["NL_MASTERLIST.mls"]
+        },
+        {
+            "name": "SOD validator",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/research/sod_validator",
+            "args": ["../samples/lds_content.der", "../samples/sample.json"]
+        },
+        {
+            "name": "ML extractor",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/research/masterlist_extractor",
+            "args": ["../samples/NL_MASTERLIST.mls"]
         }
     ]
 }

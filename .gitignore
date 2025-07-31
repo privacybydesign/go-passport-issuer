@@ -17,3 +17,4 @@ local-secrets/
 local-secrets/sms-issuer/config.json
 
 research/certs/
+research/samples/
