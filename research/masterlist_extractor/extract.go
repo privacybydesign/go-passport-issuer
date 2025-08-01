@@ -68,7 +68,7 @@ type Entry struct {
 func main() {
 	// Read the DER file
 	if len(os.Args) != 2 {
-		log.Fatal("Usage: extract_dg_hashes NL_MASTERLIST.mls")
+		log.Fatal("Usage: extract NL_MASTERLIST.mls")
 	}
 
 	masterlistFileName := os.Args[1]
