@@ -87,10 +87,6 @@ func main() {
 	fmt.Printf("Successfully parsed master list with version %d and %d certificate entries\n", masterList.Version, len(masterList.CertificateSet))
 
 	for i, entry := range masterList.CertificateSet {
-		if i >= 5 {
-			break
-		}
-
 		// Encode as DER
 		derBytes, err := asn1.Marshal(entry)
 		if err != nil {
