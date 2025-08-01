@@ -90,11 +90,11 @@ func ToPassportIssuanceRequest(doc document.Document, activeAuth bool) (request 
 		DateOfExpiry:         doe,
 		Gender:               doc.Mf.Lds1.Dg1.Mrz.Sex,
 		Country:              doc.Mf.Lds1.Dg1.Mrz.IssuingState,
-		Over12:               dob.After(time.Now().AddDate(-12, 0, 0)),
-		Over16:               dob.After(time.Now().AddDate(-16, 0, 0)),
-		Over18:               dob.After(time.Now().AddDate(-18, 0, 0)),
-		Over21:               dob.After(time.Now().AddDate(-21, 0, 0)),
-		Over65:               dob.After(time.Now().AddDate(-65, 0, 0)),
+		Over12:               dob.Before(time.Now().AddDate(-12, 0, 0)),
+		Over16:               dob.Before(time.Now().AddDate(-16, 0, 0)),
+		Over18:               dob.Before(time.Now().AddDate(-18, 0, 0)),
+		Over21:               dob.Before(time.Now().AddDate(-21, 0, 0)),
+		Over65:               dob.Before(time.Now().AddDate(-65, 0, 0)),
 		ActiveAuthentication: activeAuth,
 	}
 	return request, nil
