@@ -1,12 +1,10 @@
 package main
 
 import (
-	"crypto/x509"
 	"encoding/asn1"
 	"fmt"
 	"log"
 	"os"
-	"time"
 )
 
 // Main ContentInfo structure
@@ -62,19 +60,9 @@ type MasterList struct {
 }
 
 type Entry struct {
-	Certificate asn1.RawValue             // full DER-encoded certificate
-	OID         DigestAlgorithmIdentifier // second element
-	Signature   asn1.BitString            // third element
-}
-
-// CertificateEntry represents a parsed certificate entry
-type CertificateEntry struct {
-	CountryName      string
-	OrganizationName string
-	CommonName       string
-	SerialNumber     string
-	ValidFrom        time.Time
-	ValidTo          time.Time
+	TbsCertificate     asn1.RawValue
+	SignatureAlgorithm DigestAlgorithmIdentifier
+	SignatureValue     asn1.BitString
 }
 
 func main() {
@@ -98,39 +86,28 @@ func main() {
 	// Display results
 	fmt.Printf("Successfully parsed master list with version %d and %d certificate entries\n", masterList.Version, len(masterList.CertificateSet))
 
-	// Example: Print first few certificate raw data lengths
 	for i, entry := range masterList.CertificateSet {
-		if i >= 5 { // Only show first 5 entries
+		if i >= 5 {
 			break
 		}
-		fmt.Printf("Certificate %d raw data length: %d bytes\n", i+1, len(entry.Certificate.Bytes))
-		fmt.Printf("Certificate %d OID: %s\n", i+1, entry.OID.Algorithm.String())
 
-		var result interface{}
-		_, err = asn1.Unmarshal(entry.Certificate.FullBytes, &result)
+		// Encode as DER
+		derBytes, err := asn1.Marshal(entry)
 		if err != nil {
-			fmt.Println("Failed to unmarshal:", err)
-			return
-		}
-
-		fmt.Printf("Parsed result: %+v\n", result)
-
-		cert, err := entry.ToX509Certificate()
-		if err != nil {
-			fmt.Printf("Failed to parse certificate %d: %v\n", i, err)
+			log.Printf("Error marshaling certificate %d: %v", i, err)
 			continue
 		}
-		// fmt.Printf("Certificate %d:\n", i+1)
-		// fmt.Printf("  Subject: %s\n", cert.Subject.String())
-		// fmt.Printf("  Issuer:  %s\n", cert.Issuer.String())
-		// fmt.Printf("  Valid From: %s\n", cert.NotBefore)
-		fmt.Printf("  Valid To:   %s\n", cert.NotAfter)
 
+		// Save to file
+		filename := fmt.Sprintf("../certs/certificate_%d.der", i+1)
+		err = os.WriteFile(filename, derBytes, 0644)
+		if err != nil {
+			log.Printf("Error writing certificate to file %s: %v", filename, err)
+			continue
+		}
+
+		fmt.Printf("Exported certificate %d to %s\n", i+1, filename)
 	}
-}
-
-func (e *Entry) ToX509Certificate() (*x509.Certificate, error) {
-	return x509.ParseCertificate(e.Certificate.Bytes)
 }
 
 func parseMasterList(derData []byte) (*MasterList, error) {
