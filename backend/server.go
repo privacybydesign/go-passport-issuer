@@ -7,11 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	log "go-passport-issuer/logging"
+	"go-passport-issuer/models"
+	"go-passport-issuer/passport_utils"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/dibranmulder/gmrtd/document"
 	"github.com/gorilla/mux"
 )
 
@@ -92,10 +95,10 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 		}
 	})
 
-	router.HandleFunc("/validate", func(w http.ResponseWriter, r *http.Request) {
-		handleValidatePassport(state, w, r)
+	router.HandleFunc("/api/start-validation", func(w http.ResponseWriter, r *http.Request) {
+		handleStartValidatePassport(state, w, r)
 	})
-	router.HandleFunc("/issue", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/api/verify-and-issue", func(w http.ResponseWriter, r *http.Request) {
 		handleIssuePassport(state, w, r)
 	})
 	spa := SpaHandler{staticPath: "../frontend/build", indexPath: "index.html"}
@@ -116,28 +119,6 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	}, nil
 }
 
-type PassportIssuanceRequest struct {
-	SessionId string `json:"session_id"`
-	Nonce     string `json:"nonce"`
-	// Passport details
-	Photo                string    `json:"photo,omitempty"` // base64 or image URL, optional
-	DocumentNumber       string    `json:"document_number"`
-	DocumentType         string    `json:"document_type"`
-	FirstName            string    `json:"first_name"`
-	LastName             string    `json:"last_name"`
-	Nationality          string    `json:"nationality"`
-	DateOfBirth          time.Time `json:"date_of_birth"`
-	DateOfExpiry         time.Time `json:"date_of_expiry"`
-	Gender               string    `json:"gender"`
-	Country              string    `json:"country"`
-	Over12               bool      `json:"over12"`
-	Over16               bool      `json:"over16"`
-	Over18               bool      `json:"over18"`
-	Over21               bool      `json:"over21"`
-	Over65               bool      `json:"over65"`
-	ActiveAuthentication bool      `json:"active_authentication"`
-}
-
 type PassportIssuanceResponse struct {
 	Jwt           string `json:"jwt"`
 	IrmaServerURL string `json:"irma_server_url"`
@@ -155,7 +136,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var request PassportIssuanceRequest
+	var request models.PassportValidationRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request body", "failed to decode request body", err)
 		return
@@ -173,7 +154,21 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	jwt, err := state.jwtCreator.CreateJwt(request)
+	var doc document.Document
+	doc, err = passport_utils.Validate(request)
+	if err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to validate request", err)
+		return
+	}
+
+	var issuanceRequest models.PassportIssuanceRequest
+	issuanceRequest, err = passport_utils.ToPassportIssuanceRequest(doc, false)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
+		return
+	}
+
+	jwt, err := state.jwtCreator.CreateJwt(issuanceRequest)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, "failed to create JWT", "failed to create JWT", err)
 		return
@@ -205,7 +200,7 @@ type ValidatePassportResponse struct {
 	Nonce     string `json:"nonce"`
 }
 
-func handleValidatePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
+func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if err := r.Body.Close(); err != nil {
 			log.Error.Printf("failed to close request body: %v", err)

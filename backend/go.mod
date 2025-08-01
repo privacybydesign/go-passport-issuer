@@ -12,6 +12,11 @@ require (
 )
 
 require (
+	github.com/aead/cmac v0.0.0-20160719120800-7af84192f0b1 // indirect
+	github.com/osanderson/brainpool v0.0.0-20240902133831-007b606d9412 // indirect
+)
+
+require (
 	github.com/alexandrevicenzi/go-sse v1.6.0 // indirect
 	github.com/bwesterb/byteswriter v1.0.0 // indirect
 	github.com/bwesterb/go-atum v1.1.5 // indirect
@@ -21,6 +26,7 @@ require (
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
+	github.com/dibranmulder/gmrtd v0.1.0 // indirect
 	github.com/edsrzf/mmap-go v1.1.0 // indirect
 	github.com/eknkc/basex v1.0.1 // indirect
 	github.com/fxamacker/cbor v1.5.1 // indirect

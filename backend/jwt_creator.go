@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rsa"
+	"go-passport-issuer/models"
 	"os"
 	"strconv"
 
@@ -10,7 +11,7 @@ import (
 )
 
 type JwtCreator interface {
-	CreateJwt(passport PassportIssuanceRequest) (jwt string, err error)
+	CreateJwt(passport models.PassportIssuanceRequest) (jwt string, err error)
 }
 
 func NewIrmaJwtCreator(privateKeyPath string,
@@ -42,7 +43,7 @@ type DefaultJwtCreator struct {
 	credential string
 }
 
-func (jc *DefaultJwtCreator) CreateJwt(passport PassportIssuanceRequest) (string, error) {
+func (jc *DefaultJwtCreator) CreateJwt(passport models.PassportIssuanceRequest) (string, error) {
 	issuanceRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier(jc.credential),

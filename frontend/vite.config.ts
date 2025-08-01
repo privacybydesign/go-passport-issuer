@@ -10,7 +10,7 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       host: "0.0.0.0",
       proxy: {
-        '/validate': {
+        '/api/start-validation': {
           target: 'http://localhost:8080/',
           changeOrigin: true,
         }

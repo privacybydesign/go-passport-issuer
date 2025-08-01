@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { AppProvider } from "./AppContext";
 
 import IndexPage from './pages/Index';
+import CallbackPage from './pages/Callback';
 
 import './i18n';
 
@@ -21,6 +22,7 @@ function LanguageRouter() {
   return (
     <Routes>
       <Route path="/" element={<IndexPage />} />
+      <Route path="/callback" element={<CallbackPage />} />
     </Routes>
   );
 }

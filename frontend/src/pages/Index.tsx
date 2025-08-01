@@ -14,7 +14,7 @@ export default function IndexPage() {
 
     // call validate endpoint
     try {
-      const response = await fetch('/validate', {
+      const response = await fetch('/api/start-validation', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -32,6 +32,8 @@ export default function IndexPage() {
 
       // Assuming the response contains a sessionId and nonce
       setSession({ sessionId: data.session_id, nonce: data.nonce });
+      navigate(`${i18n.language}/callback?`);
+
     } catch (error) {
       console.error('Error during validation:', error);
       setShowError(true);
