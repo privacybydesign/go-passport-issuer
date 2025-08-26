@@ -5,12 +5,13 @@ import (
 	"go-passport-issuer/models"
 	"time"
 
+	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/document"
 	"github.com/gmrtd/gmrtd/passiveauth"
 	"github.com/gmrtd/gmrtd/utils"
 )
 
-func Validate(data models.PassportValidationRequest) (doc document.Document, err error) {
+func Validate(data models.PassportValidationRequest, certPool *cms.CombinedCertPool) (doc document.Document, err error) {
 	if len(data.DataGroups) == 0 {
 		return document.Document{}, fmt.Errorf("no data groups found in passport data")
 	}
@@ -55,7 +56,7 @@ func Validate(data models.PassportValidationRequest) (doc document.Document, err
 		}
 	}
 
-	err = passiveauth.PassiveAuth(&doc)
+	err = passiveauth.PassiveAuth(&doc, certPool)
 	if err != nil {
 		return document.Document{}, fmt.Errorf("Unexpected error: %s", err)
 	}
