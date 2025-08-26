@@ -13,9 +13,6 @@ on:
 
 jobs:
     build-frontend:
-      strategy:
-        matrix:
-          lang: [ en, nl ]
       runs-on: ubuntu-latest
       steps:
         - uses: actions/checkout@v4
