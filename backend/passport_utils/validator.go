@@ -5,9 +5,9 @@ import (
 	"go-passport-issuer/models"
 	"time"
 
-	"github.com/dibranmulder/gmrtd/document"
-	"github.com/dibranmulder/gmrtd/passiveauth"
-	"github.com/dibranmulder/gmrtd/utils"
+	"github.com/gmrtd/gmrtd/document"
+	"github.com/gmrtd/gmrtd/passiveauth"
+	"github.com/gmrtd/gmrtd/utils"
 )
 
 func Validate(data models.PassportValidationRequest) (doc document.Document, err error) {

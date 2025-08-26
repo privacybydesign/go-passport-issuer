@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dibranmulder/gmrtd/document"
+	"github.com/gmrtd/gmrtd/document"
 	"github.com/gorilla/mux"
 )
 
