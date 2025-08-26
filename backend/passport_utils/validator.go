@@ -20,7 +20,7 @@ func Validate(data models.PassportValidationRequest, certPool *cms.CombinedCertP
 		return document.Document{}, fmt.Errorf("EF_SOD is missing in passport data")
 	}
 
-	var sodFileBytes []byte = utils.HexToBytes(data.EFSOD)
+	var sodFileBytes = utils.HexToBytes(data.EFSOD)
 	doc.Mf.Lds1.Sod, err = document.NewSOD(sodFileBytes)
 	if err != nil {
 		return document.Document{}, fmt.Errorf("failed to create SOD: %w", err)
@@ -58,7 +58,7 @@ func Validate(data models.PassportValidationRequest, certPool *cms.CombinedCertP
 
 	err = passiveauth.PassiveAuth(&doc, certPool)
 	if err != nil {
-		return document.Document{}, fmt.Errorf("Unexpected error: %s", err)
+		return document.Document{}, fmt.Errorf("unexpected error: %s", err)
 	}
 	return doc, nil
 }
