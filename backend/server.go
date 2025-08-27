@@ -265,7 +265,10 @@ func HandleAssetLinksRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Write(assetlinksJson)
+	_, err := w.Write(assetlinksJson)
+	if err != nil {
+		log.Error.Fatalf("failed to write body to http response: %v", err)
+	}
 }
 
 //go:embed associations/apple-app-site-association.json
@@ -275,7 +278,10 @@ func HandleAssaRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Write(appleAssociationJson)
+	_, err := w.Write(appleAssociationJson)
+	if err != nil {
+		log.Error.Fatalf("failed to write body to http response: %v", err)
+	}
 }
 
 func GenerateSessionId() string {
