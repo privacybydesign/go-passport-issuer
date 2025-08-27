@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -257,18 +258,24 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 	}
 }
 
+//go:embed associations/android_asset_links.json
+var assetlinksJson []byte
+
 func HandleAssetLinksRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	http.ServeFile(w, r, "./associations/android_asset_links.json")
+	w.Write(assetlinksJson)
 }
+
+//go:embed associations/apple-app-site-association.json
+var appleAssociationJson []byte
 
 func HandleAssaRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	http.ServeFile(w, r, "./associations/apple-app-site-association.json")
+	w.Write(appleAssociationJson)
 }
 
 func GenerateSessionId() string {
