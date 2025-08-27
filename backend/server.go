@@ -14,7 +14,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dibranmulder/gmrtd/document"
+	"github.com/gmrtd/gmrtd/cms"
+	"github.com/gmrtd/gmrtd/document"
 	"github.com/gorilla/mux"
 )
 
@@ -32,6 +33,7 @@ type ServerState struct {
 	irmaServerURL string
 	tokenStorage  TokenStorage
 	jwtCreator    JwtCreator
+	cscaCertPool  *cms.CombinedCertPool
 }
 
 type SpaHandler struct {
@@ -155,7 +157,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	}
 
 	var doc document.Document
-	doc, err = passport_utils.Validate(request)
+	doc, err = passport_utils.Validate(request, state.cscaCertPool)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to validate request", err)
 		return

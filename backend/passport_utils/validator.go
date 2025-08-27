@@ -5,12 +5,13 @@ import (
 	"go-passport-issuer/models"
 	"time"
 
-	"github.com/dibranmulder/gmrtd/document"
-	"github.com/dibranmulder/gmrtd/passiveauth"
-	"github.com/dibranmulder/gmrtd/utils"
+	"github.com/gmrtd/gmrtd/cms"
+	"github.com/gmrtd/gmrtd/document"
+	"github.com/gmrtd/gmrtd/passiveauth"
+	"github.com/gmrtd/gmrtd/utils"
 )
 
-func Validate(data models.PassportValidationRequest) (doc document.Document, err error) {
+func Validate(data models.PassportValidationRequest, certPool *cms.CombinedCertPool) (doc document.Document, err error) {
 	if len(data.DataGroups) == 0 {
 		return document.Document{}, fmt.Errorf("no data groups found in passport data")
 	}
@@ -19,7 +20,7 @@ func Validate(data models.PassportValidationRequest) (doc document.Document, err
 		return document.Document{}, fmt.Errorf("EF_SOD is missing in passport data")
 	}
 
-	var sodFileBytes []byte = utils.HexToBytes(data.EFSOD)
+	var sodFileBytes = utils.HexToBytes(data.EFSOD)
 	doc.Mf.Lds1.Sod, err = document.NewSOD(sodFileBytes)
 	if err != nil {
 		return document.Document{}, fmt.Errorf("failed to create SOD: %w", err)
@@ -55,9 +56,9 @@ func Validate(data models.PassportValidationRequest) (doc document.Document, err
 		}
 	}
 
-	err = passiveauth.PassiveAuth(&doc)
+	err = passiveauth.PassiveAuth(&doc, certPool)
 	if err != nil {
-		return document.Document{}, fmt.Errorf("Unexpected error: %s", err)
+		return document.Document{}, fmt.Errorf("unexpected error: %s", err)
 	}
 	return doc, nil
 }

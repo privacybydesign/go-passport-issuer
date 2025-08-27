@@ -1,9 +1,9 @@
-FROM golang:1.23 AS builder
+FROM golang:1.24 AS builder
 
 WORKDIR /app
 
 COPY . .
 
-RUN cd server && go mod download
+RUN cd backend && go mod download
 
-CMD cd server && go test ./... -v
+CMD cd backend && go test ./... -v

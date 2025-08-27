@@ -7,6 +7,8 @@ import (
 	log "go-passport-issuer/logging"
 	redis "go-passport-issuer/redis"
 	"os"
+
+	"github.com/gmrtd/gmrtd/cms"
 )
 
 type Config struct {
@@ -53,10 +55,16 @@ func main() {
 		log.Error.Fatalf("failed to instantiate token storage: %v", err)
 	}
 
+	cscaCertPool, err := cms.GetDefaultMasterList()
+	if err != nil {
+		log.Error.Fatalf("CscaCertPool error: %s", err)
+	}
+
 	serverState := ServerState{
 		irmaServerURL: config.IrmaServerUrl,
 		jwtCreator:    jwtCreator,
 		tokenStorage:  tokenStorage,
+		cscaCertPool:  cscaCertPool,
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)
