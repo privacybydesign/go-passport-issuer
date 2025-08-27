@@ -69,6 +69,7 @@ func (s *Server) Stop() error {
 func (h SpaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Join internally call path.Clean to prevent directory traversal
 	path := filepath.Join(h.staticPath, r.URL.Path)
+	log.Info.Println(path)
 	// check whether a file exists or is a directory at the given path
 	fi, err := os.Stat(path)
 	if os.IsNotExist(err) || fi.IsDir() {
