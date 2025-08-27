@@ -1,0 +1,12 @@
+[
+  {
+    "relation": [ "delegate_permission/common.handle_all_urls" ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.yivi.vcmrtd",
+      "sha256_cert_fingerprints": [
+        "16:26:55:23:E7:BF:40:7E:7D:32:30:D7:A9:24:B9:D9:AD:27:27:EB:0D:CF:7E:4C:03:DD:20:22:84:8D:0D:0C"
+      ]
+    }
+  }
+]
