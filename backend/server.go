@@ -103,6 +103,10 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/api/verify-and-issue", func(w http.ResponseWriter, r *http.Request) {
 		handleIssuePassport(state, w, r)
 	})
+	router.HandleFunc("/.well-known/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
+	router.HandleFunc("/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
+	router.HandleFunc("/.well-known/assetlinks.json", HandleAssetLinksRequest).Methods(http.MethodGet)
+
 	spa := SpaHandler{staticPath: "../frontend/build", indexPath: "index.html"}
 	router.PathPrefix("/").Handler(spa)
 
@@ -251,6 +255,20 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 	if err != nil {
 		log.Error.Fatalf("failed to write body to http response: %v", err)
 	}
+}
+
+func HandleAssetLinksRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeFile(w, r, "./associations/android_asset_links.json")
+}
+
+func HandleAssaRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeFile(w, r, "./associations/apple-app-site-association.json")
 }
 
 func GenerateSessionId() string {

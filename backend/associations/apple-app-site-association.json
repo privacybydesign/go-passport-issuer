@@ -1,0 +1,10 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appID": "T5VXGLDWLZ.app.yivi.vcmrtd",
+        "paths": [ "/start-app/*" ]
+      }
+    ]
+  }
+}
