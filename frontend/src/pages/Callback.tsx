@@ -11,21 +11,17 @@ export default function CallbackPage() {
 
     useEffect(() => {
         const queryParams = new URLSearchParams(location.search);
-        const encodedData = queryParams.get('data');
-
-        if (!encodedData) {
-            console.error("No data parameter found in callback URL");
+        const irmaServerUrl = queryParams.get('irmaServerUrl');
+        const jwt = queryParams.get('jwt');
+        if (!irmaServerUrl || !jwt) {
             setShowError(true);
             return;
         }
 
-        // Decode base64 string to JSON
-        const decodedString = atob(encodedData);
-        const payload = JSON.parse(decodedString);
+        const decodedIrmaServerUrl = atob(irmaServerUrl);
+        const decodedJwt = atob(jwt);
 
-        getIrmaJWT(payload).then((data) => {
-            startIrmaSession(data.jwt, data.irma_server_url);
-        });
+        startIrmaSession(decodedJwt, decodedIrmaServerUrl);
 
     }, [location.search]);
 
@@ -60,33 +56,6 @@ export default function CallbackPage() {
         } catch (err: any) {
             console.error("Error during callback processing:", err);
             setShowError(true);
-        }
-    }
-
-    const getIrmaJWT = async (payload: string) => {
-        // call validate endpoint
-        try {
-            const response = await fetch('/api/verify-and-issue', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: payload,
-            });
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            const data = await response.json();
-            if (data.error) {
-                setShowError(true);
-                return;
-            }
-            return data;
-
-        } catch (error) {
-            console.error('Error during validation:', error);
-            setShowError(true);
-            return;
         }
     }
 
