@@ -75,9 +75,6 @@ export default function CallbackPage() {
                         )}
                         {!error && !done && (
                             <>
-                                <p>{t('information')}</p>
-                                <p>{t('qr')}</p>
-
                                 <div id="yivi-web-form">
                                 </div>
                             </>
