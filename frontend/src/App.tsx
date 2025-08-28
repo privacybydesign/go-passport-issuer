@@ -5,6 +5,7 @@ import { AppProvider } from "./AppContext";
 
 import IndexPage from './pages/Index';
 import CallbackPage from './pages/Callback';
+import StartAppPage from './pages/StartApp';
 
 import './i18n';
 
@@ -22,7 +23,6 @@ function LanguageRouter() {
   return (
     <Routes>
       <Route path="/" element={<IndexPage />} />
-      <Route path="/callback" element={<CallbackPage />} />
     </Routes>
   );
 }
@@ -33,7 +33,8 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Navigate to="/nl" replace />} />
-
+          <Route path="/start-app" element={<StartAppPage />} />
+          <Route path="/callback" element={<CallbackPage />} />
           <Route path=":lang/*" element={<LanguageRouter />} />
         </Routes>
       </BrowserRouter>

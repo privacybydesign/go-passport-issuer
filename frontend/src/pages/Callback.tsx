@@ -19,11 +19,18 @@ export default function CallbackPage() {
             return;
         }
 
-        try {
-            // Decode base64 string to JSON
-            const decodedString = atob(encodedData);
-            const payload = JSON.parse(decodedString);
+        // Decode base64 string to JSON
+        const decodedString = atob(encodedData);
+        const payload = JSON.parse(decodedString);
 
+        getIrmaJWT(payload).then((data) => {
+            startIrmaSession(data.jwt, data.irma_server_url);
+        });
+
+    }, [location.search]);
+
+    const startIrmaSession = (jwt: string, irma_server_url: string) => {
+        try {
             import("@privacybydesign/yivi-frontend").then((yivi) => {
                 const web = yivi.newWeb({
                     debugging: true,
@@ -32,11 +39,11 @@ export default function CallbackPage() {
 
                     // Back-end options
                     session: {
-                        url: payload.irma_server_url,
+                        url: irma_server_url,
 
                         start: {
                             method: 'POST',
-                            body: payload.jwt,
+                            body: jwt,
                             headers: { 'Content-Type': 'text/plain' },
                         }
                     }
@@ -49,14 +56,39 @@ export default function CallbackPage() {
                         console.error('Error starting Yivi:', err);
                         setError(true);
                     });
-                });
-            } catch (err: any) {
-                console.error("Error during callback processing:", err);
-                setShowError(true);
+            });
+        } catch (err: any) {
+            console.error("Error during callback processing:", err);
+            setShowError(true);
+        }
+    }
+
+    const getIrmaJWT = async (payload: string) => {
+        // call validate endpoint
+        try {
+            const response = await fetch('/api/verify-and-issue', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: payload,
+            });
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
             }
+            const data = await response.json();
+            if (data.error) {
+                setShowError(true);
+                return;
+            }
+            return data;
 
-        }, [location.search]);
-
+        } catch (error) {
+            console.error('Error during validation:', error);
+            setShowError(true);
+            return;
+        }
+    }
 
     return (
         <>
@@ -97,4 +129,6 @@ export default function CallbackPage() {
             </div>
         </>
     );
+
+    
 }

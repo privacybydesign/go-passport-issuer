@@ -16,6 +16,9 @@ i18n
                     index_header: "Add passport",
                     index_explanation: "Add your passport details in your Yivi app.",
                     index_start: "Add passport",
+                    index_error: "Something went wrong please try again.",
+                    start_app_title: "Download VC MRTD App",
+                    start_app_explanation: "Think link is supposed to open the VC MRTD App, make sure to open this URL on a mobile phone.",
                 }
             },
             nl: {
@@ -24,6 +27,9 @@ i18n
                     index_header: "Paspoort toevoegen",
                     index_explanation: "Zet je paspoortgegevens in je Yivi-app.",
                     index_start: "Paspoort toevoegen",
+                    index_error: "Er is iets misgegaan, probeer het opnieuw.",
+                    start_app_title: "Download VC MRTD App",
+                    start_app_explanation: "Deze link zou de VC MRTD-app moeten openen. Zorg ervoor dat je deze URL op een mobiele telefoon opent.",
                 }
             }
         },

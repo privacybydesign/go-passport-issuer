@@ -32,8 +32,8 @@ export default function IndexPage() {
 
       // Assuming the response contains a sessionId and nonce
       setSession({ sessionId: data.session_id, nonce: data.nonce });
-      navigate(`${i18n.language}/callback?`);
-
+      // Navigate to other web site
+      window.location.href = `/start-app?nonce=${data.nonce}&sessionId=${data.session_id}`;
     } catch (error) {
       console.error('Error during validation:', error);
       setShowError(true);
@@ -51,7 +51,7 @@ export default function IndexPage() {
           <div className="sms-form">
             <p>{t('index_explanation')}</p>
             <p>
-              {showError && <div className="warning">{t('index_passport_not_valid')}</div>}
+              {showError && <div className="warning">{t('index_error')}</div>}
               { session && 
                 <div>
                   <p>{t('index_session_id')}: {session.sessionId}</p>
