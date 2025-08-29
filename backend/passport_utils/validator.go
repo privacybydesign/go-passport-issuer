@@ -1,11 +1,16 @@
 package passport_utils
 
 import (
+	"bytes"
+	"crypto"
 	"fmt"
 	"go-passport-issuer/models"
+	"log"
+	"log/slog"
 	"time"
 
 	"github.com/gmrtd/gmrtd/cms"
+	"github.com/gmrtd/gmrtd/cryptoutils"
 	"github.com/gmrtd/gmrtd/document"
 	"github.com/gmrtd/gmrtd/passiveauth"
 	"github.com/gmrtd/gmrtd/utils"
@@ -60,7 +65,117 @@ func Validate(data models.PassportValidationRequest, certPool *cms.CombinedCertP
 	if err != nil {
 		return document.Document{}, fmt.Errorf("unexpected error: %s", err)
 	}
+
+	if doc.Mf.Lds1.Dg15 != nil {
+		isVerified := VerifyAASignature(data, doc)
+		if !isVerified {
+			return document.Document{}, fmt.Errorf("active authentication failed: signature was not verified")
+		}
+
+	}
+
 	return doc, nil
+}
+
+// Verifies the response signature from the AA challenge received from the flutter app.
+// The gmrtd library has functions that carry the whole AA and therefore the verification,
+// which can't directly be used in our issuer since the flutter app is sending the ADPDU
+//
+//	commands and the issuer just receives a signature that is 8 bytes.
+//
+// We can make the internal function decodeF external and use it to decode the message, data and hashAlg
+// https://github.com/gmrtd/gmrtd/blob/518f2cc2953aab118a176b9928616bf38f157df2/activeauth/active_auth.go#L32
+func VerifyAASignature(reqData models.PassportValidationRequest, doc document.Document) bool {
+	// the signature is a string hash, we first need to extract the bytes
+	signatureBytes := utils.HexToBytes(reqData.Signature)
+	nonceBytes := utils.HexToBytes(reqData.Nonce)
+	if len(signatureBytes) != 8 {
+		log.Printf("invalid signature length: %d", len(signatureBytes))
+		return false
+	}
+	var subPubKeyInfo cms.SubjectPublicKeyInfo = cms.Asn1decodeSubjectPublicKeyInfo(doc.Mf.Lds1.Dg15.SubjectPublicKeyInfoBytes)
+	var pubKey *cryptoutils.RsaPublicKey = subPubKeyInfo.GetRsaPubKey()
+	f := cryptoutils.RsaDecryptWithPublicKey(signatureBytes, *pubKey)
+	m1, d, hashAlg, err := decodeF(f)
+	if err != nil {
+		log.Printf("failed to decode F: %d", err)
+		return false
+	}
+
+	// m is concat of m1 and m2 (rnd-ifd)
+	var expD []byte
+	{
+		m := bytes.Clone(m1)
+		m = append(m, nonceBytes...)
+		expD = cryptoutils.CryptoHash(hashAlg, m)
+	}
+
+	return bytes.Equal(d, expD)
+
+}
+
+// Internal function from the activeauth of gmrtd library
+func decodeF(f []byte) (m1 []byte, d []byte, hashAlg crypto.Hash, err error) {
+	var tmpF []byte = bytes.Clone(f)
+
+	slog.Debug("decodeF", "f", utils.BytesToHex(f))
+
+	if len(tmpF) < 4 {
+		return nil, nil, 0, fmt.Errorf("(decodeF) must have at least 4 bytes")
+	}
+
+	// should start with 0x6A
+	if tmpF[0] != 0x6A {
+		return nil, nil, 0, fmt.Errorf("(decodeF) must start with 0x6A")
+	}
+	tmpF = tmpF[1:]
+
+	// detect hash from trailer
+	{
+		var trailerLen int
+
+		switch tmpF[len(tmpF)-1] {
+		case 0xBC:
+			// SHA-1
+			hashAlg = crypto.SHA1
+			trailerLen = 1
+		case 0xCC:
+			// trailer is 2 bytes (i.e. xxCC)
+			switch tmpF[len(tmpF)-2] {
+			case 0x38:
+				hashAlg = crypto.SHA224
+			case 0x34:
+				hashAlg = crypto.SHA256
+			case 0x36:
+				hashAlg = crypto.SHA384
+			case 0x35:
+				hashAlg = crypto.SHA512
+			default:
+				return nil, nil, 0, fmt.Errorf("(decodeF) unknown hashAlg for 2-byte trailer (%x,CC)", tmpF[len(tmpF)-2])
+			}
+			trailerLen = 2
+		default:
+			return nil, nil, 0, fmt.Errorf("(decodeF) unable to determine hash alg from trailer byte (lastByte:%x)", tmpF[len(tmpF)-1])
+		}
+
+		// remove the trailer byte(s)
+		tmpF = tmpF[:len(tmpF)-trailerLen]
+	}
+
+	var digestSize int = cryptoutils.CryptoHashDigestSize(hashAlg)
+
+	// verify we have enough bytes remaining for the digest
+	if len(tmpF) < digestSize {
+		return nil, nil, 0, fmt.Errorf("(decodeF) insufficient bytes remaining to extract digest (req:%d) (rem:%d)", digestSize, len(tmpF))
+	}
+
+	// extract digest (d) and m1
+	d = bytes.Clone(tmpF[len(tmpF)-digestSize:])
+	m1 = bytes.Clone(tmpF[:len(tmpF)-digestSize])
+
+	slog.Debug("decodeF", "m1", utils.BytesToHex(m1), "d", utils.BytesToHex(d), "hashAlg", hashAlg)
+
+	return
 }
 
 func ToPassportIssuanceRequest(doc document.Document, activeAuth bool) (request models.PassportIssuanceRequest, err error) {

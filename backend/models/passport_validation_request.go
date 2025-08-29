@@ -5,4 +5,5 @@ type PassportValidationRequest struct {
 	Nonce      string            `json:"nonce"`
 	DataGroups map[string]string `json:"data_groups"`
 	EFSOD      string            `json:"ef_sod"`
+	Signature  string            `json:"signature"`
 }
