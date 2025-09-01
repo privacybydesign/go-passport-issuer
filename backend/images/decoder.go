@@ -22,7 +22,7 @@ type tlvNode = gtlv.TlvNode
 func decodeOne(b []byte) (tlvNode, error) {
 	nodes, err := gtlv.Decode(b)
 	if nodes == nil || len(nodes.Nodes) == 0 {
-		return nil, errors.New("No TLV nodes found")
+		return nil, errors.New("no TLV nodes found")
 	}
 	return nodes.Nodes[0], err
 }
@@ -273,7 +273,7 @@ func (e *EfDG2) readBiometricDataBlock(tlvs []tlvNode) error {
 		return EfParseError{"Biometric data block too short"}
 	}
 	// Expect 'F','A','C',0x00
-	if !(data[0] == 0x46 && data[1] == 0x41 && data[2] == 0x43 && data[3] == 0x00) {
+	if data[0] != 0x46 || data[1] != 0x41 || data[2] != 0x43 || data[3] != 0x00 {
 		return EfParseError{"Biometric data block is invalid"}
 	}
 
@@ -416,7 +416,7 @@ type chunk struct {
 
 func (e *EfDG2) ConvertToPNG() ([]string, error) {
 	if len(e.ImageData) == 0 {
-		return nil, fmt.Errorf("Data not provided")
+		return nil, fmt.Errorf("data not provided")
 	}
 
 	parts := extractImagesFromDG2(e.ImageData)
