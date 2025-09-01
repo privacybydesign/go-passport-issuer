@@ -1,7 +1,8 @@
-package passport_utils
+package passport
 
 import (
 	"fmt"
+	"go-passport-issuer/images"
 	"go-passport-issuer/models"
 	"time"
 
@@ -75,13 +76,16 @@ func ToPassportIssuanceRequest(doc document.Document, activeAuth bool) (request 
 		return models.PassportIssuanceRequest{}, fmt.Errorf("failed to parse date of expiry: %w", err)
 	}
 
-	// var photo, err = PhotodToBase64(doc.Mf.Lds1.Dg2.RawData)
-	// if err != nil {
-	// 	return models.PassportIssuanceRequest{}, fmt.Errorf("failed to convert photo to base64: %w", err)
-	// }
+	efDG2, err := images.NewEfDG2FromBytes(doc.Mf.Lds1.Dg2.RawData)
+	if err != nil {
+		return models.PassportIssuanceRequest{}, fmt.Errorf("failed to create EfDG2: %w", err)
+	}
+	pngs, err := efDG2.ConvertToPNG()
+	if err != nil {
+		return models.PassportIssuanceRequest{}, fmt.Errorf("failed to convert EF DG2 images to PNG: %w", err)
+	}
 
 	request = models.PassportIssuanceRequest{
-		Photo:                "",
 		DocumentNumber:       doc.Mf.Lds1.Dg1.Mrz.DocumentNumber,
 		DocumentType:         doc.Mf.Lds1.Dg1.Mrz.DocumentCode,
 		FirstName:            doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Secondary,
@@ -91,22 +95,27 @@ func ToPassportIssuanceRequest(doc document.Document, activeAuth bool) (request 
 		DateOfExpiry:         doe,
 		Gender:               doc.Mf.Lds1.Dg1.Mrz.Sex,
 		Country:              doc.Mf.Lds1.Dg1.Mrz.IssuingState,
-		Over12:               dob.Before(time.Now().AddDate(-12, 0, 0)),
-		Over16:               dob.Before(time.Now().AddDate(-16, 0, 0)),
-		Over18:               dob.Before(time.Now().AddDate(-18, 0, 0)),
-		Over21:               dob.Before(time.Now().AddDate(-21, 0, 0)),
-		Over65:               dob.Before(time.Now().AddDate(-65, 0, 0)),
-		ActiveAuthentication: activeAuth,
+		Over12:               BoolToYesNo(dob.Before(time.Now().AddDate(-12, 0, 0))),
+		Over16:               BoolToYesNo(dob.Before(time.Now().AddDate(-16, 0, 0))),
+		Over18:               BoolToYesNo(dob.Before(time.Now().AddDate(-18, 0, 0))),
+		Over21:               BoolToYesNo(dob.Before(time.Now().AddDate(-21, 0, 0))),
+		Over65:               BoolToYesNo(dob.Before(time.Now().AddDate(-65, 0, 0))),
+		ActiveAuthentication: BoolToYesNo(activeAuth),
 	}
+
+	if len(pngs) > 0 {
+		request.Photo = pngs[0]
+	}
+
 	return request, nil
 }
 
-// func PhotoToBase64(photo []byte) (string, error) {
-// 	if len(photo) == 0 {
-// 		return "", fmt.Errorf("photo data is empty")
-// 	}
-// 	return utils.Base64Encode(photo), nil
-// }
+func BoolToYesNo(value bool) string {
+	if value {
+		return "Yes"
+	}
+	return "No"
+}
 
 func ParseDateTime(dateStr string) (time.Time, error) {
 	// Parse date in yymmdd format

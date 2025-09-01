@@ -13,10 +13,10 @@ type PassportIssuanceRequest struct {
 	DateOfExpiry         time.Time `json:"date_of_expiry"`
 	Gender               string    `json:"gender"`
 	Country              string    `json:"country"`
-	Over12               bool      `json:"over12"`
-	Over16               bool      `json:"over16"`
-	Over18               bool      `json:"over18"`
-	Over21               bool      `json:"over21"`
-	Over65               bool      `json:"over65"`
-	ActiveAuthentication bool      `json:"active_authentication"`
+	Over12               string    `json:"over12"`
+	Over16               string    `json:"over16"`
+	Over18               string    `json:"over18"`
+	Over21               string    `json:"over21"`
+	Over65               string    `json:"over65"`
+	ActiveAuthentication string    `json:"active_authentication"`
 }

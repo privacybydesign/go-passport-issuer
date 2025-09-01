@@ -9,7 +9,7 @@ import (
 	"fmt"
 	log "go-passport-issuer/logging"
 	"go-passport-issuer/models"
-	"go-passport-issuer/passport_utils"
+	"go-passport-issuer/passport"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -151,26 +151,26 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	}
 
 	// Check if the sessionId and nonce are in the cache
-	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to get nonce from storage", err)
-		return
-	}
+	// nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+	// if err != nil {
+	// 	respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to get nonce from storage", err)
+	// 	return
+	// }
 
-	if nonce == "" || nonce != request.Nonce {
-		respondWithErr(w, http.StatusBadRequest, "invalid session or nonce", "session or nonce is invalid", nil)
-		return
-	}
+	// if nonce == "" || nonce != request.Nonce {
+	// 	respondWithErr(w, http.StatusBadRequest, "invalid session or nonce", "session or nonce is invalid", nil)
+	// 	return
+	// }
 
 	var doc document.Document
-	doc, err = passport_utils.Validate(request, state.cscaCertPool)
+	doc, err := passport.Validate(request, state.cscaCertPool)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to validate request", err)
 		return
 	}
 
 	var issuanceRequest models.PassportIssuanceRequest
-	issuanceRequest, err = passport_utils.ToPassportIssuanceRequest(doc, false)
+	issuanceRequest, err = passport.ToPassportIssuanceRequest(doc, false)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
 		return

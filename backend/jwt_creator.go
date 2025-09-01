@@ -4,7 +4,6 @@ import (
 	"crypto/rsa"
 	"go-passport-issuer/models"
 	"os"
-	"strconv"
 
 	"github.com/golang-jwt/jwt/v4"
 	irma "github.com/privacybydesign/irmago"
@@ -58,12 +57,12 @@ func (jc *DefaultJwtCreator) CreateJwt(passport models.PassportIssuanceRequest) 
 				"dateOfExpiry":         passport.DateOfExpiry.Format("2006-01-02"),
 				"gender":               passport.Gender,
 				"country":              passport.Country,
-				"over12":               strconv.FormatBool(passport.Over12),
-				"over16":               strconv.FormatBool(passport.Over16),
-				"over18":               strconv.FormatBool(passport.Over18),
-				"over21":               strconv.FormatBool(passport.Over21),
-				"over65":               strconv.FormatBool(passport.Over65),
-				"activeAuthentication": strconv.FormatBool(passport.ActiveAuthentication),
+				"over12":               passport.Over12,
+				"over16":               passport.Over16,
+				"over18":               passport.Over18,
+				"over21":               passport.Over21,
+				"over65":               passport.Over65,
+				"activeAuthentication": passport.ActiveAuthentication,
 			},
 		},
 	})

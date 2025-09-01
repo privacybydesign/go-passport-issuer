@@ -15,6 +15,7 @@ require (
 require (
 	github.com/aead/cmac v0.0.0-20160719120800-7af84192f0b1 // indirect
 	github.com/osanderson/brainpool v0.0.0-20240902133831-007b606d9412 // indirect
+	gopkg.in/gographics/imagick.v2 v2.6.0 // indirect
 )
 
 require (
@@ -77,4 +78,5 @@ require (
 	gorm.io/driver/postgres v1.5.3 // indirect
 	gorm.io/driver/sqlserver v1.5.2 // indirect
 	gorm.io/gorm v1.25.5 // indirect
+	pault.ag/go/cbeff v0.1.1
 )
