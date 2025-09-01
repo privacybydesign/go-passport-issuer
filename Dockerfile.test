@@ -1,4 +1,10 @@
-FROM golang:1.24 AS builder
+FROM golang:1.24-bookworm AS backend-build
+WORKDIR /app/backend
+
+# Imagick (IM6) build deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential pkg-config libmagickwand-6.q16-dev \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
