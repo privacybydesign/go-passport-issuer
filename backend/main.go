@@ -8,7 +8,7 @@ import (
 	redis "go-passport-issuer/redis"
 	"os"
 
-	"github.com/gmrtd/gmrtd/cms"
+	"github.com/dibranmulder/gmrtd/cms"
 )
 
 type Config struct {
