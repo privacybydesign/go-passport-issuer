@@ -1,8 +1,9 @@
 package models
 
 type PassportValidationRequest struct {
-	SessionId  string            `json:"session_id"`
-	Nonce      string            `json:"nonce"`
-	DataGroups map[string]string `json:"data_groups"`
-	EFSOD      string            `json:"ef_sod"`
+	SessionId           string            `json:"session_id"`
+	Nonce               string            `json:"nonce"`
+	DataGroups          map[string]string `json:"data_groups"`
+	EFSOD               string            `json:"ef_sod"`
+	ActiveAuthSignature string            `json:"aa_signature,omitempty"`
 }
