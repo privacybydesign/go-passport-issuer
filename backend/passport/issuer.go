@@ -6,13 +6,14 @@ import (
 	"go-passport-issuer/models"
 	"time"
 
-	"github.com/gmrtd/gmrtd/cms"
-	"github.com/gmrtd/gmrtd/document"
-	"github.com/gmrtd/gmrtd/passiveauth"
-	"github.com/gmrtd/gmrtd/utils"
+	"github.com/dibranmulder/gmrtd/activeauth"
+	"github.com/dibranmulder/gmrtd/cms"
+	"github.com/dibranmulder/gmrtd/document"
+	"github.com/dibranmulder/gmrtd/passiveauth"
+	"github.com/dibranmulder/gmrtd/utils"
 )
 
-func Validate(data models.PassportValidationRequest, certPool *cms.CombinedCertPool) (doc document.Document, err error) {
+func PassiveAuthentication(data models.PassportValidationRequest, certPool *cms.CombinedCertPool) (doc document.Document, err error) {
 	if len(data.DataGroups) == 0 {
 		return document.Document{}, fmt.Errorf("no data groups found in passport data")
 	}
@@ -61,7 +62,24 @@ func Validate(data models.PassportValidationRequest, certPool *cms.CombinedCertP
 	if err != nil {
 		return document.Document{}, fmt.Errorf("unexpected error: %s", err)
 	}
+
 	return doc, nil
+}
+
+func ActiveAuthentication(data models.PassportValidationRequest, doc document.Document) (bool, error) {
+	if data.Nonce == "" || data.ActiveAuthSignature == "" || doc.Mf.Lds1.Dg15 == nil {
+		return false, nil
+	}
+
+	aaSigBytes := utils.HexToBytes(data.ActiveAuthSignature)
+	nonceBytes := utils.HexToBytes(data.Nonce)
+
+	activeauth := activeauth.NewActiveAuth(nil, &doc)
+	err := activeauth.ValidateActiveAuthSignature(aaSigBytes, nonceBytes)
+	if err != nil {
+		return false, fmt.Errorf("failed to validate active authentication signature: %w", err)
+	}
+	return true, nil
 }
 
 func ToPassportIssuanceRequest(doc document.Document, activeAuth bool) (request models.PassportIssuanceRequest, err error) {

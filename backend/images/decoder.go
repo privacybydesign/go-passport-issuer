@@ -12,7 +12,7 @@ import (
 	"os"
 	"sort"
 
-	gtlv "github.com/gmrtd/gmrtd/tlv"
+	gtlv "github.com/dibranmulder/gmrtd/tlv"
 	"pault.ag/go/cbeff/jpeg2000"
 )
 

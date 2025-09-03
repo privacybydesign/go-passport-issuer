@@ -15,8 +15,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/gmrtd/gmrtd/cms"
-	"github.com/gmrtd/gmrtd/document"
+	"github.com/dibranmulder/gmrtd/cms"
+	"github.com/dibranmulder/gmrtd/document"
 	"github.com/gorilla/mux"
 )
 
@@ -151,26 +151,32 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	}
 
 	// Check if the sessionId and nonce are in the cache
-	// nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
-	// if err != nil {
-	// 	respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to get nonce from storage", err)
-	// 	return
-	// }
+	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to get nonce from storage", err)
+		return
+	}
 
-	// if nonce == "" || nonce != request.Nonce {
-	// 	respondWithErr(w, http.StatusBadRequest, "invalid session or nonce", "session or nonce is invalid", nil)
-	// 	return
-	// }
+	if nonce == "" || nonce != request.Nonce {
+		respondWithErr(w, http.StatusBadRequest, "invalid session or nonce", "session or nonce is invalid", nil)
+		return
+	}
 
 	var doc document.Document
-	doc, err := passport.Validate(request, state.cscaCertPool)
+	doc, err = passport.PassiveAuthentication(request, state.cscaCertPool)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to validate request", err)
 		return
 	}
 
+	activeAuth, err := passport.ActiveAuthentication(request, doc)
+	if err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to validate active authentication", err)
+		return
+	}
+
 	var issuanceRequest models.PassportIssuanceRequest
-	issuanceRequest, err = passport.ToPassportIssuanceRequest(doc, false)
+	issuanceRequest, err = passport.ToPassportIssuanceRequest(doc, activeAuth)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
 		return
