@@ -65,6 +65,7 @@ func (jc *DefaultJwtCreator) CreateJwt(passport models.PassportIssuanceRequest) 
 				"over65":               strconv.FormatBool(passport.Over65),
 				"activeAuthentication": strconv.FormatBool(passport.ActiveAuthentication),
 			},
+			SdJwtBatchSize: irma.DefaultSdJwtIssueAmount,
 		},
 	})
 
