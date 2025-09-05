@@ -6,11 +6,11 @@ import (
 	"go-passport-issuer/models"
 	"time"
 
-	"github.com/dibranmulder/gmrtd/activeauth"
-	"github.com/dibranmulder/gmrtd/cms"
-	"github.com/dibranmulder/gmrtd/document"
-	"github.com/dibranmulder/gmrtd/passiveauth"
-	"github.com/dibranmulder/gmrtd/utils"
+	"github.com/gmrtd/gmrtd/activeauth"
+	"github.com/gmrtd/gmrtd/cms"
+	"github.com/gmrtd/gmrtd/document"
+	"github.com/gmrtd/gmrtd/passiveauth"
+	"github.com/gmrtd/gmrtd/utils"
 )
 
 func PassiveAuthentication(data models.PassportValidationRequest, certPool *cms.CombinedCertPool) (doc document.Document, err error) {
