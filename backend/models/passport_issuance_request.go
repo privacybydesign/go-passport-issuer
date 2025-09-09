@@ -9,7 +9,7 @@ type PassportIssuanceRequest struct {
 	FirstName            string    `json:"first_name"`
 	LastName             string    `json:"last_name"`
 	Nationality          string    `json:"nationality"`
-	IsEUCitizen          string    `json:"is_eu_citizen"`
+	IsEuCitizen          string    `json:"is_eu_citizen"`
 	DateOfBirth          time.Time `json:"date_of_birth"`
 	YearOfBirth          string    `json:"year_of_birth"`
 	DateOfExpiry         time.Time `json:"date_of_expiry"`
