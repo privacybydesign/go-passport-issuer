@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go-passport-issuer/images"
 	"go-passport-issuer/models"
+	"strings"
 	"time"
 
 	"github.com/dibranmulder/gmrtd/activeauth"
@@ -12,6 +13,15 @@ import (
 	"github.com/dibranmulder/gmrtd/passiveauth"
 	"github.com/dibranmulder/gmrtd/utils"
 )
+
+var euCountries = []string{
+	"AUT", "BEL", "BGR", "HRV", "CYP",
+	"CZE", "DNK", "EST", "FIN", "FRA",
+	"DEU", "GRC", "HUN", "IRL", "ITA",
+	"LVA", "LTU", "LUX", "MLT", "NLD",
+	"POL", "PRT", "ROU", "SVK", "SVN",
+	"ESP", "SWE",
+}
 
 func PassiveAuthentication(data models.PassportValidationRequest, certPool *cms.CombinedCertPool) (doc document.Document, err error) {
 	if len(data.DataGroups) == 0 {
@@ -82,6 +92,15 @@ func ActiveAuthentication(data models.PassportValidationRequest, doc document.Do
 	return true, nil
 }
 
+func IsEUCitizen(nationality string) bool {
+	for _, country := range euCountries {
+		if strings.ToUpper(nationality) == country {
+			return true
+		}
+	}
+	return false
+}
+
 func ToPassportIssuanceRequest(doc document.Document, activeAuth bool) (request models.PassportIssuanceRequest, err error) {
 	var dob, doe time.Time
 	dob, err = ParseDateTime(doc.Mf.Lds1.Dg1.Mrz.DateOfBirth)
@@ -109,7 +128,9 @@ func ToPassportIssuanceRequest(doc document.Document, activeAuth bool) (request 
 		FirstName:            doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Secondary,
 		LastName:             doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Primary,
 		Nationality:          doc.Mf.Lds1.Dg1.Mrz.Nationality,
+		IsEUCitizen:          BoolToYesNo(IsEUCitizen(doc.Mf.Lds1.Dg1.Mrz.Nationality)),
 		DateOfBirth:          dob,
+		YearOfBirth:          dob.Format("2006"),
 		DateOfExpiry:         doe,
 		Gender:               doc.Mf.Lds1.Dg1.Mrz.Sex,
 		Country:              doc.Mf.Lds1.Dg1.Mrz.IssuingState,
