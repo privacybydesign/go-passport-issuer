@@ -55,7 +55,7 @@ func (jc *DefaultJwtCreator) CreateJwt(passport models.PassportIssuanceRequest) 
 				"nationality":          passport.Nationality,
 				"dateOfBirth":          passport.DateOfBirth.Format("2006-01-02"),
 				"yearOfBirth":          passport.DateOfBirth.Format("2006"),
-				"isEUCitizen":          passport.IsEUCitizen,
+				"isEuCitizen":          passport.IsEuCitizen,
 				"dateOfExpiry":         passport.DateOfExpiry.Format("2006-01-02"),
 				"gender":               passport.Gender,
 				"country":              passport.Country,

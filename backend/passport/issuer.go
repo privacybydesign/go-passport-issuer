@@ -92,7 +92,7 @@ func ActiveAuthentication(data models.PassportValidationRequest, doc document.Do
 	return true, nil
 }
 
-func IsEUCitizen(nationality string) bool {
+func IsEuCitizen(nationality string) bool {
 	for _, country := range euCountries {
 		if strings.ToUpper(nationality) == country {
 			return true
@@ -128,7 +128,7 @@ func ToPassportIssuanceRequest(doc document.Document, activeAuth bool) (request 
 		FirstName:            doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Secondary,
 		LastName:             doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Primary,
 		Nationality:          doc.Mf.Lds1.Dg1.Mrz.Nationality,
-		IsEuCitizen:          BoolToYesNo(IsEUCitizen(doc.Mf.Lds1.Dg1.Mrz.Nationality)),
+		IsEuCitizen:          BoolToYesNo(IsEuCitizen(doc.Mf.Lds1.Dg1.Mrz.Nationality)),
 		DateOfBirth:          dob,
 		YearOfBirth:          dob.Format("2006"),
 		DateOfExpiry:         doe,
