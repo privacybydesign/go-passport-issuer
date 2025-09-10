@@ -15,8 +15,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dibranmulder/gmrtd/cms"
-	"github.com/dibranmulder/gmrtd/document"
+	"github.com/gmrtd/gmrtd/cms"
+	"github.com/gmrtd/gmrtd/document"
 	"github.com/gorilla/mux"
 )
 

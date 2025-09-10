@@ -4,16 +4,28 @@ import (
 	"fmt"
 	"go-passport-issuer/images"
 	"go-passport-issuer/models"
+	"strings"
 	"time"
 
 	log "go-passport-issuer/logging"
 
-	"github.com/dibranmulder/gmrtd/activeauth"
-	"github.com/dibranmulder/gmrtd/cms"
-	"github.com/dibranmulder/gmrtd/document"
-	"github.com/dibranmulder/gmrtd/passiveauth"
-	"github.com/dibranmulder/gmrtd/utils"
+	log "go-passport-issuer/logging"
+
+	"github.com/gmrtd/gmrtd/activeauth"
+	"github.com/gmrtd/gmrtd/cms"
+	"github.com/gmrtd/gmrtd/document"
+	"github.com/gmrtd/gmrtd/passiveauth"
+	"github.com/gmrtd/gmrtd/utils"
 )
+
+var euCountries = []string{
+	"AUT", "BEL", "BGR", "HRV", "CYP",
+	"CZE", "DNK", "EST", "FIN", "FRA",
+	"DEU", "GRC", "HUN", "IRL", "ITA",
+	"LVA", "LTU", "LUX", "MLT", "NLD",
+	"POL", "PRT", "ROU", "SVK", "SVN",
+	"ESP", "SWE",
+}
 
 func PassiveAuthentication(data models.PassportValidationRequest, certPool *cms.CombinedCertPool) (doc document.Document, err error) {
 	log.Info.Printf("Starting passive authentication")
@@ -92,6 +104,15 @@ func ActiveAuthentication(data models.PassportValidationRequest, doc document.Do
 	return true, nil
 }
 
+func IsEuCitizen(nationality string) bool {
+	for _, country := range euCountries {
+		if strings.ToUpper(nationality) == country {
+			return true
+		}
+	}
+	return false
+}
+
 func ToPassportIssuanceRequest(doc document.Document, activeAuth bool) (request models.PassportIssuanceRequest, err error) {
 	log.Info.Printf("Converting document to passport issuance request")
 
@@ -124,7 +145,9 @@ func ToPassportIssuanceRequest(doc document.Document, activeAuth bool) (request 
 		FirstName:            doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Secondary,
 		LastName:             doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Primary,
 		Nationality:          doc.Mf.Lds1.Dg1.Mrz.Nationality,
+		IsEuCitizen:          BoolToYesNo(IsEuCitizen(doc.Mf.Lds1.Dg1.Mrz.Nationality)),
 		DateOfBirth:          dob,
+		YearOfBirth:          dob.Format("2006"),
 		DateOfExpiry:         doe,
 		Gender:               doc.Mf.Lds1.Dg1.Mrz.Sex,
 		Country:              doc.Mf.Lds1.Dg1.Mrz.IssuingState,

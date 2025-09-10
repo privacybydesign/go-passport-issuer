@@ -5,6 +5,7 @@ go 1.24.0
 toolchain go1.24.6
 
 require (
+	github.com/gmrtd/gmrtd v0.7.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/privacybydesign/irmago v0.18.2-0.20250814122011-7e25e34a398b
@@ -13,7 +14,6 @@ require (
 
 require (
 	github.com/aead/cmac v0.0.0-20160719120800-7af84192f0b1 // indirect
-	github.com/dibranmulder/gmrtd v0.2.1 // indirect
 	github.com/osanderson/brainpool v0.0.0-20240902133831-007b606d9412 // indirect
 	gopkg.in/gographics/imagick.v2 v2.6.0 // indirect
 )
