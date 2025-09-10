@@ -9,8 +9,6 @@ import (
 
 	log "go-passport-issuer/logging"
 
-	log "go-passport-issuer/logging"
-
 	"github.com/gmrtd/gmrtd/activeauth"
 	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/document"
