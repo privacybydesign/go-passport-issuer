@@ -167,13 +167,13 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	var doc document.Document
 	doc, err = state.validator.Passive(request, state.cscaCertPool)
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request: passive validation failed: %v", err), "failed to validate request", err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request: passive validation failed", "failed to validate request", err)
 		return
 	}
 
 	activeAuth, err := state.validator.Active(request, doc)
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request: active authentication failed: %v", err), "failed to validate active authentication", err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request: active authentication failed", "failed to validate active authentication", err)
 		return
 	}
 

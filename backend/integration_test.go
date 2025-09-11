@@ -29,7 +29,6 @@ var badNonce = "bad-nonce"
 // -----------------------------------------------------------------------------
 // tests
 
-// Test that a valid request results in a successful response and the session is removed from storage
 func TestSessionIdRemovedSuccess(t *testing.T) {
 	var testStorage = NewInMemoryTokenStorage()
 
@@ -41,8 +40,6 @@ func TestSessionIdRemovedSuccess(t *testing.T) {
 		validator:     fakeValidator{},
 		converter:     fakeConverter{},
 	}
-
-	// Create and store a session/nonce
 
 	err := testStorage.StoreToken(testSessionID, testNonce)
 	require.NoError(t, err)
@@ -59,13 +56,11 @@ func TestSessionIdRemovedSuccess(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/verify-and-issue", bytes.NewReader(b))
 	rr := httptest.NewRecorder()
 
-	// Act: handle the request
 	handleIssuePassport(testState, rr, req)
 
-	// Assert: response OK
 	require.Equalf(t, http.StatusOK, rr.Code, "body: %s", rr.Body.String())
 
-	// Assert: token removed from storage
+	// Token should be removed
 	_, err = testStorage.RetrieveToken(testSessionID)
 	require.Error(t, err)
 
@@ -120,8 +115,6 @@ func TestSessionIdRemovedFail_SessionReuse(t *testing.T) {
 		converter:     fakeConverter{},
 	}
 
-	// Create and store a session/nonce
-
 	err := testStorage.StoreToken(testSessionID, testNonce)
 	require.NoError(t, err)
 
@@ -149,7 +142,7 @@ func TestSessionIdRemovedFail_SessionReuse(t *testing.T) {
 
 }
 
-func TestCompleteFlow(t *testing.T) {
+func TestCompleteFlow_HappyPath(t *testing.T) {
 
 	var testStorage = NewInMemoryTokenStorage()
 
@@ -195,45 +188,27 @@ func TestCompleteFlow(t *testing.T) {
 }
 
 func TestPassiveAuthFail_NoDataGroups(t *testing.T) {
-	testStorage := NewInMemoryTokenStorage()
-	var testState = &ServerState{
-		irmaServerURL: "https://irma.example",
-		tokenStorage:  testStorage,
-		jwtCreator:    fakeJwtCreator{jwt: "test-jwt"},
-		cscaCertPool:  &cms.CombinedCertPool{},
-		validator:     passportValidatorImpl{},
-		converter:     fakeConverter{},
-	}
+	cscaCertPool, err := cms.GetDefaultMasterList()
+	require.NoError(t, err)
+
 	noDataGroups := models.PassportValidationRequest{
 		SessionId:  testSessionID,
 		Nonce:      testNonce,
 		DataGroups: map[string]string{},
 		EFSOD:      "00",
 	}
-	// Store session/nonce to pass that validation
-	err := testStorage.StoreToken(noDataGroups.SessionId, noDataGroups.Nonce)
 
-	require.NoError(t, err)
-	b, err := json.Marshal(noDataGroups)
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/verify-and-issue", bytes.NewReader(b))
-	rr := httptest.NewRecorder()
-	handleIssuePassport(testState, rr, req)
-	require.Contains(t, fmt.Sprintf("%s", rr.Body), "no data groups found in passport data")
+	_, err = passportValidatorImpl{}.Passive(noDataGroups, cscaCertPool)
+	require.Error(t, err)
+	require.Contains(t, fmt.Sprintf("%s", err), "no data groups found in passport data")
 
 }
 
 func TestPassiveAuthFail_NoEFSOD(t *testing.T) {
-	testStorage := NewInMemoryTokenStorage()
-	var testState = &ServerState{
-		irmaServerURL: "https://irma.example",
-		tokenStorage:  testStorage,
-		jwtCreator:    fakeJwtCreator{jwt: "test-jwt"},
-		cscaCertPool:  &cms.CombinedCertPool{},
-		validator:     passportValidatorImpl{},
-		converter:     fakeConverter{},
-	}
+
+	cscaCertPool, err := cms.GetDefaultMasterList()
+	require.NoError(t, err)
+
 	noEFSOD := models.PassportValidationRequest{
 		SessionId: testSessionID,
 		Nonce:     testNonce,
@@ -241,29 +216,16 @@ func TestPassiveAuthFail_NoEFSOD(t *testing.T) {
 			"DG1": "00",
 		},
 	}
-	err := testStorage.StoreToken(noEFSOD.SessionId, noEFSOD.Nonce)
 
-	require.NoError(t, err)
-	b, err := json.Marshal(noEFSOD)
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/verify-and-issue", bytes.NewReader(b))
-	rr := httptest.NewRecorder()
-	handleIssuePassport(testState, rr, req)
-	require.Contains(t, fmt.Sprintf("%s", rr.Body), "EF_SOD is missing in passport data")
+	_, err = passportValidatorImpl{}.Passive(noEFSOD, cscaCertPool)
+	require.Error(t, err)
+	require.Contains(t, fmt.Sprintf("%s", err), "EF_SOD is missing in passport data")
 
 }
 
 func TestPassiveAuthFail_UnsupportedDG(t *testing.T) {
-	testStorage := NewInMemoryTokenStorage()
-	var testState = &ServerState{
-		irmaServerURL: "https://irma.example",
-		tokenStorage:  testStorage,
-		jwtCreator:    fakeJwtCreator{},
-		cscaCertPool:  &cms.CombinedCertPool{},
-		validator:     passportValidatorImpl{},
-		converter:     fakeConverter{},
-	}
+	cscaCertPool, err := cms.GetDefaultMasterList()
+	require.NoError(t, err)
 
 	var badDG = models.PassportValidationRequest{
 		SessionId: testSessionID,
@@ -274,87 +236,50 @@ func TestPassiveAuthFail_UnsupportedDG(t *testing.T) {
 		EFSOD: readBinToHex(t, "test-data/EF_SOD.bin"),
 	}
 
-	err := testStorage.StoreToken(badDG.SessionId, badDG.Nonce)
-
-	require.NoError(t, err)
-	b, err := json.Marshal(badDG)
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/verify-and-issue", bytes.NewReader(b))
-	rr := httptest.NewRecorder()
-	handleIssuePassport(testState, rr, req)
-	require.Contains(t, fmt.Sprintf("%s", rr.Body), "unsupported data group: DG99")
+	_, err = passportValidatorImpl{}.Passive(badDG, cscaCertPool)
+	require.Error(t, err)
+	require.Contains(t, fmt.Sprintf("%s", err), "unsupported data group: DG99")
 }
 
-func TestPassiveAuthFail_CreateDG(t *testing.T) {
-	testStorage := NewInMemoryTokenStorage()
-	var testState = &ServerState{
-		irmaServerURL: "https://irma.example",
-		tokenStorage:  testStorage,
-		jwtCreator:    fakeJwtCreator{},
-		cscaCertPool:  &cms.CombinedCertPool{},
-		validator:     passportValidatorImpl{},
-		converter:     fakeConverter{},
-	}
+func TestPassiveAuthFail_BadSOD(t *testing.T) {
+	cscaCertPool, err := cms.GetDefaultMasterList()
+	require.NoError(t, err)
 
-	var dg = models.PassportValidationRequest{
+	var badSOD = models.PassportValidationRequest{
 		SessionId: testSessionID,
 		Nonce:     testNonce,
 		DataGroups: map[string]string{
-			"DG1":  readBinToHex(t, "test-data/EF_DG1.bin"),
-			"DG15": readBinToHex(t, "test-data/EF_DG15.bin"),
+			"DG1": "00",
+		},
+		EFSOD: "00", // bad SOD
+	}
+
+	_, err = passportValidatorImpl{}.Passive(badSOD, cscaCertPool)
+	require.Error(t, err)
+	require.Contains(t, fmt.Sprintf("%s", err), "failed to create SOD")
+
+}
+
+func TestPassiveAuthFail_BadDG(t *testing.T) {
+	cscaCertPool, err := cms.GetDefaultMasterList()
+	require.NoError(t, err)
+
+	var badDG = models.PassportValidationRequest{
+		SessionId: testSessionID,
+		Nonce:     testNonce,
+		DataGroups: map[string]string{
+			"DG1": "12",
 		},
 		EFSOD: readBinToHex(t, "test-data/EF_SOD.bin"),
 	}
 
-	err := testStorage.StoreToken(dg.SessionId, dg.Nonce)
-
-	require.NoError(t, err)
-	b, err := json.Marshal(dg)
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/verify-and-issue", bytes.NewReader(b))
-	rr := httptest.NewRecorder()
-	handleIssuePassport(testState, rr, req)
-	require.Contains(t, fmt.Sprintf("%s", rr.Body), "unexpected error")
+	_, err = passportValidatorImpl{}.Passive(badDG, cscaCertPool)
+	require.Error(t, err)
+	require.Contains(t, fmt.Sprintf("%s", err), "failed to create DG1")
 
 }
 
 func TestActiveAuthFail_BadSig(t *testing.T) {
-	testStorage := NewInMemoryTokenStorage()
-	var testState = &ServerState{
-		irmaServerURL: "https://irma.example",
-		tokenStorage:  testStorage,
-		jwtCreator:    fakeJwtCreator{},
-		cscaCertPool:  &cms.CombinedCertPool{},
-		validator: validatorFuncs{
-			PassiveFn: func(req models.PassportValidationRequest, _ *cms.CombinedCertPool) (document.Document, error) {
-				var doc document.Document
-				for dg, hexStr := range req.DataGroups {
-					b, err := hex.DecodeString(hexStr)
-					if err != nil {
-						return document.Document{}, err
-					}
-					switch dg {
-					case "DG1":
-						doc.Mf.Lds1.Dg1, err = document.NewDG1(b)
-						if err != nil {
-							return document.Document{}, err
-						}
-					case "DG15":
-						doc.Mf.Lds1.Dg15, err = document.NewDG15(b)
-						if err != nil {
-							return document.Document{}, err
-						}
-					}
-				}
-				return doc, nil
-			},
-			ActiveFn: passportValidatorImpl{}.Active,
-		},
-		converter: fakeConverter{},
-	}
-
 	var dg = models.PassportValidationRequest{
 		SessionId: testSessionID,
 		Nonce:     testNonce,
@@ -362,19 +287,19 @@ func TestActiveAuthFail_BadSig(t *testing.T) {
 			"DG1":  readBinToHex(t, "test-data/EF_DG1.bin"),
 			"DG15": readBinToHex(t, "test-data/EF_DG15.bin"),
 		},
-		ActiveAuthSignature: "00",
+		EFSOD:               readBinToHex(t, "test-data/EF_SOD.bin"),
+		ActiveAuthSignature: "00", // bad signature
 	}
-
-	err := testStorage.StoreToken(dg.SessionId, dg.Nonce)
+	var doc document.Document
+	var err error
+	doc.Mf.Lds1.Dg1, err = document.NewDG1(utils.HexToBytes(dg.DataGroups["DG1"]))
+	doc.Mf.Lds1.Dg15, err = document.NewDG15(utils.HexToBytes(dg.DataGroups["DG15"]))
 
 	require.NoError(t, err)
-	b, err := json.Marshal(dg)
-	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/verify-and-issue", bytes.NewReader(b))
-	rr := httptest.NewRecorder()
-	handleIssuePassport(testState, rr, req)
-	require.Contains(t, fmt.Sprintf("%s", rr.Body), "failed to validate active authentication signature")
+	_, err = passportValidatorImpl{}.Active(dg, doc)
+	require.Error(t, err)
+	require.Contains(t, fmt.Sprintf("%s", err), "failed to validate active authentication signature")
 
 }
 
