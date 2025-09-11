@@ -12,7 +12,9 @@ vendor
 node_modules/
 build/
 
+secrets/
 local-secrets/
+test-secrets/
 .env
 local-secrets/sms-issuer/config.json
 

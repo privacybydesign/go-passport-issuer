@@ -9,7 +9,6 @@ import (
 	"fmt"
 	log "go-passport-issuer/logging"
 	"go-passport-issuer/models"
-	"go-passport-issuer/passport"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -35,6 +34,8 @@ type ServerState struct {
 	tokenStorage  TokenStorage
 	jwtCreator    JwtCreator
 	cscaCertPool  *cms.CombinedCertPool
+	validator     PassportValidator
+	converter     IssuanceRequestConverter
 }
 
 type SpaHandler struct {
@@ -163,20 +164,20 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	}
 
 	var doc document.Document
-	doc, err = passport.PassiveAuthentication(request, state.cscaCertPool)
+	doc, err = state.validator.Passive(request, state.cscaCertPool)
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to validate request", err)
+		respondWithErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request: passive validation failed: %v", err), "failed to validate request", err)
 		return
 	}
 
-	activeAuth, err := passport.ActiveAuthentication(request, doc)
+	activeAuth, err := state.validator.Active(request, doc)
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to validate active authentication", err)
+		respondWithErr(w, http.StatusBadRequest, fmt.Sprintf("invalid request: active authentication failed: %v", err), "failed to validate active authentication", err)
 		return
 	}
 
 	var issuanceRequest models.PassportIssuanceRequest
-	issuanceRequest, err = passport.ToPassportIssuanceRequest(doc, activeAuth)
+	issuanceRequest, err = state.converter.ToIssuanceRequest(doc, activeAuth)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
 		return
@@ -196,6 +197,13 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	payload, err := json.Marshal(responseMessage)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to marshal response message", err)
+		return
+	}
+
+	// Remove the sessionID from the cache
+	err = state.tokenStorage.RemoveToken(request.SessionId)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token from storage", err)
 		return
 	}
 
@@ -233,14 +241,14 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 		return
 	}
 
-	// Generate an 8 bit nonce
+	// Generate an 8 byte nonce
 	nonce, err := GenerateNonce(8)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to generate nonce", err)
 		return
 	}
 
-	// Store the nonce in Redis with a 5 minute expiration
+	// Store the nonce in Redis, should be removed when the jwt is handed over to the app
 	err = state.tokenStorage.StoreToken(sessionId, nonce)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to store nonce", err)
