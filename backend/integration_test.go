@@ -293,8 +293,8 @@ func TestActiveAuthFail_BadSig(t *testing.T) {
 	var doc document.Document
 	var err error
 	doc.Mf.Lds1.Dg1, err = document.NewDG1(utils.HexToBytes(dg.DataGroups["DG1"]))
+	require.NoError(t, err)
 	doc.Mf.Lds1.Dg15, err = document.NewDG15(utils.HexToBytes(dg.DataGroups["DG15"]))
-
 	require.NoError(t, err)
 
 	_, err = passportValidatorImpl{}.Active(dg, doc)
@@ -338,8 +338,8 @@ func TestActiveAuthSkip_NoSig(t *testing.T) {
 	var doc document.Document
 	var err error
 	doc.Mf.Lds1.Dg1, err = document.NewDG1(utils.HexToBytes(dg.DataGroups["DG1"]))
+	require.NoError(t, err)
 	doc.Mf.Lds1.Dg15, err = document.NewDG15(utils.HexToBytes(dg.DataGroups["DG15"]))
-
 	require.NoError(t, err)
 
 	isSkipped, err := passportValidatorImpl{}.Active(dg, doc)
@@ -366,17 +366,7 @@ func (fakeValidator) Active(_ models.PassportValidationRequest, _ document.Docum
 	return true, nil
 }
 
-type validatorFuncs struct {
-	PassiveFn func(models.PassportValidationRequest, *cms.CombinedCertPool) (document.Document, error)
-	ActiveFn  func(models.PassportValidationRequest, document.Document) (bool, error)
-}
-
-func (v validatorFuncs) Passive(req models.PassportValidationRequest, pool *cms.CombinedCertPool) (document.Document, error) {
-	return v.PassiveFn(req, pool)
-}
-func (v validatorFuncs) Active(req models.PassportValidationRequest, doc document.Document) (bool, error) {
-	return v.ActiveFn(req, doc)
-}
+// validatorFuncs was unused; remove to satisfy linter.
 
 type fakeConverter struct{}
 

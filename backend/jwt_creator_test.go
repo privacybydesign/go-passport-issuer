@@ -1,17 +1,26 @@
 package main
 
 import (
+	"encoding/base64"
 	"go-passport-issuer/models"
+	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestCreatingJwt(t *testing.T) {
 
-	var jc, _ = NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport")
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport")
+	require.NoError(t, err)
+
+	b, err := os.ReadFile("./test-data/testpasfoto.jpg")
+	require.NoError(t, err)
+	photoBase64 := base64.StdEncoding.EncodeToString(b)
 
 	var testPassportIssuanceRequest = models.PassportIssuanceRequest{
-		Photo:                "./test-data/testpasfoto.jpg",
+		Photo:                photoBase64,
 		DocumentNumber:       "X1234567",
 		DocumentType:         "Passport",
 		FirstName:            "Alice",
