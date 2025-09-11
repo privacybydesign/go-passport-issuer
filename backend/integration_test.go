@@ -14,6 +14,7 @@ import (
 
 	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/document"
+	"github.com/gmrtd/gmrtd/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -361,7 +362,6 @@ func TestActiveAuthFail_BadSig(t *testing.T) {
 			"DG1":  readBinToHex(t, "test-data/EF_DG1.bin"),
 			"DG15": readBinToHex(t, "test-data/EF_DG15.bin"),
 		},
-		EFSOD:               "00",
 		ActiveAuthSignature: "00",
 	}
 
@@ -376,6 +376,50 @@ func TestActiveAuthFail_BadSig(t *testing.T) {
 	handleIssuePassport(testState, rr, req)
 	require.Contains(t, fmt.Sprintf("%s", rr.Body), "failed to validate active authentication signature")
 
+}
+
+func TestActiveAuthSkip_NoDG15(t *testing.T) {
+
+	var dg = models.PassportValidationRequest{
+		SessionId: testSessionID,
+		Nonce:     testNonce,
+		DataGroups: map[string]string{
+			"DG1": readBinToHex(t, "test-data/EF_DG1.bin"),
+		},
+		EFSOD:               readBinToHex(t, "test-data/EF_SOD.bin"),
+		ActiveAuthSignature: "00",
+	}
+	var doc document.Document
+	var err error
+	doc.Mf.Lds1.Dg1, err = document.NewDG1(utils.HexToBytes(dg.DataGroups["DG1"]))
+	require.NoError(t, err)
+
+	isSkipped, err := passportValidatorImpl{}.Active(dg, doc)
+	require.NoError(t, err)
+	require.False(t, isSkipped)
+
+}
+
+func TestActiveAuthSkip_NoSig(t *testing.T) {
+	var dg = models.PassportValidationRequest{
+		SessionId: testSessionID,
+		Nonce:     testNonce,
+		DataGroups: map[string]string{
+			"DG1":  readBinToHex(t, "test-data/EF_DG1.bin"),
+			"DG15": readBinToHex(t, "test-data/EF_DG15.bin"),
+		},
+		EFSOD: readBinToHex(t, "test-data/EF_SOD.bin"),
+	}
+	var doc document.Document
+	var err error
+	doc.Mf.Lds1.Dg1, err = document.NewDG1(utils.HexToBytes(dg.DataGroups["DG1"]))
+	doc.Mf.Lds1.Dg15, err = document.NewDG15(utils.HexToBytes(dg.DataGroups["DG15"]))
+
+	require.NoError(t, err)
+
+	isSkipped, err := passportValidatorImpl{}.Active(dg, doc)
+	require.NoError(t, err)
+	require.False(t, isSkipped)
 }
 
 // -----------------------------------------------------------------------------
