@@ -70,7 +70,6 @@ func (s *Server) Stop() error {
 func (h SpaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Join internally call path.Clean to prevent directory traversal
 	path := filepath.Join(h.staticPath, r.URL.Path)
-	log.Info.Println(path)
 	// check whether a file exists or is a directory at the given path
 	fi, err := os.Stat(path)
 	if os.IsNotExist(err) || fi.IsDir() {
@@ -144,6 +143,8 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		respondWithErr(w, http.StatusMethodNotAllowed, "method not allowed", "invalid method", nil)
 		return
 	}
+
+	log.Info.Printf("Received request to verify and issue passport")
 
 	var request models.PassportValidationRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -233,6 +234,8 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 		respondWithErr(w, http.StatusMethodNotAllowed, "method not allowed", "invalid method", nil)
 		return
 	}
+
+	log.Info.Printf("Received request to start passport validation")
 
 	// Generate a session ID
 	sessionId := GenerateSessionId()

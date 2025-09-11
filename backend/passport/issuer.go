@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	log "go-passport-issuer/logging"
+
 	"github.com/gmrtd/gmrtd/activeauth"
 	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/document"
@@ -24,6 +26,8 @@ var euCountries = []string{
 }
 
 func PassiveAuthentication(data models.PassportValidationRequest, certPool *cms.CombinedCertPool) (doc document.Document, err error) {
+	log.Info.Printf("Starting passive authentication")
+
 	if len(data.DataGroups) == 0 {
 		return document.Document{}, fmt.Errorf("no data groups found in passport data")
 	}
@@ -31,6 +35,8 @@ func PassiveAuthentication(data models.PassportValidationRequest, certPool *cms.
 	if data.EFSOD == "" {
 		return document.Document{}, fmt.Errorf("EF_SOD is missing in passport data")
 	}
+
+	log.Info.Printf("Constructing document from data groups")
 
 	var sodFileBytes = utils.HexToBytes(data.EFSOD)
 	doc.Mf.Lds1.Sod, err = document.NewSOD(sodFileBytes)
@@ -68,6 +74,8 @@ func PassiveAuthentication(data models.PassportValidationRequest, certPool *cms.
 		}
 	}
 
+	log.Info.Printf("Starting passive authentication for issuing state: %s", doc.Mf.Lds1.Dg1.Mrz.IssuingState)
+
 	err = passiveauth.PassiveAuth(&doc, certPool)
 	if err != nil {
 		return document.Document{}, fmt.Errorf("unexpected error: %s", err)
@@ -80,6 +88,8 @@ func ActiveAuthentication(data models.PassportValidationRequest, doc document.Do
 	if data.Nonce == "" || data.ActiveAuthSignature == "" || doc.Mf.Lds1.Dg15 == nil {
 		return false, nil
 	}
+
+	log.Info.Printf("Starting active authentication signature validation")
 
 	aaSigBytes := utils.HexToBytes(data.ActiveAuthSignature)
 	nonceBytes := utils.HexToBytes(data.Nonce)
@@ -102,17 +112,22 @@ func IsEuCitizen(nationality string) bool {
 }
 
 func ToPassportIssuanceRequest(doc document.Document, activeAuth bool) (request models.PassportIssuanceRequest, err error) {
+	log.Info.Printf("Converting document to passport issuance request")
+
 	var dob, doe time.Time
+	log.Info.Printf("Parsing date of birth")
 	dob, err = ParseDateTime(doc.Mf.Lds1.Dg1.Mrz.DateOfBirth)
 	if err != nil {
 		return models.PassportIssuanceRequest{}, fmt.Errorf("failed to parse date of birth: %w", err)
 	}
 
+	log.Info.Printf("Parsing date of expiry")
 	doe, err = ParseDateTime(doc.Mf.Lds1.Dg1.Mrz.DateOfExpiry)
 	if err != nil {
 		return models.PassportIssuanceRequest{}, fmt.Errorf("failed to parse date of expiry: %w", err)
 	}
 
+	log.Info.Printf("Converting EF DG2 images to PNG")
 	efDG2, err := images.NewEfDG2FromBytes(doc.Mf.Lds1.Dg2.RawData)
 	if err != nil {
 		return models.PassportIssuanceRequest{}, fmt.Errorf("failed to create EfDG2: %w", err)
