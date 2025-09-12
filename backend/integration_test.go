@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
+	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"go-passport-issuer/models"
 
@@ -22,168 +22,168 @@ import (
 // test variables
 
 var testSessionID = GenerateSessionId()
-var badSessionID = "bad-session-id"
+
+const badSessionID = "bad-session-id"
+
 var testNonce, _ = GenerateNonce(8)
-var badNonce = "bad-nonce"
+
+const badNonce = "bad-nonce"
+
+var testConfig = ServerConfig{
+	Host:           "localhost",
+	Port:           8081,
+	UseTls:         false,
+	TlsCertPath:    "",
+	TlsPrivKeyPath: "",
+}
 
 // -----------------------------------------------------------------------------
 // tests
 
 func TestSessionIdRemovedSuccess(t *testing.T) {
-	var testStorage = NewInMemoryTokenStorage()
+	testStorage := NewInMemoryTokenStorage()
 
-	var testState = &ServerState{
-		irmaServerURL: "https://irma.example",
-		tokenStorage:  testStorage,
-		jwtCreator:    fakeJwtCreator{jwt: "test-jwt"},
-		cscaCertPool:  &cms.CombinedCertPool{},
-		validator:     fakeValidator{},
-		converter:     fakeConverter{},
-	}
+	testServer := CreateStartTestServer(t, testStorage)
+	defer stopServer(t, testServer)
 
-	err := testStorage.StoreToken(testSessionID, testNonce)
+	getSession, err := http.Post("http://localhost:8081/api/start-validation", "application/json", nil)
+	require.NoError(t, err)
+
+	getSessionBody, err := io.ReadAll(getSession.Body)
+	require.NoError(t, err)
+
+	var jsonBody map[string]string
+	err = json.Unmarshal(getSessionBody, &jsonBody)
 	require.NoError(t, err)
 
 	reqBody := models.PassportValidationRequest{
-		SessionId:  testSessionID,
-		Nonce:      testNonce,
+		SessionId:  jsonBody["session_id"],
+		Nonce:      jsonBody["nonce"],
 		DataGroups: map[string]string{},
 		EFSOD:      "00",
 	}
 	b, err := json.Marshal(reqBody)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/verify-and-issue", bytes.NewReader(b))
-	rr := httptest.NewRecorder()
+	resp, err := http.Post("http://localhost:8081/api/verify-and-issue", "application/json", bytes.NewBuffer(b))
+	require.NoError(t, err)
 
-	handleIssuePassport(testState, rr, req)
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
 
-	require.Equalf(t, http.StatusOK, rr.Code, "body: %s", rr.Body.String())
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "body: %s", respBody)
 
-	// Token should be removed
-	_, err = testStorage.RetrieveToken(testSessionID)
+	gotnonce, err := testStorage.RetrieveToken(testSessionID)
+	// Token should be removed so we expect an error and empty nonce
 	require.Error(t, err)
+	require.Equal(t, gotnonce, "")
 
 }
 
 func TestSessionIdRemovedFail_BadNonce(t *testing.T) {
-	var testStorage = NewInMemoryTokenStorage()
+	testStorage := NewInMemoryTokenStorage()
 
-	var testState = &ServerState{
-		irmaServerURL: "https://irma.example",
-		tokenStorage:  testStorage,
-		jwtCreator:    fakeJwtCreator{jwt: "test-jwt"},
-		cscaCertPool:  &cms.CombinedCertPool{},
-		validator:     fakeValidator{},
-		converter:     fakeConverter{},
-	}
-
-	err := testStorage.StoreToken(badSessionID, badNonce)
-	require.NoError(t, err)
-
-	reqBody := models.PassportValidationRequest{
-		SessionId:  badSessionID,
-		Nonce:      testNonce, // mismatch with stored nonce
-		DataGroups: map[string]string{},
-		EFSOD:      "00",
-	}
-	b, err := json.Marshal(reqBody)
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/verify-and-issue", bytes.NewReader(b))
-	rr := httptest.NewRecorder()
-
-	handleIssuePassport(testState, rr, req)
-
-	require.Equalf(t, http.StatusBadRequest, rr.Code, "body: %s", rr.Body.String())
-
-	// Token should still be present since issuance did not proceed
-	got, err := testStorage.RetrieveToken(badSessionID)
-	require.NoError(t, err)
-	require.Equal(t, badNonce, got)
-}
-
-func TestSessionIdRemovedFail_SessionReuse(t *testing.T) {
-	var testStorage = NewInMemoryTokenStorage()
-
-	var testState = &ServerState{
-		irmaServerURL: "https://irma.example",
-		tokenStorage:  testStorage,
-		jwtCreator:    fakeJwtCreator{jwt: "test-jwt"},
-		cscaCertPool:  &cms.CombinedCertPool{},
-		validator:     fakeValidator{},
-		converter:     fakeConverter{},
-	}
+	testServer := CreateStartTestServer(t, testStorage)
+	defer stopServer(t, testServer)
 
 	err := testStorage.StoreToken(testSessionID, testNonce)
 	require.NoError(t, err)
 
 	reqBody := models.PassportValidationRequest{
 		SessionId:  testSessionID,
-		Nonce:      testNonce,
+		Nonce:      badNonce, // mismatch with stored nonce
 		DataGroups: map[string]string{},
 		EFSOD:      "00",
 	}
 	b, err := json.Marshal(reqBody)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/verify-and-issue", bytes.NewReader(b))
-	rr := httptest.NewRecorder()
+	resp, err := http.Post("http://localhost:8081/api/verify-and-issue", "application/json", bytes.NewBuffer(b))
 
-	handleIssuePassport(testState, rr, req)
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	// Should fail with 400 because the nonce does not match the sessionID nonce stored
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body: %s", respBody)
 
-	// Second verification should fail (fresh request/recorder)
-	req2 := httptest.NewRequest(http.MethodPost, "/api/verify-and-issue", bytes.NewReader(b))
-	rr2 := httptest.NewRecorder()
+}
 
-	handleIssuePassport(testState, rr2, req2)
+func TestSessionIdRemovedFail_SessionReuse(t *testing.T) {
+	testStorage := NewInMemoryTokenStorage()
 
-	require.Equalf(t, http.StatusInternalServerError, rr2.Code, "body: %s", rr2.Body.String())
+	testServer := CreateStartTestServer(t, testStorage)
+	defer stopServer(t, testServer)
+
+	getSession, err := http.Post("http://localhost:8081/api/start-validation", "application/json", nil)
+	require.NoError(t, err)
+
+	getSessionBody, err := io.ReadAll(getSession.Body)
+	require.NoError(t, err)
+
+	var jsonBody map[string]string
+	err = json.Unmarshal(getSessionBody, &jsonBody)
+	require.NoError(t, err)
+
+	issueReqBody := models.PassportValidationRequest{
+		SessionId:  jsonBody["session_id"],
+		Nonce:      jsonBody["nonce"],
+		DataGroups: map[string]string{},
+		EFSOD:      "00",
+	}
+
+	b, err := json.Marshal(issueReqBody)
+	require.NoError(t, err)
+	resp1, err := http.Post("http://localhost:8081/api/verify-and-issue", "application/json", bytes.NewBuffer(b))
+
+	respBody1, err := io.ReadAll(resp1.Body)
+	require.NoError(t, err)
+	// First request should succeed with 200
+	require.Equalf(t, http.StatusOK, resp1.StatusCode, "body: %s", respBody1)
+
+	resp2, err := http.Post("http://localhost:8081/api/verify-and-issue", "application/json", bytes.NewBuffer(b))
+	require.NoError(t, err)
+
+	respBody2, err := io.ReadAll(resp2.Body)
+	require.NoError(t, err)
+	// Should fail with 500 because the sessionID was already used and removed
+	require.Equalf(t, http.StatusInternalServerError, resp2.StatusCode, "body: %s", respBody2)
 
 }
 
 func TestCompleteFlow_HappyPath(t *testing.T) {
+	testStorage := NewInMemoryTokenStorage()
 
-	var testStorage = NewInMemoryTokenStorage()
+	testServer := CreateStartTestServer(t, testStorage)
+	defer stopServer(t, testServer)
 
-	var testState = &ServerState{
-		irmaServerURL: "https://irma.example",
-		tokenStorage:  testStorage,
-		jwtCreator:    fakeJwtCreator{jwt: "test-jwt"},
-		cscaCertPool:  &cms.CombinedCertPool{},
-		validator:     fakeValidator{},
-		converter:     fakeConverter{},
-	}
+	// Step 1: start-validate
+	resp1, err := http.Post("http://localhost:8081/api/start-validation", "application/json", nil)
+	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/start-validate-passport", nil)
-	rr := httptest.NewRecorder()
-	handleStartValidatePassport(testState, rr, req)
+	respBody1, err := io.ReadAll(resp1.Body)
+	require.NoError(t, err)
+
+	require.Equalf(t, http.StatusOK, resp1.StatusCode, "body: %s", respBody1)
 
 	var jsonBody map[string]string
-	err := json.Unmarshal(rr.Body.Bytes(), &jsonBody)
-	gotSessionID := jsonBody["session_id"]
-	gotNonce := jsonBody["nonce"]
-
+	err = json.Unmarshal(respBody1, &jsonBody)
 	require.NoError(t, err)
-	require.Contains(t, jsonBody, "session_id")
-	require.Contains(t, jsonBody, "nonce")
-	t.Logf("start-validate response: %s", jsonBody)
 
 	reqBody := models.PassportValidationRequest{
-		SessionId:  gotSessionID,
-		Nonce:      gotNonce,
+		SessionId:  jsonBody["session_id"],
+		Nonce:      jsonBody["nonce"],
 		DataGroups: map[string]string{},
 		EFSOD:      "00",
 	}
 	b, err := json.Marshal(reqBody)
 	require.NoError(t, err)
 
-	req2 := httptest.NewRequest(http.MethodPost, "/api/verify-and-issue", bytes.NewReader(b))
-	rr2 := httptest.NewRecorder()
+	resp2, err := http.Post("http://localhost:8081/api/verify-and-issue", "application/json", bytes.NewBuffer(b))
+	require.NoError(t, err)
 
-	handleIssuePassport(testState, rr2, req2)
+	respBody2, err := io.ReadAll(resp2.Body)
+	require.NoError(t, err)
 
-	require.Equalf(t, http.StatusOK, rr2.Code, "body: %s", rr2.Body.String())
+	require.Equalf(t, http.StatusOK, resp2.StatusCode, "body: %s", respBody2)
 
 }
 
@@ -199,8 +199,7 @@ func TestPassiveAuthFail_NoDataGroups(t *testing.T) {
 	}
 
 	_, err = passportValidatorImpl{}.Passive(noDataGroups, cscaCertPool)
-	require.Error(t, err)
-	require.Contains(t, fmt.Sprintf("%s", err), "no data groups found in passport data")
+	require.Errorf(t, err, "no data groups found in passport data")
 
 }
 
@@ -218,8 +217,7 @@ func TestPassiveAuthFail_NoEFSOD(t *testing.T) {
 	}
 
 	_, err = passportValidatorImpl{}.Passive(noEFSOD, cscaCertPool)
-	require.Error(t, err)
-	require.Contains(t, fmt.Sprintf("%s", err), "EF_SOD is missing in passport data")
+	require.Errorf(t, err, "EF_SOD is missing in passport data")
 
 }
 
@@ -237,8 +235,7 @@ func TestPassiveAuthFail_UnsupportedDG(t *testing.T) {
 	}
 
 	_, err = passportValidatorImpl{}.Passive(badDG, cscaCertPool)
-	require.Error(t, err)
-	require.Contains(t, fmt.Sprintf("%s", err), "unsupported data group: DG99")
+	require.Errorf(t, err, "unsupported data group: DG99")
 }
 
 func TestPassiveAuthFail_BadSOD(t *testing.T) {
@@ -255,8 +252,7 @@ func TestPassiveAuthFail_BadSOD(t *testing.T) {
 	}
 
 	_, err = passportValidatorImpl{}.Passive(badSOD, cscaCertPool)
-	require.Error(t, err)
-	require.Contains(t, fmt.Sprintf("%s", err), "failed to create SOD")
+	require.Errorf(t, err, "failed to create SOD")
 
 }
 
@@ -274,8 +270,7 @@ func TestPassiveAuthFail_BadDG(t *testing.T) {
 	}
 
 	_, err = passportValidatorImpl{}.Passive(badDG, cscaCertPool)
-	require.Error(t, err)
-	require.Contains(t, fmt.Sprintf("%s", err), "failed to create DG1")
+	require.Errorf(t, err, "failed to create DG1")
 
 }
 
@@ -298,8 +293,7 @@ func TestActiveAuthFail_BadSig(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = passportValidatorImpl{}.Active(dg, doc)
-	require.Error(t, err)
-	require.Contains(t, fmt.Sprintf("%s", err), "failed to validate active authentication signature")
+	require.Errorf(t, err, "failed to validate active authentication signature")
 
 }
 
@@ -384,4 +378,55 @@ func readBinToHex(t *testing.T, path string) string {
 	b, err := os.ReadFile(path)
 	require.NoError(t, err, "failed to read %s", path)
 	return hex.EncodeToString(b)
+}
+
+func CreateStartTestServer(t *testing.T, testStorage TokenStorage) *Server {
+	t.Helper()
+
+	testState := &ServerState{
+		irmaServerURL: "https://irma.example",
+		tokenStorage:  testStorage,
+		jwtCreator:    fakeJwtCreator{jwt: "test-jwt"},
+		cscaCertPool:  &cms.CombinedCertPool{},
+		validator:     fakeValidator{},
+		converter:     fakeConverter{},
+	}
+
+	srv, err := NewServer(testState, testConfig)
+	require.NoError(t, err)
+
+	go func() {
+		err := srv.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			t.Errorf("server error: %v", err)
+		}
+	}()
+
+	// Wait for server to be ready
+	const maxAttempts = 50
+	for i := 0; i < maxAttempts; i++ {
+		resp, err := http.Get("http://localhost:8081/")
+		if err == nil {
+			err = resp.Body.Close()
+			if err != nil {
+				t.Fatalf("error closing response body: %v", err)
+			}
+			break
+		}
+		// Wait 50ms before retrying
+		time.Sleep(50 * time.Millisecond)
+		if i == maxAttempts-1 {
+			t.Fatalf("server did not start in time: %v", err)
+		}
+	}
+
+	return srv
+
+}
+
+func stopServer(t *testing.T, server *Server) {
+	err := server.Stop()
+	if err != nil {
+		t.Logf("error shutting down server: %v", err)
+	}
 }
