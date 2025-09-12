@@ -7,12 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color/palette"
+	"image/draw"
 	"image/jpeg"
 	"image/png"
+	"math"
 	"os"
 	"sort"
 
 	gtlv "github.com/gmrtd/gmrtd/tlv"
+	xdraw "golang.org/x/image/draw"
 	"pault.ag/go/cbeff/jpeg2000"
 )
 
@@ -434,7 +438,7 @@ func (e *EfDG2) ConvertToPNG() ([]string, error) {
 		}
 		count++
 
-		if base64Str, err := PNGBase64(img); err != nil {
+		if base64Str, err := PNGBase64Options(img, 400, 400, 256, png.BestCompression); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to encode image %d (%s): %v\n", i+1, typ, err)
 		} else {
 			fmt.Printf("Image %d (%s) encoded successfully. \n", i+1, typ)
@@ -513,12 +517,73 @@ func decodeToImage(b []byte, ext string) (image.Image, string, error) {
 	}
 }
 
-func PNGBase64(img image.Image) (string, error) {
+// PNGBase64Options encodes img to base64 PNG with optional resize + quantization.
+//
+// maxW/maxH: if >0, the image is downscaled to fit within this box (keeping aspect).
+// colors:    if >0, convert to a paletted image (≤256 colors is typical for PNG).
+//
+//	With stdlib we pick a close palette; for finer control use a median-cut
+//	quantizer lib later (e.g., soniakeys/quant/median).
+//
+// level:     png.DefaultCompression, png.BestCompression, png.BestSpeed, etc.
+func PNGBase64Options(img image.Image, maxW, maxH, colors int, level png.CompressionLevel) (string, error) {
+	// 1) Resize if requested
+	if maxW > 0 || maxH > 0 {
+		img = resizeToFit(img, maxW, maxH)
+	}
+
+	// 2) Optional quantization (palettize)
+	var out = img
+	if colors > 0 {
+		// Choose a palette: stdlib gives us WebSafe (~216 colors) or Plan9 (256 colors).
+		// For many ID/facial images Plan9 works well and keeps files tiny.
+		pal := palette.Plan9
+		if colors <= 216 {
+			pal = palette.WebSafe
+		}
+		dst := image.NewPaletted(img.Bounds(), pal)
+		// Floyd–Steinberg dithering in stdlib:
+		draw.FloydSteinberg.Draw(dst, dst.Bounds(), img, image.Point{})
+		out = dst
+	}
+
+	// 3) Encode with chosen compression
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
+	enc := png.Encoder{CompressionLevel: level}
+	if err := enc.Encode(&buf, out); err != nil {
 		return "", err
 	}
 	return base64.StdEncoding.EncodeToString(buf.Bytes()), nil
+}
+
+// resizeToFit scales img to fit within maxW×maxH (keeping aspect). If either is 0, the other bounds the size.
+func resizeToFit(src image.Image, maxW, maxH int) image.Image {
+	bw := src.Bounds().Dx()
+	bh := src.Bounds().Dy()
+
+	if maxW <= 0 && maxH <= 0 {
+		return src
+	}
+	if maxW <= 0 {
+		scale := float64(maxH) / float64(bh)
+		maxW = int(math.Round(float64(bw) * scale))
+	}
+	if maxH <= 0 {
+		scale := float64(maxW) / float64(bw)
+		maxH = int(math.Round(float64(bh) * scale))
+	}
+
+	scale := math.Min(float64(maxW)/float64(bw), float64(maxH)/float64(bh))
+	if scale >= 1.0 {
+		return src // already small enough
+	}
+	w := int(math.Max(1, math.Round(float64(bw)*scale)))
+	h := int(math.Max(1, math.Round(float64(bh)*scale)))
+
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	// CatmullRom = high quality, good for photos/faces.
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, src.Bounds(), xdraw.Over, nil)
+	return dst
 }
 
 // --- helpers -----------------------------------------------------------------

@@ -36,7 +36,7 @@ func TestDecoding(t *testing.T) {
 
 	var image = images[0]
 	var base64Len = len(image)
-	if base64Len != 365896 {
-		t.Errorf("Base64 string is not 365896 characters long")
+	if base64Len != 53172 {
+		t.Errorf("Base64 string is not 365896 characters long, got %d", base64Len)
 	}
 }
