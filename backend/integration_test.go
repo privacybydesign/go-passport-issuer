@@ -23,8 +23,6 @@ import (
 
 var testSessionID = GenerateSessionId()
 
-const badSessionID = "bad-session-id"
-
 var testNonce, _ = GenerateNonce(8)
 
 const badNonce = "bad-nonce"
@@ -99,6 +97,7 @@ func TestSessionIdRemovedFail_BadNonce(t *testing.T) {
 	require.NoError(t, err)
 
 	resp, err := http.Post("http://localhost:8081/api/verify-and-issue", "application/json", bytes.NewBuffer(b))
+	require.NoError(t, err)
 
 	respBody, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
@@ -133,6 +132,7 @@ func TestSessionIdRemovedFail_SessionReuse(t *testing.T) {
 	b, err := json.Marshal(issueReqBody)
 	require.NoError(t, err)
 	resp1, err := http.Post("http://localhost:8081/api/verify-and-issue", "application/json", bytes.NewBuffer(b))
+	require.NoError(t, err)
 
 	respBody1, err := io.ReadAll(resp1.Body)
 	require.NoError(t, err)
