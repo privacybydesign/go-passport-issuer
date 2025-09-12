@@ -65,6 +65,8 @@ func main() {
 		jwtCreator:    jwtCreator,
 		tokenStorage:  tokenStorage,
 		cscaCertPool:  cscaCertPool,
+		validator:     passportValidatorImpl{},
+		converter:     IssuanceRequestConverterImpl{},
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)
