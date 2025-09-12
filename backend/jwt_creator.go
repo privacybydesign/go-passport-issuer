@@ -4,6 +4,7 @@ import (
 	"crypto/rsa"
 	"go-passport-issuer/models"
 	"os"
+	"time"
 
 	"github.com/golang-jwt/jwt/v4"
 	irma "github.com/privacybydesign/irmago"
@@ -43,6 +44,8 @@ type DefaultJwtCreator struct {
 }
 
 func (jc *DefaultJwtCreator) CreateJwt(passport models.PassportIssuanceRequest) (string, error) {
+	validity := irma.Timestamp(time.Unix(time.Now().AddDate(1, 0, 0).Unix(), 0)) // 1 year from now
+
 	issuanceRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier(jc.credential),
@@ -67,6 +70,7 @@ func (jc *DefaultJwtCreator) CreateJwt(passport models.PassportIssuanceRequest) 
 				"activeAuthentication": passport.ActiveAuthentication,
 			},
 			SdJwtBatchSize: irma.DefaultSdJwtIssueAmount,
+			Validity:       &validity,
 		},
 	})
 
