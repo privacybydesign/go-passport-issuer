@@ -533,7 +533,7 @@ func PNGBase64Options(img image.Image, maxW, maxH, colors int, level png.Compres
 	}
 
 	// 2) Optional quantization (palettize)
-	var out image.Image = img
+	var out = img
 	if colors > 0 {
 		// Choose a palette: stdlib gives us WebSafe (~216 colors) or Plan9 (256 colors).
 		// For many ID/facial images Plan9 works well and keeps files tiny.
