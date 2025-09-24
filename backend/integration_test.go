@@ -54,14 +54,34 @@ func TestSessionIdRemovedSuccess(t *testing.T) {
 	err = json.Unmarshal(getSessionBody, &jsonBody)
 	require.NoError(t, err)
 
+	sessionID := jsonBody["session_id"]
+
 	reqBody := models.PassportValidationRequest{
-		SessionId:  jsonBody["session_id"],
+		SessionId:  sessionID,
 		Nonce:      jsonBody["nonce"],
 		DataGroups: map[string]string{},
 		EFSOD:      "00",
 	}
 	b, err := json.Marshal(reqBody)
 	require.NoError(t, err)
+
+	verifyResp, err := http.Post("http://localhost:8081/api/verify-passport", "application/json", bytes.NewBuffer(b))
+	require.NoError(t, err)
+
+	verifyRespBody, err := io.ReadAll(verifyResp.Body)
+	require.NoError(t, err)
+
+	require.Equalf(t, http.StatusOK, verifyResp.StatusCode, "body: %s", verifyRespBody)
+
+	var verifyJSON map[string]any
+	err = json.Unmarshal(verifyRespBody, &verifyJSON)
+	require.NoError(t, err)
+	require.Equal(t, true, verifyJSON["verified"])
+	require.Equal(t, true, verifyJSON["active_authentication"])
+
+	storedNonce, err := testStorage.RetrieveToken(sessionID)
+	require.NoError(t, err)
+	require.Equal(t, jsonBody["nonce"], storedNonce)
 
 	resp, err := http.Post("http://localhost:8081/api/verify-and-issue", "application/json", bytes.NewBuffer(b))
 	require.NoError(t, err)
@@ -71,7 +91,7 @@ func TestSessionIdRemovedSuccess(t *testing.T) {
 
 	require.Equalf(t, http.StatusOK, resp.StatusCode, "body: %s", respBody)
 
-	gotnonce, err := testStorage.RetrieveToken(testSessionID)
+	gotnonce, err := testStorage.RetrieveToken(sessionID)
 	// Token should be removed so we expect an error and empty nonce
 	require.Error(t, err)
 	require.Equal(t, gotnonce, "")
@@ -104,6 +124,32 @@ func TestSessionIdRemovedFail_BadNonce(t *testing.T) {
 	// Should fail with 400 because the nonce does not match the sessionID nonce stored
 	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body: %s", respBody)
 
+}
+
+func TestVerifyPassportFail_BadNonce(t *testing.T) {
+	testStorage := NewInMemoryTokenStorage()
+
+	testServer := CreateStartTestServer(t, testStorage)
+	defer stopServer(t, testServer)
+
+	err := testStorage.StoreToken(testSessionID, testNonce)
+	require.NoError(t, err)
+
+	reqBody := models.PassportValidationRequest{
+		SessionId:  testSessionID,
+		Nonce:      badNonce,
+		DataGroups: map[string]string{},
+		EFSOD:      "00",
+	}
+	b, err := json.Marshal(reqBody)
+	require.NoError(t, err)
+
+	resp, err := http.Post("http://localhost:8081/api/verify-passport", "application/json", bytes.NewBuffer(b))
+	require.NoError(t, err)
+
+	respBody, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body: %s", respBody)
 }
 
 func TestSessionIdRemovedFail_SessionReuse(t *testing.T) {
