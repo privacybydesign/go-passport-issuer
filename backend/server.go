@@ -266,7 +266,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	}
 
 	var issuanceRequest models.PassportIssuanceRequest
-	issuanceRequest, err = state.converter.ToIssuanceRequest(result.document, result.activeAuth)
+	issuanceRequest, err := state.converter.ToIssuanceRequest(result.document, result.activeAuth)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
 		return
