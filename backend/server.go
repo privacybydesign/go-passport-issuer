@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
-	_ "embed"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -20,6 +20,21 @@ import (
 )
 
 const ErrorInternal = "error:internal"
+
+const redocHTML = `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Passport Issuer API</title>
+    <script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
+  </head>
+  <body>
+    <redoc spec-url='/openapi.yaml'></redoc>
+  </body>
+</html>`
+
+//go:embed docs/swagger.yaml
+var openAPISpec []byte
 
 type ServerConfig struct {
 	Host           string `json:"host"`
@@ -46,6 +61,25 @@ type SpaHandler struct {
 type Server struct {
 	server *http.Server
 	config ServerConfig
+}
+
+type apiHandlers struct {
+	state *ServerState
+}
+
+func serveOpenAPISpec(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	if _, err := w.Write(openAPISpec); err != nil {
+		log.Error.Printf("failed to write OpenAPI response: %v", err)
+	}
+}
+
+func serveDocs(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	if _, err := w.Write([]byte(redocHTML)); err != nil {
+		log.Error.Printf("failed to write docs response: %v", err)
+	}
 }
 
 func (s *Server) ListenAndServe() error {
@@ -92,19 +126,13 @@ func (h SpaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router := mux.NewRouter()
 
-	router.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
-		err := json.NewEncoder(w).Encode(map[string]bool{"ok": true})
-		if err != nil {
-			log.Error.Fatalf("failed to write body to http response: %v", err)
-		}
-	})
+	handlers := &apiHandlers{state: state}
 
-	router.HandleFunc("/api/start-validation", func(w http.ResponseWriter, r *http.Request) {
-		handleStartValidatePassport(state, w, r)
-	})
-	router.HandleFunc("/api/verify-and-issue", func(w http.ResponseWriter, r *http.Request) {
-		handleIssuePassport(state, w, r)
-	})
+	router.HandleFunc("/api/health", handlers.Health).Methods(http.MethodGet)
+	router.HandleFunc("/api/start-validation", handlers.StartValidation).Methods(http.MethodPost)
+	router.HandleFunc("/api/verify-and-issue", handlers.VerifyAndIssue).Methods(http.MethodPost)
+	router.HandleFunc("/openapi.yaml", serveOpenAPISpec).Methods(http.MethodGet)
+	router.HandleFunc("/docs", serveDocs).Methods(http.MethodGet)
 	router.HandleFunc("/.well-known/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/.well-known/assetlinks.json", HandleAssetLinksRequest).Methods(http.MethodGet)
@@ -127,12 +155,37 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	}, nil
 }
 
+// Health reports whether the API is ready to receive requests.
+// @Summary Health check
+// @Tags Health
+// @Produce json
+// @Success 200 {object} map[string]bool
+// @Router /api/health [get]
+func (h *apiHandlers) Health(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]bool{"ok": true}); err != nil {
+		log.Error.Fatalf("failed to write body to http response: %v", err)
+	}
+}
+
 type PassportIssuanceResponse struct {
 	Jwt           string `json:"jwt"`
 	IrmaServerURL string `json:"irma_server_url"`
 }
 
-func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
+// VerifyAndIssue validates the supplied eMRTD payload and returns an issuance request.
+// @Summary Verify and issue passport credential
+// @Description Validates the passport data and returns an IRMA issuance request once successful.
+// @Tags Passport
+// @Accept json
+// @Produce json
+// @Param request body models.PassportValidationRequest true "Passport validation payload"
+// @Success 200 {object} PassportIssuanceResponse
+// @Failure 400 {string} string
+// @Failure 405 {string} string
+// @Failure 500 {string} string
+// @Router /api/verify-and-issue [post]
+func (h *apiHandlers) VerifyAndIssue(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if err := r.Body.Close(); err != nil {
 			log.Error.Printf("failed to close request body: %v", err)
@@ -153,7 +206,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	}
 
 	// Check if the sessionId and nonce are in the cache
-	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+	nonce, err := h.state.tokenStorage.RetrieveToken(request.SessionId)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to get nonce from storage", err)
 		return
@@ -165,26 +218,26 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	}
 
 	var doc document.Document
-	doc, err = state.validator.Passive(request, state.cscaCertPool)
+	doc, err = h.state.validator.Passive(request, h.state.cscaCertPool)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request: passive validation failed", "failed to validate request", err)
 		return
 	}
 
-	activeAuth, err := state.validator.Active(request, doc)
+	activeAuth, err := h.state.validator.Active(request, doc)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request: active authentication failed", "failed to validate active authentication", err)
 		return
 	}
 
 	var issuanceRequest models.PassportIssuanceRequest
-	issuanceRequest, err = state.converter.ToIssuanceRequest(doc, activeAuth)
+	issuanceRequest, err = h.state.converter.ToIssuanceRequest(doc, activeAuth)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
 		return
 	}
 
-	jwt, err := state.jwtCreator.CreateJwt(issuanceRequest)
+	jwt, err := h.state.jwtCreator.CreateJwt(issuanceRequest)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, "failed to create JWT", "failed to create JWT", err)
 		return
@@ -192,7 +245,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 
 	responseMessage := PassportIssuanceResponse{
 		Jwt:           jwt,
-		IrmaServerURL: state.irmaServerURL,
+		IrmaServerURL: h.state.irmaServerURL,
 	}
 
 	payload, err := json.Marshal(responseMessage)
@@ -202,7 +255,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	}
 
 	// Remove the sessionID from the cache
-	err = state.tokenStorage.RemoveToken(request.SessionId)
+	err = h.state.tokenStorage.RemoveToken(request.SessionId)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token from storage", err)
 		return
@@ -223,7 +276,17 @@ type ValidatePassportResponse struct {
 	Nonce     string `json:"nonce"`
 }
 
-func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
+// StartValidation begins a new passport validation session.
+// @Summary Start passport validation
+// @Description Creates a validation session and returns identifiers required to continue verification.
+// @Tags Passport
+// @Produce json
+// @Success 200 {object} ValidatePassportResponse
+// @Failure 400 {string} string
+// @Failure 405 {string} string
+// @Failure 500 {string} string
+// @Router /api/start-validation [post]
+func (h *apiHandlers) StartValidation(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if err := r.Body.Close(); err != nil {
 			log.Error.Printf("failed to close request body: %v", err)
@@ -252,7 +315,7 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 	}
 
 	// Store the nonce in Redis, should be removed when the jwt is handed over to the app
-	err = state.tokenStorage.StoreToken(sessionId, nonce)
+	err = h.state.tokenStorage.StoreToken(sessionId, nonce)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to store nonce", err)
 		return
