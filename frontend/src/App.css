@@ -306,3 +306,13 @@ select {
 	width: 50%;
 	text-align: left;
 }
+
+.store-link {
+	padding: 8px;
+}
+.store-link img {
+	background-color: black;
+	border-radius: 6px;
+	height: 48px;
+	padding: 8px;
+}
