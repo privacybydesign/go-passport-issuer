@@ -13,7 +13,6 @@ export default function IndexPage() {
         <main>
           <div className="sms-form">
             <div className="store-update">
-              <p>{t('index_store_update_title')}</p>
               <p>{t('index_store_update_description')}</p>
               <div className="store-links">
                 <a href="https://apps.apple.com/nl/app/irma-authenticatie/id1294092994" className="store-link">
