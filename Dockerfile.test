@@ -1,4 +1,5 @@
 FROM golang:1.24-bookworm AS backend-build
+
 WORKDIR /app/backend
 
 # Imagick (IM6) build deps
@@ -7,9 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
 COPY . .
-
 RUN cd backend && go mod download
 
-CMD cd backend && go test ./... -v
+# Run tests with coverage; write to /coverage inside the container.
+# In CI we'll mount a host dir to /coverage so we can upload the file.
+CMD cd backend && \
+    go test ./... -v -covermode=atomic -coverprofile=/coverage/coverage.out
