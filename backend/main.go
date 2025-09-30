@@ -1,3 +1,10 @@
+// @title Passport Issuer API
+// @version 1.0
+// @description API for validating passport chip data and issuing IRMA credentials.
+// @BasePath /api
+// @schemes http https
+//
+//go:generate go run github.com/swaggo/swag/cmd/swag@v1.16.3 init --parseDependency --parseInternal --output docs --dir . --generalInfo main.go
 package main
 
 import (

@@ -29,6 +29,19 @@ To run the backend server, ensure you have Go installed and set up on your machi
 go run . --config ../local-secrets/config.json
 ```
 
+After the backend is running, the API documentation is available at `http://localhost:8080/docs`.
+
+### Updating API documentation
+
+The OpenAPI description served at `/openapi.yaml` is generated from inline annotations.
+Run the following command from the `backend` directory whenever the handlers change:
+
+```bash
+go generate ./...
+```
+
+This command downloads the [`swag`](https://github.com/swaggo/swag) generator (if not already cached) and refreshes the files under `backend/docs/`.
+
 To run the frontend, navigate to the `frontend` directory and execute:
 ```bash
 npm install

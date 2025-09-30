@@ -1,0 +1,99 @@
+openapi: 3.0.3
+info:
+  title: Passport Issuer API
+  description: API for validating passport chip data and issuing IRMA credentials.
+  version: "1.0.0"
+servers:
+  - url: /
+paths:
+  /api/health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+  /api/start-validation:
+    post:
+      tags:
+        - Passport
+      summary: Start passport validation
+      description: Creates a validation session and returns identifiers required to continue verification.
+      responses:
+        '200':
+          description: Session identifier and nonce for validation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidatePassportResponse'
+        '400':
+          description: Invalid request
+        '405':
+          description: Method not allowed
+        '500':
+          description: Internal error
+  /api/verify-and-issue:
+    post:
+      tags:
+        - Passport
+      summary: Verify and issue passport credential
+      description: Validates the passport data and returns an IRMA issuance request once successful.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PassportValidationRequest'
+      responses:
+        '200':
+          description: JWT and IRMA server endpoint
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PassportIssuanceResponse'
+        '400':
+          description: Invalid request
+        '405':
+          description: Method not allowed
+        '500':
+          description: Internal error
+components:
+  schemas:
+    PassportValidationRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+        nonce:
+          type: string
+        data_groups:
+          type: object
+          additionalProperties:
+            type: string
+        ef_sod:
+          type: string
+        aa_signature:
+          type: string
+          description: Active authentication signature
+    PassportIssuanceResponse:
+      type: object
+      properties:
+        jwt:
+          type: string
+        irma_server_url:
+          type: string
+    ValidatePassportResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        nonce:
+          type: string
