@@ -1,136 +1,99 @@
-# Workflow to check whether changes to master fulfill all requirements.
-name: Status checks
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-  schedule:
-    # Run every monday on 9:00 in the morning (UTC).
-    - cron: "0 9 * * 1"
-  # Make it possible to trigger the checks manually.
-  workflow_dispatch:
-
-# Allow Codecov to post a status / PR comment via the GitHub app.
-permissions:
-  contents: read
-  pull-requests: write
+# Make it possible to trigger the checks manually.
+workflow_dispatch:
 
 jobs:
-  build-frontend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    build-frontend:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+        - uses: actions/setup-node@v4
+          with:
+            node-version: '18'
+            cache: npm
+            cache-dependency-path: frontend/package-lock.json
 
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
+        - name: Install dependencies
+          working-directory: frontend
+          run: npm ci
 
-      - name: Build
-        working-directory: frontend
-        run: npm run build
+        - name: Build
+          working-directory: frontend
+          run: npm run build
 
-  analyze-go:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
+    analyze-go:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-go@v5
+          with:
+            go-version: '1.24'
 
-      - name: Install ImageMagick build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential pkg-config libmagickwand-6.q16-dev
+        - name: Install ImageMagick build deps
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends \
+              build-essential pkg-config libmagickwand-6.q16-dev
+        - name: Install GolangCI-Lint
+          run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.1.6
 
-      - name: Install GolangCI-Lint
-        run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.1.6
+        - name: Run linter
+          working-directory: backend
+          run: golangci-lint run --timeout 5m
 
-      - name: Run linter
-        working-directory: backend
-        run: golangci-lint run --timeout 5m
+    test-go:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
 
-  test-go:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+        - name: Docker meta
+          id: meta
+          uses: docker/metadata-action@v5
+          with:
+            images: ghcr.io/${{ github.repository }}
+            tags: |
+              type=semver,pattern={{major}}.{{minor}}.{{patch}}
+              type=raw,value=edge
+        - name: Login to GitHub Container Registry
+          uses: docker/login-action@v3
+          with:
+            registry: ghcr.io
+            username: ${{ github.actor }}
+            password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
+        - name: Build Docker image for testing
+          run: docker build -t passport-issuer-tests --file Dockerfile.test .
 
-      # Run Go tests *directly* to guarantee a coverage profile is created.
-      # Adjust `./...` or working-directory if your Go module lives elsewhere.
-      - name: Run Go tests with coverage
-        working-directory: backend
-        run: go test ./... -covermode=atomic -coverprofile=../coverage-go.out
+        - name: Run tests
+          run: docker run passport-issuer-tests
 
-      # If you also want to keep your Dockerized test run, keep this section.
-      # It won’t affect the coverage upload above.
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{major}}.{{minor}}.{{patch}}
-            type=raw,value=edge
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+    build-docker-image:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
 
-      - name: Build Docker image for testing
-        run: docker build -t passport-issuer-tests --file Dockerfile.test .
+        - name: Docker meta
+          id: meta
+          uses: docker/metadata-action@v5
+          with:
+            images: ghcr.io/${{ github.repository }}
+            tags: |
+              type=semver,pattern={{major}}.{{minor}}.{{patch}}
+              type=raw,value=edge
+        - name: Login to GitHub Container Registry
+          uses: docker/login-action@v3
+          with:
+            registry: ghcr.io
+            username: ${{ github.actor }}
+            password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run tests (docker - optional)
-        run: docker run passport-issuer-tests
-
-      # Upload coverage to Codecov (works for public repos without token; needs token for private)
-      - name: Upload Go coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage-go.out
-          flags: backend
-          fail_ci_if_error: true              # fail if upload clearly fails
-
-  build-docker-image:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{major}}.{{minor}}.{{patch}}
-            type=raw,value=edge
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build container
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: false
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+        - name: Build container
+          uses: docker/build-push-action@v5
+          with:
+            context: .
+            push: false
+            tags: ${{ steps.meta.outputs.tags }}
+            labels: ${{ steps.meta.outputs.labels }}

@@ -4,11 +4,10 @@ import { useNavigate } from "react-router-dom";
 import { useAppContext } from '../AppContext';
 
 export default function VCMRTDPage() {
-  const { t, i18n } = useTranslation();
-  const { session, setSession} = useAppContext();
+  const { t } = useTranslation();
+  const { session, setSession } = useAppContext();
   const [showError, setShowError] = useState(false);
-  const navigate = useNavigate();
-  
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -33,7 +32,7 @@ export default function VCMRTDPage() {
       // Assuming the response contains a sessionId and nonce
       setSession({ sessionId: data.session_id, nonce: data.nonce });
       // Navigate to other web site
-      window.location.href = `/start-app?nonce=${data.nonce}&sessionId=${data.session_id}`;
+      globalThis.location.href = `/start-app?nonce=${data.nonce}&sessionId=${data.session_id}`;
     } catch (error) {
       console.error('Error during validation:', error);
       setShowError(true);
@@ -42,32 +41,30 @@ export default function VCMRTDPage() {
   };
 
   return (
-    <>
-      <form id="container" onSubmit={submit}>
-        <header>
-          <h1>{t('index_header')}</h1>
-        </header>
-        <main>
-          <div className="sms-form">
-            <p>{t('index_explanation')}</p>
-            <p>
-              {showError && <div className="warning">{t('index_error')}</div>}
-              { session && 
-                <div>
-                  <p>{t('index_session_id')}: {session.sessionId}</p>
-                  <p>{t('index_nonce')}: {session.nonce}</p>
-                </div>
-                }
-            </p>
-          </div>
-        </main>
-        <footer>
-          <div className="actions">
-            <div></div>
-            <button id="submit-button" type="submit">{t('index_start')}</button>
-          </div>
-        </footer>
-      </form>
-    </>
+    <form id="container" onSubmit={submit}>
+      <header>
+        <h1>{t('index_header')}</h1>
+      </header>
+      <main>
+        <div className="sms-form">
+          <p>{t('index_explanation')}</p>
+          <p>
+            {showError && <div className="warning">{t('index_error')}</div>}
+            {session &&
+              <div>
+                <p>{t('index_session_id')}: {session.sessionId}</p>
+                <p>{t('index_nonce')}: {session.nonce}</p>
+              </div>
+            }
+          </p>
+        </div>
+      </main>
+      <footer>
+        <div className="actions">
+          <div></div>
+          <button id="submit-button" type="submit">{t('index_start')}</button>
+        </div>
+      </footer>
+    </form>
   );
 }
