@@ -8,6 +8,7 @@ import CallbackPage from './pages/Callback';
 import StartAppPage from './pages/StartApp';
 
 import './i18n';
+import VCMRTDPage from './pages/Vcmrtd';
 
 // Wrapper that sets the language based on the URL
 function LanguageRouter() {
@@ -33,6 +34,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Navigate to="/nl" replace />} />
+          <Route path="/vcmrtd" element={<VCMRTDPage />} />
           <Route path="/start-app" element={<StartAppPage />} />
           <Route path="/callback" element={<CallbackPage />} />
           <Route path=":lang/*" element={<LanguageRouter />} />

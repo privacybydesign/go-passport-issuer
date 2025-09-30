@@ -15,6 +15,7 @@ i18n
                     index_title: "Add passport",
                     index_header: "Add passport",
                     index_explanation: "Add your passport details in your Yivi app.",
+                    index_store_update_description: "Passport readout was recently added to the Yivi app. Update via one of the stores below to start using it.",
                     index_start: "Add passport",
                     index_error: "Something went wrong please try again.",
                     start_app_title: "Download VC MRTD App",
@@ -26,6 +27,7 @@ i18n
                     index_title: "Paspoort toevoegen",
                     index_header: "Paspoort toevoegen",
                     index_explanation: "Zet je paspoortgegevens in je Yivi-app.",
+                    index_store_update_description: "Paspoort uitlezen is onlangs toegevoegd aan de Yivi-app. Werk de app bij via een van de onderstaande winkels om het te gebruiken.",
                     index_start: "Paspoort toevoegen",
                     index_error: "Er is iets misgegaan, probeer het opnieuw.",
                     start_app_title: "Download VC MRTD App",
@@ -41,4 +43,4 @@ i18n
         }
     });
 
-export default i18n;
+export { i18n };

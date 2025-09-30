@@ -44,10 +44,9 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y --no-install-recommends \
               build-essential pkg-config libmagickwand-6.q16-dev
-
         - name: Install GolangCI-Lint
           run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.1.6
-  
+
         - name: Run linter
           working-directory: backend
           run: golangci-lint run --timeout 5m
@@ -77,9 +76,26 @@ jobs:
         - name: Build Docker image for testing
           run: docker build -t passport-issuer-tests --file Dockerfile.test .
 
-        - name: Run tests
-          run: docker run passport-issuer-tests
-        
+        - name: Create coverage directory
+          run: mkdir -p coverage
+
+        - name: Run tests (emit coverage.out)
+          # Mount ./coverage from the runner into /coverage in the container
+          run: |
+            docker run --rm \
+              -v "${{ github.workspace }}/coverage:/coverage" \
+              passport-issuer-tests
+
+        - name: Upload coverage to Codecov
+          uses: codecov/codecov-action@v4
+          with:
+            files: coverage/coverage.out
+            flags: backend
+            fail_ci_if_error: true
+          env:
+            # Required for private repos. Not needed if your repo is public and tokenless upload is enabled.
+            CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
 
     build-docker-image:
       runs-on: ubuntu-latest
@@ -95,7 +111,6 @@ jobs:
             tags: |
               type=semver,pattern={{major}}.{{minor}}.{{patch}}
               type=raw,value=edge
-
         - name: Login to GitHub Container Registry
           uses: docker/login-action@v3
           with:
