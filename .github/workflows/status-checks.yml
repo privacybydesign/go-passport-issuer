@@ -1,5 +1,15 @@
-# Make it possible to trigger the checks manually.
-workflow_dispatch:
+# Workflow to check whether changes to master fulfill all requirements.
+name: Status checks
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  schedule:
+    # Run every monday on 9:00 in the morning (UTC).
+    - cron: "0 9 * * 1"
+  # Make it possible to trigger the checks manually.
+  workflow_dispatch:
 
 jobs:
     build-frontend:
