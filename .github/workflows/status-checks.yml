@@ -81,9 +81,10 @@ jobs:
 
         - name: Run tests (emit coverage.out)
           # Mount ./coverage from the runner into /coverage in the container
-          run: docker run --rm \
-                -v "${{ github.workspace }}/coverage:/coverage" \
-                passport-issuer-tests
+          run: |
+            docker run --rm \
+              -v "${{ github.workspace }}/coverage:/coverage" \
+              passport-issuer-tests
 
         - name: Upload coverage to Codecov
           uses: codecov/codecov-action@v4
@@ -91,9 +92,6 @@ jobs:
             files: coverage/coverage.out
             flags: backend
             fail_ci_if_error: true
-          env:
-            # Required for private repos. Not needed if your repo is public and tokenless upload is enabled.
-            CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
 
     build-docker-image:
