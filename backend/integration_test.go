@@ -145,7 +145,7 @@ func TestSessionIdRemovedFail_SessionReuse(t *testing.T) {
 	respBody2, err := io.ReadAll(resp2.Body)
 	require.NoError(t, err)
 	// Should fail with 500 because the sessionID was already used and removed
-	require.Equalf(t, http.StatusInternalServerError, resp2.StatusCode, "body: %s", respBody2)
+	require.Equalf(t, http.StatusBadRequest, resp2.StatusCode, "body: %s", respBody2)
 
 }
 
