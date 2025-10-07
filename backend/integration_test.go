@@ -346,7 +346,7 @@ func TestActiveAuthSkip_NoSig(t *testing.T) {
 
 type fakeJwtCreator struct{ jwt string }
 
-func (f fakeJwtCreator) CreateJwt(_ models.PassportIssuanceRequest) (string, error) {
+func (f fakeJwtCreator) CreateJwt(_ models.PassportData) (string, error) {
 	return f.jwt, nil
 }
 
@@ -364,8 +364,8 @@ func (fakeValidator) Active(_ models.PassportValidationRequest, _ document.Docum
 
 type fakeConverter struct{}
 
-func (fakeConverter) ToIssuanceRequest(_ document.Document, _ bool) (models.PassportIssuanceRequest, error) {
-	return models.PassportIssuanceRequest{DocumentNumber: "X"}, nil
+func (fakeConverter) ToPassportData(_ document.Document, _ bool) (models.PassportData, error) {
+	return models.PassportData{DocumentNumber: "X"}, nil
 }
 
 // -----------------------------------------------------------------------------

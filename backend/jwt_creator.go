@@ -11,7 +11,7 @@ import (
 )
 
 type JwtCreator interface {
-	CreateJwt(passport models.PassportIssuanceRequest) (jwt string, err error)
+	CreateJwt(passport models.PassportData) (jwt string, err error)
 }
 
 func NewIrmaJwtCreator(privateKeyPath string,
@@ -43,7 +43,7 @@ type DefaultJwtCreator struct {
 	credential string
 }
 
-func (jc *DefaultJwtCreator) CreateJwt(passport models.PassportIssuanceRequest) (string, error) {
+func (jc *DefaultJwtCreator) CreateJwt(passport models.PassportData) (string, error) {
 	validity := irma.Timestamp(time.Unix(time.Now().AddDate(1, 0, 0).Unix(), 0)) // 1 year from now
 
 	issuanceRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
