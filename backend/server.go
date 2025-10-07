@@ -35,7 +35,7 @@ type ServerState struct {
 	jwtCreator    JwtCreator
 	cscaCertPool  *cms.CombinedCertPool
 	validator     PassportValidator
-	converter     IssuanceRequestConverter
+	converter     PassportDataConverter
 }
 
 type SpaHandler struct {
@@ -105,6 +105,9 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/api/verify-and-issue", func(w http.ResponseWriter, r *http.Request) {
 		handleIssuePassport(state, w, r)
 	})
+	router.HandleFunc("/api/verify-passport", func(w http.ResponseWriter, r *http.Request) {
+		handleVerifyPassport(state, w, r)
+	})
 	router.HandleFunc("/.well-known/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/.well-known/assetlinks.json", HandleAssetLinksRequest).Methods(http.MethodGet)
@@ -130,6 +133,98 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 type PassportIssuanceResponse struct {
 	Jwt           string `json:"jwt"`
 	IrmaServerURL string `json:"irma_server_url"`
+}
+
+type PassportVerificationResponse struct {
+	AuthenticContent bool `json:"authentic_content"`
+	AuthenticChip    bool `json:"authentic_chip"`
+	IsExpired        bool `json:"is_expired"`
+}
+
+func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			log.Error.Printf("failed to close request body: %v", err)
+		}
+	}()
+
+	if r.Method != http.MethodPost {
+		respondWithErr(w, http.StatusMethodNotAllowed, "method not allowed", "invalid method", nil)
+		return
+	}
+
+	log.Info.Printf("Received request to do verify a passport readout")
+
+	var request models.PassportValidationRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request body", "failed to decode request body", err)
+		return
+	}
+
+	// Check if the sessionId and nonce are in the cache
+	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to get nonce from storage", err)
+		return
+	}
+
+	if nonce == "" || nonce != request.Nonce {
+		respondWithErr(w, http.StatusBadRequest, "invalid session or nonce", "session or nonce is invalid", nil)
+		return
+	}
+
+	var doc document.Document
+	doc, err = state.validator.Passive(request, state.cscaCertPool)
+	if err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request: passive validation failed", "failed to validate request", err)
+		return
+	}
+
+	activeAuth, err := state.validator.Active(request, doc)
+	if err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request: active authentication failed", "failed to validate active authentication", err)
+		return
+	}
+
+	passportData, err := state.converter.ToPassportData(doc, activeAuth) // fails here prob
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
+		return
+	}
+
+	// check expired
+	isExpired := passportData.DateOfExpiry.Before(time.Now())
+
+	// set up the response
+	verificationResponse := PassportVerificationResponse{
+		true,
+		activeAuth,
+		isExpired,
+	}
+
+	responseMessage := verificationResponse
+
+	payload, err := json.Marshal(responseMessage)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to marshal response message", err)
+		return
+	}
+
+	// Remove the sessionID from the cache
+	err = state.tokenStorage.RemoveToken(request.SessionId)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token from storage", err)
+		return
+	}
+
+	// Store the result under one time token and redirect to the web app which will get the result via the token
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	_, err = w.Write(payload)
+	if err != nil {
+		log.Error.Fatalf("failed to write body to http response: %v", err)
+	}
 }
 
 func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
@@ -177,8 +272,8 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var issuanceRequest models.PassportIssuanceRequest
-	issuanceRequest, err = state.converter.ToIssuanceRequest(doc, activeAuth)
+	var issuanceRequest models.PassportData
+	issuanceRequest, err = state.converter.ToPassportData(doc, activeAuth)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
 		return
