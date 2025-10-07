@@ -38,7 +38,7 @@ var testConfig = ServerConfig{
 // -----------------------------------------------------------------------------
 // tests
 
-func TestSessionIdRemovedSuccess(t *testing.T) {
+func TestVerifyAndIssue_Success_RemoveSessionID(t *testing.T) {
 	testStorage := NewInMemoryTokenStorage()
 
 	testServer := CreateStartTestServer(t, testStorage)
@@ -78,7 +78,7 @@ func TestSessionIdRemovedSuccess(t *testing.T) {
 
 }
 
-func TestSessionIdRemovedFail_BadNonce(t *testing.T) {
+func TestVerifyAndIssue_Fail_BadNonce(t *testing.T) {
 	testStorage := NewInMemoryTokenStorage()
 
 	testServer := CreateStartTestServer(t, testStorage)
@@ -106,7 +106,7 @@ func TestSessionIdRemovedFail_BadNonce(t *testing.T) {
 
 }
 
-func TestSessionIdRemovedFail_SessionReuse(t *testing.T) {
+func TestVerifyAndIssue_Fail_SessionReuse(t *testing.T) {
 	testStorage := NewInMemoryTokenStorage()
 
 	testServer := CreateStartTestServer(t, testStorage)
@@ -149,7 +149,7 @@ func TestSessionIdRemovedFail_SessionReuse(t *testing.T) {
 
 }
 
-func TestCompleteFlow_HappyPath(t *testing.T) {
+func TestVerifyAndIssue_Success(t *testing.T) {
 	testStorage := NewInMemoryTokenStorage()
 
 	testServer := CreateStartTestServer(t, testStorage)
@@ -341,6 +341,122 @@ func TestActiveAuthSkip_NoSig(t *testing.T) {
 	require.False(t, isSkipped)
 }
 
+func TestVerifyPassport_Success_RemovesSession(t *testing.T) {
+	testStorage := NewInMemoryTokenStorage()
+
+	testServer := CreateStartTestServer(t, testStorage)
+	defer stopServer(t, testServer)
+
+	// 1) start-validation to obtain session + nonce
+	getSession, err := http.Post("http://localhost:8081/api/start-validation", "application/json", nil)
+	require.NoError(t, err)
+
+	getSessionBody, err := io.ReadAll(getSession.Body)
+	require.NoError(t, err)
+
+	var jsonBody map[string]string
+	err = json.Unmarshal(getSessionBody, &jsonBody)
+	require.NoError(t, err)
+
+	verifyReq := models.PassportValidationRequest{
+		SessionId:  jsonBody["session_id"],
+		Nonce:      jsonBody["nonce"],
+		DataGroups: map[string]string{},
+		EFSOD:      "00",
+	}
+	b, err := json.Marshal(verifyReq)
+	require.NoError(t, err)
+
+	resp, err := http.Post("http://localhost:8081/api/verify-passport", "application/json", bytes.NewBuffer(b))
+	require.NoError(t, err)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	require.Equalf(t, http.StatusOK, resp.StatusCode, "body: %s", body)
+
+	var verifyResp struct {
+		AuthenticContent bool `json:"authentic_content"`
+		AuthenticChip    bool `json:"authentic_chip"`
+		IsExpired        bool `json:"is_expired"`
+	}
+	require.NoError(t, json.Unmarshal(body, &verifyResp))
+
+	gotNonce, err := testStorage.RetrieveToken(jsonBody["session_id"])
+	require.Error(t, err)
+	require.Equal(t, "", gotNonce)
+}
+
+func TestVerifyPassport_Fail_BadNonce(t *testing.T) {
+	testStorage := NewInMemoryTokenStorage()
+
+	testServer := CreateStartTestServer(t, testStorage)
+	defer stopServer(t, testServer)
+
+	// Pre-store session nonce
+	err := testStorage.StoreToken(testSessionID, testNonce)
+	require.NoError(t, err)
+
+	verifyReq := models.PassportValidationRequest{
+		SessionId:  testSessionID,
+		Nonce:      badNonce, // mismatch with stored nonce
+		DataGroups: map[string]string{},
+		EFSOD:      "00",
+	}
+	b, err := json.Marshal(verifyReq)
+	require.NoError(t, err)
+
+	resp, err := http.Post("http://localhost:8081/api/verify-passport", "application/json", bytes.NewBuffer(b))
+	require.NoError(t, err)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	require.Equalf(t, http.StatusBadRequest, resp.StatusCode, "body: %s", body)
+}
+
+func TestVerifyPassport_Fail_SessionReuse(t *testing.T) {
+	testStorage := NewInMemoryTokenStorage()
+
+	testServer := CreateStartTestServer(t, testStorage)
+	defer stopServer(t, testServer)
+
+	getSession, err := http.Post("http://localhost:8081/api/start-validation", "application/json", nil)
+	require.NoError(t, err)
+
+	getSessionBody, err := io.ReadAll(getSession.Body)
+	require.NoError(t, err)
+
+	var jsonBody map[string]string
+	err = json.Unmarshal(getSessionBody, &jsonBody)
+	require.NoError(t, err)
+
+	verifyReq := models.PassportValidationRequest{
+		SessionId:  jsonBody["session_id"],
+		Nonce:      jsonBody["nonce"],
+		DataGroups: map[string]string{},
+		EFSOD:      "00",
+	}
+	b, err := json.Marshal(verifyReq)
+	require.NoError(t, err)
+
+	// First call: success
+	resp1, err := http.Post("http://localhost:8081/api/verify-passport", "application/json", bytes.NewBuffer(b))
+	require.NoError(t, err)
+
+	body1, err := io.ReadAll(resp1.Body)
+	require.NoError(t, err)
+	require.Equalf(t, http.StatusOK, resp1.StatusCode, "body: %s", body1)
+
+	// Second call with same session should fail
+	resp2, err := http.Post("http://localhost:8081/api/verify-passport", "application/json", bytes.NewBuffer(b))
+	require.NoError(t, err)
+
+	body2, err := io.ReadAll(resp2.Body)
+	require.NoError(t, err)
+	require.Equalf(t, http.StatusBadRequest, resp2.StatusCode, "body: %s", body2)
+}
+
 // -----------------------------------------------------------------------------
 // test doubles
 
@@ -430,3 +546,5 @@ func stopServer(t *testing.T, server *Server) {
 		t.Logf("error shutting down server: %v", err)
 	}
 }
+
+// -----------------------------------------------------------------------------
