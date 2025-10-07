@@ -21,7 +21,7 @@ func TestCreatingJwt(t *testing.T) {
 	require.NoError(t, err)
 	photoBase64 := base64.StdEncoding.EncodeToString(b)
 
-	var testPassportIssuanceRequest = models.PassportIssuanceRequest{
+	var testPassportIssuanceRequest = models.PassportData{
 		Photo:                photoBase64,
 		DocumentNumber:       "X1234567",
 		DocumentType:         "Passport",
@@ -61,7 +61,7 @@ func TestDecodeValidateJwt(t *testing.T) {
 	require.NoError(t, err)
 	photoBase64 := base64.StdEncoding.EncodeToString(b)
 
-	req := models.PassportIssuanceRequest{
+	req := models.PassportData{
 		Photo:                photoBase64,
 		DocumentNumber:       "X1234567",
 		DocumentType:         "Passport",

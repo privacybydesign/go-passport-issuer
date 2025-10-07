@@ -111,33 +111,33 @@ func IsEuCitizen(nationality string) bool {
 	return false
 }
 
-func ToPassportIssuanceRequest(doc document.Document, activeAuth bool) (request models.PassportIssuanceRequest, err error) {
+func ToPassportData(doc document.Document, activeAuth bool) (request models.PassportData, err error) {
 	log.Info.Printf("Converting document to passport issuance request")
 
 	var dob, doe time.Time
 	log.Info.Printf("Parsing date of birth")
 	dob, err = ParseDateTime(doc.Mf.Lds1.Dg1.Mrz.DateOfBirth)
 	if err != nil {
-		return models.PassportIssuanceRequest{}, fmt.Errorf("failed to parse date of birth: %w", err)
+		return models.PassportData{}, fmt.Errorf("failed to parse date of birth: %w", err)
 	}
 
 	log.Info.Printf("Parsing date of expiry")
 	doe, err = ParseDateTime(doc.Mf.Lds1.Dg1.Mrz.DateOfExpiry)
 	if err != nil {
-		return models.PassportIssuanceRequest{}, fmt.Errorf("failed to parse date of expiry: %w", err)
+		return models.PassportData{}, fmt.Errorf("failed to parse date of expiry: %w", err)
 	}
 
 	log.Info.Printf("Converting EF DG2 images to PNG")
 	efDG2, err := images.NewEfDG2FromBytes(doc.Mf.Lds1.Dg2.RawData)
 	if err != nil {
-		return models.PassportIssuanceRequest{}, fmt.Errorf("failed to create EfDG2: %w", err)
+		return models.PassportData{}, fmt.Errorf("failed to create EfDG2: %w", err)
 	}
 	pngs, err := efDG2.ConvertToPNG()
 	if err != nil {
-		return models.PassportIssuanceRequest{}, fmt.Errorf("failed to convert EF DG2 images to PNG: %w", err)
+		return models.PassportData{}, fmt.Errorf("failed to convert EF DG2 images to PNG: %w", err)
 	}
 
-	request = models.PassportIssuanceRequest{
+	request = models.PassportData{
 		DocumentNumber:       doc.Mf.Lds1.Dg1.Mrz.DocumentNumber,
 		DocumentType:         doc.Mf.Lds1.Dg1.Mrz.DocumentCode,
 		FirstName:            doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Secondary,

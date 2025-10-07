@@ -15,8 +15,8 @@ type PassportValidator interface {
 	Active(models.PassportValidationRequest, document.Document) (bool, error)
 }
 
-type IssuanceRequestConverter interface {
-	ToIssuanceRequest(document.Document, bool) (models.PassportIssuanceRequest, error)
+type PassportDataConverter interface {
+	ToPassportData(document.Document, bool) (models.PassportData, error)
 }
 
 // Production implementations
@@ -33,6 +33,6 @@ func (passportValidatorImpl) Active(req models.PassportValidationRequest, doc do
 
 type IssuanceRequestConverterImpl struct{}
 
-func (IssuanceRequestConverterImpl) ToIssuanceRequest(doc document.Document, active bool) (models.PassportIssuanceRequest, error) {
-	return passport.ToPassportIssuanceRequest(doc, active)
+func (IssuanceRequestConverterImpl) ToPassportData(doc document.Document, active bool) (models.PassportData, error) {
+	return passport.ToPassportData(doc, active)
 }

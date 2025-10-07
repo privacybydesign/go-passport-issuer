@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-type PassportIssuanceRequest struct {
+type PassportData struct {
 	Photo                string    `json:"photo,omitempty"` // base64 or image URL, optional
 	DocumentNumber       string    `json:"document_number"`
 	DocumentType         string    `json:"document_type"`
