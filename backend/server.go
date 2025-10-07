@@ -20,6 +20,8 @@ import (
 )
 
 const ErrorInternal = "error:internal"
+const ERR_MARSHAL = "failed to marshal response message"
+const ERR_FAILED_BODY_CLOSE = "failed to close request body: %v"
 
 type ServerConfig struct {
 	Host           string `json:"host"`
@@ -144,7 +146,7 @@ type PassportVerificationResponse struct {
 func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if err := r.Body.Close(); err != nil {
-			log.Error.Printf("failed to close request body: %v", err)
+			log.Error.Printf(ERR_FAILED_BODY_CLOSE, err)
 		}
 	}()
 
@@ -155,38 +157,13 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 
 	log.Info.Printf("Received request to do verify a passport readout")
 
-	var request models.PassportValidationRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request body", "failed to decode request body", err)
-		return
-	}
-
-	// Check if the sessionId and nonce are in the cache
-	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to get nonce from storage", err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify passport", err)
 		return
 	}
 
-	if nonce == "" || nonce != request.Nonce {
-		respondWithErr(w, http.StatusBadRequest, "invalid session or nonce", "session or nonce is invalid", nil)
-		return
-	}
-
-	var doc document.Document
-	doc, err = state.validator.Passive(request, state.cscaCertPool)
-	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request: passive validation failed", "failed to validate request", err)
-		return
-	}
-
-	activeAuth, err := state.validator.Active(request, doc)
-	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request: active authentication failed", "failed to validate active authentication", err)
-		return
-	}
-
-	passportData, err := state.converter.ToPassportData(doc, activeAuth) // fails here prob
+	passportData, err := state.converter.ToPassportData(doc, activeAuth)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
 		return
@@ -206,7 +183,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 
 	payload, err := json.Marshal(responseMessage)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to marshal response message", err)
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
 
@@ -218,9 +195,8 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 	}
 
 	// Store the result under one time token and redirect to the web app which will get the result via the token
-
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	_, err = w.Write(payload)
 	if err != nil {
 		log.Error.Fatalf("failed to write body to http response: %v", err)
@@ -230,7 +206,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if err := r.Body.Close(); err != nil {
-			log.Error.Printf("failed to close request body: %v", err)
+			log.Error.Printf(ERR_FAILED_BODY_CLOSE, err)
 		}
 	}()
 
@@ -241,34 +217,9 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 
 	log.Info.Printf("Received request to verify and issue passport")
 
-	var request models.PassportValidationRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request body", "failed to decode request body", err)
-		return
-	}
-
-	// Check if the sessionId and nonce are in the cache
-	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to get nonce from storage", err)
-		return
-	}
-
-	if nonce == "" || nonce != request.Nonce {
-		respondWithErr(w, http.StatusBadRequest, "invalid session or nonce", "session or nonce is invalid", nil)
-		return
-	}
-
-	var doc document.Document
-	doc, err = state.validator.Passive(request, state.cscaCertPool)
-	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request: passive validation failed", "failed to validate request", err)
-		return
-	}
-
-	activeAuth, err := state.validator.Active(request, doc)
-	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request: active authentication failed", "failed to validate active authentication", err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify passport", err)
 		return
 	}
 
@@ -292,7 +243,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 
 	payload, err := json.Marshal(responseMessage)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to marshal response message", err)
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
 
@@ -303,12 +254,42 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	_, err = w.Write(payload)
 	if err != nil {
 		log.Error.Fatalf("failed to write body to http response: %v", err)
 	}
+}
+
+func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.PassportValidationRequest, error) {
+	var request models.PassportValidationRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		return document.Document{}, false, request, fmt.Errorf("decode request body: %w", err)
+	}
+
+	// Check if the sessionId and nonce are in the cache
+	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+	if err != nil {
+		return document.Document{}, false, request, fmt.Errorf("failed to get nonce from storage: %w", err)
+	}
+
+	if nonce == "" || nonce != request.Nonce {
+		return document.Document{}, false, request, fmt.Errorf("invalid session or nonce")
+	}
+
+	var doc document.Document
+	doc, err = state.validator.Passive(request, state.cscaCertPool)
+	if err != nil {
+		return document.Document{}, false, request, fmt.Errorf("passive authentication failed: %w", err)
+	}
+
+	activeAuth, err := state.validator.Active(request, doc)
+	if err != nil {
+		return document.Document{}, false, request, fmt.Errorf("active authentication failed: %w", err)
+	}
+
+	return doc, activeAuth, request, nil
 }
 
 // -----------------------------------------------------------------------------------
@@ -321,7 +302,7 @@ type ValidatePassportResponse struct {
 func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if err := r.Body.Close(); err != nil {
-			log.Error.Printf("failed to close request body: %v", err)
+			log.Error.Printf(ERR_FAILED_BODY_CLOSE, err)
 		}
 	}()
 
@@ -360,7 +341,7 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 
 	payload, err := json.Marshal(response)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to marshal response message", err)
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
 
