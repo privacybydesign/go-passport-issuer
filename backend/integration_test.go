@@ -91,11 +91,10 @@ func postJSON[T any](t *testing.T, url string, payload any) (*http.Response, []b
 	require.NoError(t, err)
 
 	var decoded *T
-	if new(T) != nil {
-		var v T
-		_ = json.Unmarshal(respBody, &v)
-		decoded = &v
-	}
+	var v T
+	_ = json.Unmarshal(respBody, &v)
+	decoded = &v
+
 	return resp, respBody, decoded
 }
 
