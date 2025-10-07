@@ -144,14 +144,9 @@ type PassportVerificationResponse struct {
 }
 
 func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		if err := r.Body.Close(); err != nil {
-			log.Error.Printf(ERR_FAILED_BODY_CLOSE, err)
-		}
-	}()
+	defer closeRequestBody(r)
 
-	if r.Method != http.MethodPost {
-		respondWithErr(w, http.StatusMethodNotAllowed, "method not allowed", "invalid method", nil)
+	if !requirePOST(w, r) {
 		return
 	}
 
@@ -179,10 +174,9 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 		isExpired,
 	}
 
-	responseMessage := verificationResponse
+	response := verificationResponse
 
-	payload, err := json.Marshal(responseMessage)
-	if err != nil {
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
@@ -194,24 +188,12 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Store the result under one time token and redirect to the web app which will get the result via the token
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, err = w.Write(payload)
-	if err != nil {
-		log.Error.Fatalf("failed to write body to http response: %v", err)
-	}
 }
 
 func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		if err := r.Body.Close(); err != nil {
-			log.Error.Printf(ERR_FAILED_BODY_CLOSE, err)
-		}
-	}()
+	defer closeRequestBody(r)
 
-	if r.Method != http.MethodPost {
-		respondWithErr(w, http.StatusMethodNotAllowed, "method not allowed", "invalid method", nil)
+	if !requirePOST(w, r) {
 		return
 	}
 
@@ -236,13 +218,12 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	responseMessage := PassportIssuanceResponse{
+	response := PassportIssuanceResponse{
 		Jwt:           jwt,
 		IrmaServerURL: state.irmaServerURL,
 	}
 
-	payload, err := json.Marshal(responseMessage)
-	if err != nil {
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
@@ -254,12 +235,6 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, err = w.Write(payload)
-	if err != nil {
-		log.Error.Fatalf("failed to write body to http response: %v", err)
-	}
 }
 
 func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.PassportValidationRequest, error) {
@@ -300,14 +275,9 @@ type ValidatePassportResponse struct {
 }
 
 func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
-	defer func() {
-		if err := r.Body.Close(); err != nil {
-			log.Error.Printf(ERR_FAILED_BODY_CLOSE, err)
-		}
-	}()
+	defer closeRequestBody(r)
 
-	if r.Method != http.MethodPost {
-		respondWithErr(w, http.StatusMethodNotAllowed, "method not allowed", "invalid method", nil)
+	if !requirePOST(w, r) {
 		return
 	}
 
@@ -339,43 +309,26 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 		Nonce:     string(nonce),
 	}
 
-	payload, err := json.Marshal(response)
-	if err != nil {
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_, err = w.Write(payload)
-	if err != nil {
-		log.Error.Fatalf("failed to write body to http response: %v", err)
-	}
 }
 
 //go:embed associations/android_asset_links.json
 var assetlinksJson []byte
 
 func HandleAssetLinksRequest(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, err := w.Write(assetlinksJson)
-	if err != nil {
-		log.Error.Fatalf("failed to write body to http response: %v", err)
-	}
+	writeStaticJSON(w, assetlinksJson)
 }
 
 //go:embed associations/apple-app-site-association.json
 var appleAssociationJson []byte
 
 func HandleAssaRequest(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, err := w.Write(appleAssociationJson)
-	if err != nil {
-		log.Error.Fatalf("failed to write body to http response: %v", err)
-	}
+	writeStaticJSON(w, appleAssociationJson)
+
 }
 
 func GenerateSessionId() string {
@@ -405,4 +358,43 @@ func respondWithErr(w http.ResponseWriter, code int, responseBody string, logMsg
 	if _, err := w.Write([]byte(responseBody)); err != nil {
 		log.Error.Printf("failed to write body to http response: %v", err)
 	}
+}
+
+// helpers ------------
+
+func writeStaticJSON(w http.ResponseWriter, b []byte) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if _, err := w.Write(b); err != nil {
+		log.Error.Fatalf("failed to write body to http response: %v", err)
+	}
+}
+
+func closeRequestBody(r *http.Request) {
+	if err := r.Body.Close(); err != nil {
+		log.Error.Printf(ERR_FAILED_BODY_CLOSE, err)
+	}
+
+}
+
+func requirePOST(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		respondWithErr(w, http.StatusMethodNotAllowed, "method not allowed", "invalid method", nil)
+		return false
+	}
+	return true
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) error {
+	payload, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, err = w.Write(payload)
+	if err != nil {
+		log.Error.Fatalf("failed to write body to http response: %v", err)
+	}
+	return nil
 }
