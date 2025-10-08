@@ -38,7 +38,7 @@ func TestRedisSentinelConfig(t *testing.T) {
 	require.Equal(t, "test", config.Namespace)
 }
 
-func TestNewRedisClient_InvalidHost(t *testing.T) {
+func TestNewRedisClientInvalidHost(t *testing.T) {
 	config := &RedisConfig{
 		Host:     "invalid-redis-host-that-does-not-exist",
 		Port:     6379,
@@ -51,7 +51,7 @@ func TestNewRedisClient_InvalidHost(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to connect to Redis")
 }
 
-func TestNewRedisClient_InvalidPort(t *testing.T) {
+func TestNewRedisClientInvalidPort(t *testing.T) {
 	config := &RedisConfig{
 		Host:     "localhost",
 		Port:     99999, // Invalid port
@@ -64,7 +64,7 @@ func TestNewRedisClient_InvalidPort(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to connect to Redis")
 }
 
-func TestNewRedisClient_EmptyConfig(t *testing.T) {
+func TestNewRedisClientEmptyConfig(t *testing.T) {
 	config := &RedisConfig{
 		Host:     "",
 		Port:     0,
@@ -76,7 +76,7 @@ func TestNewRedisClient_EmptyConfig(t *testing.T) {
 	require.Nil(t, client)
 }
 
-func TestNewRedisSentinelClient_InvalidHost(t *testing.T) {
+func TestNewRedisSentinelClientInvalidHost(t *testing.T) {
 	config := &RedisSentinelConfig{
 		SentinelHost:     "invalid-sentinel-host-that-does-not-exist",
 		SentinelPort:     26379,
@@ -91,7 +91,7 @@ func TestNewRedisSentinelClient_InvalidHost(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to connect to Redis through Sentinel")
 }
 
-func TestNewRedisSentinelClient_InvalidPort(t *testing.T) {
+func TestNewRedisSentinelClientInvalidPort(t *testing.T) {
 	config := &RedisSentinelConfig{
 		SentinelHost:     "localhost",
 		SentinelPort:     99999, // Invalid port
@@ -106,7 +106,7 @@ func TestNewRedisSentinelClient_InvalidPort(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to connect to Redis through Sentinel")
 }
 
-func TestNewRedisSentinelClient_EmptyMasterName(t *testing.T) {
+func TestNewRedisSentinelClientEmptyMasterName(t *testing.T) {
 	config := &RedisSentinelConfig{
 		SentinelHost:     "localhost",
 		SentinelPort:     26379,
