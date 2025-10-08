@@ -111,83 +111,91 @@ func TestIsEuCitizen(t *testing.T) {
 }
 
 func TestPassiveAuthentication(t *testing.T) {
-	t.Run("empty data groups returns error", func(t *testing.T) {
-		data := models.PassportValidationRequest{
-			DataGroups: map[string]string{},
-			EFSOD:      "some_sod_data",
-		}
-		_, err := PassiveAuthentication(data, nil)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "no data groups found")
-	})
-
-	t.Run("missing EF_SOD returns error", func(t *testing.T) {
-		data := models.PassportValidationRequest{
-			DataGroups: map[string]string{
+	tests := []struct {
+		name          string
+		dataGroups    map[string]string
+		efsod         string
+		certPool      *cms.CombinedCertPool
+		expectedError string
+	}{
+		{
+			name:          "empty data groups returns error",
+			dataGroups:    map[string]string{},
+			efsod:         "some_sod_data",
+			certPool:      nil,
+			expectedError: "no data groups found",
+		},
+		{
+			name: "missing EF_SOD returns error",
+			dataGroups: map[string]string{
 				"DG1": "some_data",
 			},
-			EFSOD: "",
-		}
-		_, err := PassiveAuthentication(data, nil)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "EF_SOD is missing")
-	})
-
-	t.Run("invalid SOD returns error", func(t *testing.T) {
-		data := models.PassportValidationRequest{
-			DataGroups: map[string]string{
+			efsod:         "",
+			certPool:      nil,
+			expectedError: "EF_SOD is missing",
+		},
+		{
+			name: "invalid SOD returns error",
+			dataGroups: map[string]string{
 				"DG1": "some_data",
 			},
-			EFSOD: "AABBCC",
-		}
-		_, err := PassiveAuthentication(data, &cms.CombinedCertPool{})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "failed to create SOD")
-	})
+			efsod:         "AABBCC",
+			certPool:      &cms.CombinedCertPool{},
+			expectedError: "failed to create SOD",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := models.PassportValidationRequest{
+				DataGroups: tt.dataGroups,
+				EFSOD:      tt.efsod,
+			}
+			_, err := PassiveAuthentication(data, tt.certPool)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.expectedError)
+		})
+	}
 }
 
 func TestActiveAuthentication(t *testing.T) {
-	t.Run("missing nonce returns false with no error", func(t *testing.T) {
-		data := models.PassportValidationRequest{
-			Nonce:               "",
-			ActiveAuthSignature: "signature",
-		}
-		doc := document.Document{}
-		result, err := ActiveAuthentication(data, doc)
-		require.NoError(t, err)
-		require.False(t, result)
-	})
+	tests := []struct {
+		name      string
+		nonce     string
+		signature string
+	}{
+		{
+			name:      "missing nonce returns false with no error",
+			nonce:     "",
+			signature: "signature",
+		},
+		{
+			name:      "missing signature returns false with no error",
+			nonce:     "nonce",
+			signature: "",
+		},
+		{
+			name:      "missing DG15 returns false with no error",
+			nonce:     "nonce",
+			signature: "signature",
+		},
+		{
+			name:      "all missing returns false with no error",
+			nonce:     "",
+			signature: "",
+		},
+	}
 
-	t.Run("missing signature returns false with no error", func(t *testing.T) {
-		data := models.PassportValidationRequest{
-			Nonce:               "nonce",
-			ActiveAuthSignature: "",
-		}
-		doc := document.Document{}
-		result, err := ActiveAuthentication(data, doc)
-		require.NoError(t, err)
-		require.False(t, result)
-	})
-
-	t.Run("missing DG15 returns false with no error", func(t *testing.T) {
-		data := models.PassportValidationRequest{
-			Nonce:               "nonce",
-			ActiveAuthSignature: "signature",
-		}
-		doc := document.Document{}
-		result, err := ActiveAuthentication(data, doc)
-		require.NoError(t, err)
-		require.False(t, result)
-	})
-
-	t.Run("all missing returns false with no error", func(t *testing.T) {
-		data := models.PassportValidationRequest{
-			Nonce:               "",
-			ActiveAuthSignature: "",
-		}
-		doc := document.Document{}
-		result, err := ActiveAuthentication(data, doc)
-		require.NoError(t, err)
-		require.False(t, result)
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := models.PassportValidationRequest{
+				Nonce:               tt.nonce,
+				ActiveAuthSignature: tt.signature,
+			}
+			doc := document.Document{}
+			result, err := ActiveAuthentication(data, doc)
+			require.NoError(t, err)
+			require.False(t, result)
+		})
+	}
 }
