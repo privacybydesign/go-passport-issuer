@@ -15,6 +15,7 @@ build/
 secrets/
 local-secrets/
 .env
+.envrc
 local-secrets/sms-issuer/config.json
 
 research/certs/
