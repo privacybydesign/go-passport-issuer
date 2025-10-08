@@ -25,7 +25,7 @@ var euCountries = []string{
 	"ESP", "SWE",
 }
 
-func PassiveAuthentication(data models.PassportValidationRequest, certPool *cms.CombinedCertPool) (doc document.Document, err error) {
+func PassiveAuthentication(data models.PassportValidationRequest, certPool cms.CertPool) (doc document.Document, err error) {
 	log.Info.Printf("Starting passive authentication")
 
 	if len(data.DataGroups) == 0 {
