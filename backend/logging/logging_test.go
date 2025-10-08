@@ -67,7 +67,10 @@ func TestInitFileLoggerInvalidPath(t *testing.T) {
 			_, err := os.Stat(invalidPath)
 			if err == nil {
 				// Clean up if somehow created
-				os.Remove(invalidPath)
+				err = os.Remove(invalidPath)
+				if err != nil {
+					t.Fatal("failed removing the log file")
+				}
 			}
 		}
 	}()
