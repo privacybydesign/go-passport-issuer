@@ -41,14 +41,12 @@ func TestParseDateTime(t *testing.T) {
 
 	t.Run("invalid format - too short", func(t *testing.T) {
 		_, err := ParseDateTime("25031")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid date format")
+		requireInvalidDateException(t, err)
 	})
 
 	t.Run("invalid format - too long", func(t *testing.T) {
 		_, err := ParseDateTime("2503155")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid date format")
+		requireInvalidDateException(t, err)
 	})
 
 	t.Run("invalid date values", func(t *testing.T) {
@@ -59,9 +57,13 @@ func TestParseDateTime(t *testing.T) {
 
 	t.Run("empty string", func(t *testing.T) {
 		_, err := ParseDateTime("")
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid date format")
+		requireInvalidDateException(t, err)
 	})
+}
+
+func requireInvalidDateException(t *testing.T, err error) {
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid date format")
 }
 
 func TestIsEuCitizen(t *testing.T) {
