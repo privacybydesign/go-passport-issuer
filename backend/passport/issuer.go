@@ -52,6 +52,12 @@ func PassiveAuthentication(data models.PassportValidationRequest, certPool cms.C
 		case "DG2":
 			doc.Mf.Lds1.Dg2, err = document.NewDG2(dataGroupBytes)
 		case "DG7":
+			// temporary logs -- should be removed!
+			if doc.Mf.Lds1.Dg1 != nil {
+				if doc.Mf.Lds1.Dg1.Mrz.Nationality == "HUN" {
+					log.Info.Printf("DG7 raw data bytes for Hungarian passport: %x", dataGroupBytes)
+				}
+			}
 			doc.Mf.Lds1.Dg7, err = document.NewDG7(dataGroupBytes)
 		case "DG11":
 			doc.Mf.Lds1.Dg11, err = document.NewDG11(dataGroupBytes)
