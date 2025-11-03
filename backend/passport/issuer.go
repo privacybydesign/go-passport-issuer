@@ -58,7 +58,12 @@ func PassiveAuthentication(data models.PassportValidationRequest, certPool cms.C
 					log.Info.Printf("DG7 raw data bytes for Hungarian passport: %x", dataGroupBytes)
 				}
 			}
-			doc.Mf.Lds1.Dg7, err = document.NewDG7(dataGroupBytes)
+			dg7, parseErr := document.NewDG7(dataGroupBytes)
+			if parseErr != nil {
+				log.Info.Printf("Skipping DG7 due to parsing error: %v", parseErr)
+				continue
+			}
+			doc.Mf.Lds1.Dg7 = dg7
 		case "DG11":
 			doc.Mf.Lds1.Dg11, err = document.NewDG11(dataGroupBytes)
 		case "DG12":

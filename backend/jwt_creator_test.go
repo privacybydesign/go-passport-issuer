@@ -213,3 +213,24 @@ func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
 	}
 	return pubKey, nil
 }
+
+func TestNewIrmaJwtCreator_ErrorCases(t *testing.T) {
+	t.Run("file not found", func(t *testing.T) {
+		_, err := NewIrmaJwtCreator("./nonexistent.pem", "issuer", "credential", 25)
+		require.Error(t, err)
+	})
+
+	t.Run("invalid PEM format", func(t *testing.T) {
+		// Create a temporary invalid PEM file
+		tmpFile, err := os.CreateTemp("", "invalid-*.pem")
+		require.NoError(t, err)
+		defer os.Remove(tmpFile.Name())
+
+		_, err = tmpFile.Write([]byte("this is not a valid PEM file"))
+		require.NoError(t, err)
+		tmpFile.Close()
+
+		_, err = NewIrmaJwtCreator(tmpFile.Name(), "issuer", "credential", 25)
+		require.Error(t, err)
+	})
+}
