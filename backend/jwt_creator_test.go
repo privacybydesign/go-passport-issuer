@@ -224,11 +224,11 @@ func TestNewIrmaJwtCreator_ErrorCases(t *testing.T) {
 		// Create a temporary invalid PEM file
 		tmpFile, err := os.CreateTemp("", "invalid-*.pem")
 		require.NoError(t, err)
-		defer os.Remove(tmpFile.Name())
+		defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 		_, err = tmpFile.Write([]byte("this is not a valid PEM file"))
 		require.NoError(t, err)
-		tmpFile.Close()
+		require.NoError(t, tmpFile.Close())
 
 		_, err = NewIrmaJwtCreator(tmpFile.Name(), "issuer", "credential", 25)
 		require.Error(t, err)
