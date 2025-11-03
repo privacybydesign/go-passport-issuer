@@ -13,7 +13,7 @@ func TestDecoding(t *testing.T) {
 	dg2DataBytes := utils.HexToBytes(dg2Data)
 	var byteCount = len(dg2DataBytes)
 	if byteCount != 14951 {
-		t.Errorf("Expected byte count to be 1000, got %d", byteCount)
+		t.Errorf("Expected byte count to be 14951, got %d", byteCount)
 	}
 
 	dg2, err := NewEfDG2FromBytes(dg2DataBytes)
