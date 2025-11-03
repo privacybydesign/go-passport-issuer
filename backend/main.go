@@ -18,6 +18,7 @@ type Config struct {
 	IrmaServerUrl     string `json:"irma_server_url"`
 	IssuerId          string `json:"issuer_id"`
 	FullCredential    string `json:"full_credential"`
+	SdJwtBatchSize    uint   `json:"sd_jwt_batch_size"`
 
 	StorageType         string                    `json:"storage_type"`
 	RedisConfig         redis.RedisConfig         `json:"redis_config,omitempty"`
@@ -45,6 +46,7 @@ func main() {
 		config.JwtPrivateKeyPath,
 		config.IssuerId,
 		config.FullCredential,
+		config.SdJwtBatchSize,
 	)
 	if err != nil {
 		log.Error.Fatalf("failed to instantiate jwt creator: %v", err)
