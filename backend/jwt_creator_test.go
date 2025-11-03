@@ -107,6 +107,99 @@ func TestDecodeValidateJwt(t *testing.T) {
 
 }
 
+func TestBatchSizeConfiguration(t *testing.T) {
+	testCases := []struct {
+		name          string
+		batchSize     uint
+		expectError   bool
+	}{
+		{
+			name:        "batch size 10",
+			batchSize:   10,
+			expectError: false,
+		},
+		{
+			name:        "batch size 25",
+			batchSize:   25,
+			expectError: false,
+		},
+		{
+			name:        "batch size 50",
+			batchSize:   50,
+			expectError: false,
+		},
+		{
+			name:        "batch size 1",
+			batchSize:   1,
+			expectError: false,
+		},
+		{
+			name:        "batch size 100",
+			batchSize:   100,
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create JWT creator with specific batch size
+			jc, err := NewIrmaJwtCreator(
+				"./test-secrets/priv.pem",
+				"passport_issuer",
+				"pbdf-staging.pbdf.passport",
+				tc.batchSize,
+			)
+			require.NoError(t, err)
+			require.NotNil(t, jc)
+
+			// Verify the batch size is stored correctly
+			require.Equal(t, tc.batchSize, jc.sdJwtBatchSize,
+				"JWT creator should store the configured batch size")
+
+			// Create a test passport
+			b, err := os.ReadFile("./test-data/testpasfoto.jpg")
+			require.NoError(t, err)
+			photoBase64 := base64.StdEncoding.EncodeToString(b)
+
+			testPassport := models.PassportData{
+				Photo:                photoBase64,
+				DocumentNumber:       "TEST123",
+				DocumentType:         "Passport",
+				FirstName:            "Test",
+				LastName:             "User",
+				Nationality:          "NLD",
+				IsEuCitizen:          "true",
+				DateOfBirth:          time.Date(1990, time.January, 1, 0, 0, 0, 0, time.UTC),
+				YearOfBirth:          "1990",
+				DateOfExpiry:         time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC),
+				Gender:               "M",
+				Country:              "Netherlands",
+				Over12:               "true",
+				Over16:               "true",
+				Over18:               "true",
+				Over21:               "true",
+				Over65:               "false",
+				ActiveAuthentication: "true",
+			}
+
+			// Create JWT and verify it can be created successfully
+			jwtString, err := jc.CreateJwt(testPassport)
+			if tc.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.NotEmpty(t, jwtString)
+
+				// Verify the JWT can be parsed
+				parsedJWT, err := jwt.ParseWithClaims(jwtString, jwt.MapClaims{}, jwtKeyFunc)
+				require.NoError(t, err)
+				require.NotNil(t, parsedJWT)
+				require.True(t, parsedJWT.Valid)
+			}
+		})
+	}
+}
+
 func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
 	pubBytes, err := os.ReadFile("./test-secrets/pub.pem")
 	if err != nil {
