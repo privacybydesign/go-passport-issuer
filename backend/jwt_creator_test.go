@@ -109,34 +109,28 @@ func TestDecodeValidateJwt(t *testing.T) {
 
 func TestBatchSizeConfiguration(t *testing.T) {
 	testCases := []struct {
-		name          string
-		batchSize     uint
-		expectError   bool
+		name      string
+		batchSize uint
 	}{
 		{
-			name:        "batch size 10",
-			batchSize:   10,
-			expectError: false,
+			name:      "batch size 10",
+			batchSize: 10,
 		},
 		{
-			name:        "batch size 25",
-			batchSize:   25,
-			expectError: false,
+			name:      "batch size 25",
+			batchSize: 25,
 		},
 		{
-			name:        "batch size 50",
-			batchSize:   50,
-			expectError: false,
+			name:      "batch size 50",
+			batchSize: 50,
 		},
 		{
-			name:        "batch size 1",
-			batchSize:   1,
-			expectError: false,
+			name:      "batch size 1",
+			batchSize: 1,
 		},
 		{
-			name:        "batch size 100",
-			batchSize:   100,
-			expectError: false,
+			name:      "batch size 100",
+			batchSize: 100,
 		},
 	}
 
@@ -191,18 +185,14 @@ func TestBatchSizeConfiguration(t *testing.T) {
 
 			// Create JWT and verify it can be created successfully
 			jwtString, err := jc.CreateJwt(testPassport)
-			if tc.expectError {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.NotEmpty(t, jwtString)
+			require.NoError(t, err)
+			require.NotEmpty(t, jwtString)
 
-				// Verify the JWT can be parsed
-				parsedJWT, err := jwt.ParseWithClaims(jwtString, jwt.MapClaims{}, jwtKeyFunc)
-				require.NoError(t, err)
-				require.NotNil(t, parsedJWT)
-				require.True(t, parsedJWT.Valid)
-			}
+			// Verify the JWT can be parsed
+			parsedJWT, err := jwt.ParseWithClaims(jwtString, jwt.MapClaims{}, jwtKeyFunc)
+			require.NoError(t, err)
+			require.NotNil(t, parsedJWT)
+			require.True(t, parsedJWT.Valid)
 		})
 	}
 }
