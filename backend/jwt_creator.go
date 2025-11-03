@@ -16,7 +16,8 @@ type JwtCreator interface {
 
 func NewIrmaJwtCreator(privateKeyPath string,
 	issuerId string,
-	crediential string,
+	credential string,
+	sdJwtBatchSize uint,
 ) (*DefaultJwtCreator, error) {
 	keyBytes, err := os.ReadFile(privateKeyPath)
 
@@ -31,22 +32,37 @@ func NewIrmaJwtCreator(privateKeyPath string,
 	}
 
 	return &DefaultJwtCreator{
-		issuerId:   issuerId,
-		privateKey: privateKey,
-		credential: crediential,
+		issuerId:       issuerId,
+		privateKey:     privateKey,
+		credential:     credential,
+		sdJwtBatchSize: sdJwtBatchSize,
 	}, nil
 }
 
 type DefaultJwtCreator struct {
-	privateKey *rsa.PrivateKey
-	issuerId   string
-	credential string
+	privateKey     *rsa.PrivateKey
+	issuerId       string
+	credential     string
+	sdJwtBatchSize uint
 }
 
 func (jc *DefaultJwtCreator) CreateJwt(passport models.PassportData) (string, error) {
+	issuanceRequest := jc.createIssuanceRequest(passport)
+
+	return irma.SignSessionRequest(
+		issuanceRequest,
+		jwt.GetSigningMethod(jwt.SigningMethodRS256.Alg()),
+		jc.privateKey,
+		jc.issuerId,
+	)
+}
+
+// createIssuanceRequest creates an IRMA issuance request with the passport data
+// This is a separate method to allow for easier testing
+func (jc *DefaultJwtCreator) createIssuanceRequest(passport models.PassportData) *irma.IssuanceRequest {
 	validity := irma.Timestamp(time.Unix(time.Now().AddDate(1, 0, 0).Unix(), 0)) // 1 year from now
 
-	issuanceRequest := irma.NewIssuanceRequest([]*irma.CredentialRequest{
+	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier(jc.credential),
 			Attributes: map[string]string{
@@ -69,15 +85,8 @@ func (jc *DefaultJwtCreator) CreateJwt(passport models.PassportData) (string, er
 				"over65":               passport.Over65,
 				"activeAuthentication": passport.ActiveAuthentication,
 			},
-			SdJwtBatchSize: irma.DefaultSdJwtIssueAmount,
+			SdJwtBatchSize: jc.sdJwtBatchSize,
 			Validity:       &validity,
 		},
 	})
-
-	return irma.SignSessionRequest(
-		issuanceRequest,
-		jwt.GetSigningMethod(jwt.SigningMethodRS256.Alg()),
-		jc.privateKey,
-		jc.issuerId,
-	)
 }
