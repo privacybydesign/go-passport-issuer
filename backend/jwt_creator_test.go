@@ -182,6 +182,13 @@ func TestBatchSizeConfiguration(t *testing.T) {
 				ActiveAuthentication: "true",
 			}
 
+			// Test that the issuanceRequest has the correct batch size
+			issuanceReq := jc.createIssuanceRequest(testPassport)
+			require.NotNil(t, issuanceReq)
+			require.Len(t, issuanceReq.Credentials, 1, "Should have exactly one credential request")
+			require.Equal(t, tc.batchSize, issuanceReq.Credentials[0].SdJwtBatchSize,
+				"IssuanceRequest credential should have the configured batch size")
+
 			// Create JWT and verify it can be created successfully
 			jwtString, err := jc.CreateJwt(testPassport)
 			if tc.expectError {
