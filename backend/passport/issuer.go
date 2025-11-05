@@ -187,5 +187,15 @@ func ParseDateTime(dateStr string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, fmt.Errorf("error parsing date: %w", err)
 	}
+
+	// Dates are stored in passports with only two digits for the year,
+	// so when someone is born in 1950, only the 50 part is stored.
+	// The Go time parser turns this into 2050 for some reason.
+	// To combat this we determine if the (parsed) birth year is higher than the current year.
+	// If it is we'll subtract 100 years from it.
+	if parsedDate.After(time.Now()) {
+		parsedDate = parsedDate.AddDate(-100, 0, 0)
+	}
+
 	return parsedDate, nil
 }
