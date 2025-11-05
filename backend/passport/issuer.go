@@ -121,13 +121,13 @@ func ToPassportData(doc document.Document, activeAuth bool) (request models.Pass
 
 	var dob, doe time.Time
 	log.Info.Printf("Parsing date of birth")
-	dob, err = ParseDateTime(doc.Mf.Lds1.Dg1.Mrz.DateOfBirth)
+	dob, err = ParseDateOfBirth(doc.Mf.Lds1.Dg1.Mrz.DateOfBirth)
 	if err != nil {
 		return models.PassportData{}, fmt.Errorf("failed to parse date of birth: %w", err)
 	}
 
 	log.Info.Printf("Parsing date of expiry")
-	doe, err = ParseDateTime(doc.Mf.Lds1.Dg1.Mrz.DateOfExpiry)
+	doe, err = ParseExpiryDate(doc.Mf.Lds1.Dg1.Mrz.DateOfExpiry)
 	if err != nil {
 		return models.PassportData{}, fmt.Errorf("failed to parse date of expiry: %w", err)
 	}
@@ -176,7 +176,28 @@ func BoolToYesNo(value bool) string {
 	return "No"
 }
 
-func ParseDateTime(dateStr string) (time.Time, error) {
+func ParseExpiryDate(dateStr string) (time.Time, error) {
+	// Parse date in yymmdd format
+	if len(dateStr) != 6 {
+		return time.Time{}, fmt.Errorf("invalid date format: %s", dateStr)
+	}
+	layout := "060102" // "06" for year, "01" for month, "02" for day
+
+	parsedDate, err := time.Parse(layout, dateStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("error parsing date: %w", err)
+	}
+
+	// arbitrarily determine that a date more than 30 years ago
+	// gets added 100 years
+	if parsedDate.Before(time.Now().AddDate(-30, 0, 0)) {
+		parsedDate = parsedDate.AddDate(100, 0, 0)
+	}
+
+	return parsedDate, nil
+}
+
+func ParseDateOfBirth(dateStr string) (time.Time, error) {
 	// Parse date in yymmdd format
 	if len(dateStr) != 6 {
 		return time.Time{}, fmt.Errorf("invalid date format: %s", dateStr)
