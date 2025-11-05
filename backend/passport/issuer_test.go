@@ -1,6 +1,7 @@
 package passport
 
 import (
+	"fmt"
 	"go-passport-issuer/models"
 	"testing"
 	"time"
@@ -30,6 +31,51 @@ func TestParseDateTime(t *testing.T) {
 		require.Equal(t, 2025, result.Year())
 		require.Equal(t, time.March, result.Month())
 		require.Equal(t, 15, result.Day())
+	})
+
+	t.Run("one year after current year gets 100 subtracted", func(t *testing.T) {
+		nextYear := time.Now().Year()%100 + 1
+		result, err := ParseDateTime(fmt.Sprintf("%v0101", nextYear))
+		require.NoError(t, err)
+		require.Equal(t, result.Year(), nextYear+1900)
+		require.Equal(t, result.Month(), time.January)
+		require.Equal(t, result.Day(), 1)
+	})
+
+	t.Run("current year doesn't get 100 subtracted", func(t *testing.T) {
+		currYear := time.Now().Year() % 100
+		result, err := ParseDateTime(fmt.Sprintf("%v0101", currYear))
+		require.NoError(t, err)
+		require.Equal(t, result.Year(), time.Now().Year())
+		require.Equal(t, result.Month(), time.January)
+		require.Equal(t, result.Day(), 1)
+	})
+
+	t.Run("one year before current year doesn't get 100 subtracted", func(t *testing.T) {
+		lastYear := time.Now().Year()%100 - 1
+		result, err := ParseDateTime(fmt.Sprintf("%v0101", lastYear))
+		require.NoError(t, err)
+		require.Equal(t, result.Year(), time.Now().Year()-1)
+		require.Equal(t, result.Month(), time.January)
+		require.Equal(t, result.Day(), 1)
+	})
+
+	// the limit for the Go time parser is 1969
+	t.Run("1968 parses correctly", func(t *testing.T) {
+		result, err := ParseDateTime("680101")
+		require.NoError(t, err)
+		require.Equal(t, 1968, result.Year())
+		require.Equal(t, time.January, result.Month())
+		require.Equal(t, 1, result.Day())
+	})
+
+	// the limit for the Go time parser is 1969
+	t.Run("1969 parses correctly", func(t *testing.T) {
+		result, err := ParseDateTime("690101")
+		require.NoError(t, err)
+		require.Equal(t, 1969, result.Year())
+		require.Equal(t, time.January, result.Month())
+		require.Equal(t, 1, result.Day())
 	})
 
 	t.Run("another valid date", func(t *testing.T) {
