@@ -48,10 +48,19 @@ func PassiveAuthentication(data models.PassportValidationRequest, certPool cms.C
 
 		switch dg {
 		case "DG1":
+			// DG1 is mandatory
 			doc.Mf.Lds1.Dg1, err = document.NewDG1(dataGroupBytes)
+			if err != nil {
+				return document.Document{}, fmt.Errorf("failed to create DG1 (mandatory): %w", err)
+			}
 		case "DG2":
+			// DG2 is mandatory
 			doc.Mf.Lds1.Dg2, err = document.NewDG2(dataGroupBytes)
+			if err != nil {
+				return document.Document{}, fmt.Errorf("failed to create DG2 (mandatory): %w", err)
+			}
 		case "DG7":
+			// DG7 is optional, gracefully handle parsing errors
 			dg7, parseErr := document.NewDG7(dataGroupBytes)
 			if parseErr != nil {
 				log.Info.Printf("Skipping DG7 due to parsing error: %v", parseErr)
@@ -59,24 +68,62 @@ func PassiveAuthentication(data models.PassportValidationRequest, certPool cms.C
 			}
 			doc.Mf.Lds1.Dg7 = dg7
 		case "DG11":
-			doc.Mf.Lds1.Dg11, err = document.NewDG11(dataGroupBytes)
+			// DG11 is optional, gracefully handle parsing errors
+			dg11, parseErr := document.NewDG11(dataGroupBytes)
+			if parseErr != nil {
+				log.Info.Printf("Skipping DG11 due to parsing error: %v", parseErr)
+				continue
+			}
+			doc.Mf.Lds1.Dg11 = dg11
 		case "DG12":
-			doc.Mf.Lds1.Dg12, err = document.NewDG12(dataGroupBytes)
+			// DG12 is optional, gracefully handle parsing errors
+			dg12, parseErr := document.NewDG12(dataGroupBytes)
+			if parseErr != nil {
+				log.Info.Printf("Skipping DG12 due to parsing error: %v", parseErr)
+				continue
+			}
+			doc.Mf.Lds1.Dg12 = dg12
 		case "DG13":
-			doc.Mf.Lds1.Dg13, err = document.NewDG13(dataGroupBytes)
+			// DG13 is optional, gracefully handle parsing errors
+			dg13, parseErr := document.NewDG13(dataGroupBytes)
+			if parseErr != nil {
+				log.Info.Printf("Skipping DG13 due to parsing error: %v", parseErr)
+				continue
+			}
+			doc.Mf.Lds1.Dg13 = dg13
 		case "DG14":
-			doc.Mf.Lds1.Dg14, err = document.NewDG14(dataGroupBytes)
+			// DG14 is optional, gracefully handle parsing errors
+			dg14, parseErr := document.NewDG14(dataGroupBytes)
+			if parseErr != nil {
+				log.Info.Printf("Skipping DG14 due to parsing error: %v", parseErr)
+				continue
+			}
+			doc.Mf.Lds1.Dg14 = dg14
 		case "DG15":
+			// DG15 is mandatory if provided
 			doc.Mf.Lds1.Dg15, err = document.NewDG15(dataGroupBytes)
+			if err != nil {
+				return document.Document{}, fmt.Errorf("failed to create DG15 (mandatory if provided): %w", err)
+			}
 		case "DG16":
-			doc.Mf.Lds1.Dg16, err = document.NewDG16(dataGroupBytes)
+			// DG16 is optional, gracefully handle parsing errors
+			dg16, parseErr := document.NewDG16(dataGroupBytes)
+			if parseErr != nil {
+				log.Info.Printf("Skipping DG16 due to parsing error: %v", parseErr)
+				continue
+			}
+			doc.Mf.Lds1.Dg16 = dg16
 		default:
 			return document.Document{}, fmt.Errorf("unsupported data group: %s", dg)
 		}
+	}
 
-		if err != nil {
-			return document.Document{}, fmt.Errorf("failed to create %s: %w", dg, err)
-		}
+	// Validate that mandatory data groups were provided
+	if doc.Mf.Lds1.Dg1 == nil {
+		return document.Document{}, fmt.Errorf("DG1 is mandatory but was not provided")
+	}
+	if doc.Mf.Lds1.Dg2 == nil {
+		return document.Document{}, fmt.Errorf("DG2 is mandatory but was not provided")
 	}
 
 	log.Info.Printf("Starting passive authentication for issuing state: %s", doc.Mf.Lds1.Dg1.Mrz.IssuingState)
