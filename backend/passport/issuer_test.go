@@ -202,6 +202,24 @@ func requireInvalidDateException(t *testing.T, err error) {
 	require.Contains(t, err.Error(), "invalid date format")
 }
 
+func requireDataGroupIsNil(t *testing.T, doc document.Document, dataGroupName string) {
+	dataGroups := map[string]interface{}{
+		"DG11": doc.Mf.Lds1.Dg11,
+		"DG12": doc.Mf.Lds1.Dg12,
+		"DG13": doc.Mf.Lds1.Dg13,
+		"DG14": doc.Mf.Lds1.Dg14,
+		"DG16": doc.Mf.Lds1.Dg16,
+	}
+	require.Nil(t, dataGroups[dataGroupName], "expected %s to be nil", dataGroupName)
+}
+
+func createTrustedCertPool(t *testing.T, csca []byte) cms.CertPool {
+	var trustedCerts cms.GenericCertPool
+	err := trustedCerts.Add(csca)
+	require.NoError(t, err)
+	return &trustedCerts
+}
+
 func TestIsEuCitizen(t *testing.T) {
 	t.Run("valid EU country uppercase", func(t *testing.T) {
 		require.True(t, IsEuCitizen("NLD"))
@@ -317,14 +335,10 @@ func TestPassiveAuthenticationWithRealSOD(t *testing.T) {
 		EFSOD: sodHex,
 	}
 
-	var trustedCerts cms.GenericCertPool
-	err := trustedCerts.Add(csca)
-	if err != nil {
-		t.Fatalf("unexpected error (trustedCerts.Add): %s", err)
-	}
+	trustedCerts := createTrustedCertPool(t, csca)
 
 	// Test that SOD can be parsed correctly and that passive auth works.
-	_, err = PassiveAuthentication(data, &trustedCerts)
+	_, err := PassiveAuthentication(data, trustedCerts)
 	require.NoError(t, err)
 
 }
@@ -345,13 +359,9 @@ func TestPassiveAuthenticationIgnoresInvalidDG7(t *testing.T) {
 		EFSOD: sodHex,
 	}
 
-	var trustedCerts cms.GenericCertPool
-	err := trustedCerts.Add(csca)
-	if err != nil {
-		t.Fatalf("unexpected error (trustedCerts.Add): %s", err)
-	}
+	trustedCerts := createTrustedCertPool(t, csca)
 
-	doc, err := PassiveAuthentication(data, &trustedCerts)
+	doc, err := PassiveAuthentication(data, trustedCerts)
 	require.NoError(t, err)
 	require.Nil(t, doc.Mf.Lds1.Dg7)
 }
@@ -449,26 +459,13 @@ func TestPassiveAuthenticationIgnoresInvalidOptionalDataGroups(t *testing.T) {
 				EFSOD: sodHex,
 			}
 
-			var trustedCerts cms.GenericCertPool
-			err := trustedCerts.Add(csca)
-			require.NoError(t, err)
+			trustedCerts := createTrustedCertPool(t, csca)
 
-			doc, err := PassiveAuthentication(data, &trustedCerts)
+			doc, err := PassiveAuthentication(data, trustedCerts)
 			require.NoError(t, err, "should not fail when %s is invalid", tc.dataGroupName)
 
 			// Verify that the invalid data group was not set
-			switch tc.dataGroupName {
-			case "DG11":
-				require.Nil(t, doc.Mf.Lds1.Dg11)
-			case "DG12":
-				require.Nil(t, doc.Mf.Lds1.Dg12)
-			case "DG13":
-				require.Nil(t, doc.Mf.Lds1.Dg13)
-			case "DG14":
-				require.Nil(t, doc.Mf.Lds1.Dg14)
-			case "DG16":
-				require.Nil(t, doc.Mf.Lds1.Dg16)
-			}
+			requireDataGroupIsNil(t, doc, tc.dataGroupName)
 		})
 	}
 }
@@ -488,11 +485,9 @@ func TestPassiveAuthenticationMandatoryDataGroups(t *testing.T) {
 			EFSOD: sodHex,
 		}
 
-		var trustedCerts cms.GenericCertPool
-		err := trustedCerts.Add(csca)
-		require.NoError(t, err)
+		trustedCerts := createTrustedCertPool(t, csca)
 
-		_, err = PassiveAuthentication(data, &trustedCerts)
+		_, err := PassiveAuthentication(data, trustedCerts)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to create DG1 (mandatory)")
 	})
@@ -506,11 +501,9 @@ func TestPassiveAuthenticationMandatoryDataGroups(t *testing.T) {
 			EFSOD: sodHex,
 		}
 
-		var trustedCerts cms.GenericCertPool
-		err := trustedCerts.Add(csca)
-		require.NoError(t, err)
+		trustedCerts := createTrustedCertPool(t, csca)
 
-		_, err = PassiveAuthentication(data, &trustedCerts)
+		_, err := PassiveAuthentication(data, trustedCerts)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to create DG2 (mandatory)")
 	})
@@ -524,11 +517,9 @@ func TestPassiveAuthenticationMandatoryDataGroups(t *testing.T) {
 			EFSOD: sodHex,
 		}
 
-		var trustedCerts cms.GenericCertPool
-		err := trustedCerts.Add(csca)
-		require.NoError(t, err)
+		trustedCerts := createTrustedCertPool(t, csca)
 
-		_, err = PassiveAuthentication(data, &trustedCerts)
+		_, err := PassiveAuthentication(data, trustedCerts)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to create DG15 (mandatory if provided)")
 	})
@@ -542,11 +533,9 @@ func TestPassiveAuthenticationMandatoryDataGroups(t *testing.T) {
 			EFSOD: sodHex,
 		}
 
-		var trustedCerts cms.GenericCertPool
-		err := trustedCerts.Add(csca)
-		require.NoError(t, err)
+		trustedCerts := createTrustedCertPool(t, csca)
 
-		_, err = PassiveAuthentication(data, &trustedCerts)
+		_, err := PassiveAuthentication(data, trustedCerts)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "DG1 is mandatory but was not provided")
 	})
@@ -560,11 +549,9 @@ func TestPassiveAuthenticationMandatoryDataGroups(t *testing.T) {
 			EFSOD: sodHex,
 		}
 
-		var trustedCerts cms.GenericCertPool
-		err := trustedCerts.Add(csca)
-		require.NoError(t, err)
+		trustedCerts := createTrustedCertPool(t, csca)
 
-		_, err = PassiveAuthentication(data, &trustedCerts)
+		_, err := PassiveAuthentication(data, trustedCerts)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "DG2 is mandatory but was not provided")
 	})
