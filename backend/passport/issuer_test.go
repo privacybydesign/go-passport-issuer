@@ -255,7 +255,7 @@ func setupPassportAuthTest(t *testing.T) (models.PassportValidationRequest, cms.
 func TestIsEuCitizen(t *testing.T) {
 	t.Run("valid EU country uppercase", func(t *testing.T) {
 		require.True(t, IsEuCitizen("NLD"))
-		require.True(t, IsEuCitizen("DEU"))
+		require.True(t, IsEuCitizen("D"))
 		require.True(t, IsEuCitizen("FRA"))
 		require.True(t, IsEuCitizen("ESP"))
 		require.True(t, IsEuCitizen("ITA"))
@@ -263,13 +263,13 @@ func TestIsEuCitizen(t *testing.T) {
 
 	t.Run("valid EU country lowercase", func(t *testing.T) {
 		require.True(t, IsEuCitizen("nld"))
-		require.True(t, IsEuCitizen("deu"))
+		require.True(t, IsEuCitizen("d"))
 		require.True(t, IsEuCitizen("fra"))
 	})
 
 	t.Run("valid EU country mixed case", func(t *testing.T) {
 		require.True(t, IsEuCitizen("Nld"))
-		require.True(t, IsEuCitizen("DeU"))
+		require.True(t, IsEuCitizen("D"))
 	})
 
 	t.Run("non-EU country", func(t *testing.T) {
@@ -283,11 +283,19 @@ func TestIsEuCitizen(t *testing.T) {
 		require.False(t, IsEuCitizen(""))
 	})
 
+	t.Run("Germany exception - D instead of DEU", func(t *testing.T) {
+		// Germany uses "D" as the country code instead of the expected "DEU"
+		require.True(t, IsEuCitizen("D"))
+		require.True(t, IsEuCitizen("d"))
+		// DEU should not be recognized since Germany uses "D"
+		require.False(t, IsEuCitizen("DEU"))
+	})
+
 	t.Run("all EU countries", func(t *testing.T) {
 		euCountries := []string{
 			"AUT", "BEL", "BGR", "HRV", "CYP",
 			"CZE", "DNK", "EST", "FIN", "FRA",
-			"DEU", "GRC", "HUN", "IRL", "ITA",
+			"D", "GRC", "HUN", "IRL", "ITA",
 			"LVA", "LTU", "LUX", "MLT", "NLD",
 			"POL", "PRT", "ROU", "SVK", "SVN",
 			"ESP", "SWE",

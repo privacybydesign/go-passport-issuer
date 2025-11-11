@@ -19,7 +19,8 @@ import (
 var euCountries = []string{
 	"AUT", "BEL", "BGR", "HRV", "CYP",
 	"CZE", "DNK", "EST", "FIN", "FRA",
-	"DEU", "GRC", "HUN", "IRL", "ITA",
+	// Germany has D instead of the expected DEU.
+	"D", "GRC", "HUN", "IRL", "ITA",
 	"LVA", "LTU", "LUX", "MLT", "NLD",
 	"POL", "PRT", "ROU", "SVK", "SVN",
 	"ESP", "SWE",
