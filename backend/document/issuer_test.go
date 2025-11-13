@@ -308,36 +308,36 @@ func TestIsEuCitizen(t *testing.T) {
 
 func TestPassiveAuthentication(t *testing.T) {
 	tests := []struct {
-		name          string
-		dataGroups    map[string]string
-		efsod         string
-		certPool      *cms.CombinedCertPool
-		expectedError string
+		name             string
+		dataGroups       map[string]string
+		efsod            string
+		passportCertPool *cms.CombinedCertPool
+		expectedError    string
 	}{
 		{
-			name:          "empty data groups returns error",
-			dataGroups:    map[string]string{},
-			efsod:         "some_sod_data",
-			certPool:      nil,
-			expectedError: "no data groups found",
+			name:             "empty data groups returns error",
+			dataGroups:       map[string]string{},
+			efsod:            "some_sod_data",
+			passportCertPool: nil,
+			expectedError:    "no data groups found",
 		},
 		{
 			name: "missing EF_SOD returns error",
 			dataGroups: map[string]string{
 				"DG1": "some_data",
 			},
-			efsod:         "",
-			certPool:      nil,
-			expectedError: "EF_SOD is missing",
+			efsod:            "",
+			passportCertPool: nil,
+			expectedError:    "EF_SOD is missing",
 		},
 		{
 			name: "invalid SOD returns error",
 			dataGroups: map[string]string{
 				"DG1": "some_data",
 			},
-			efsod:         "AABBCC",
-			certPool:      &cms.CombinedCertPool{},
-			expectedError: "failed to create SOD",
+			efsod:            "AABBCC",
+			passportCertPool: &cms.CombinedCertPool{},
+			expectedError:    "failed to create SOD",
 		},
 	}
 
@@ -347,7 +347,7 @@ func TestPassiveAuthentication(t *testing.T) {
 				DataGroups: tt.dataGroups,
 				EFSOD:      tt.efsod,
 			}
-			_, err := PassiveAuthenticationPassport(data, tt.certPool)
+			_, err := PassiveAuthenticationPassport(data, tt.passportCertPool)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tt.expectedError)
 		})

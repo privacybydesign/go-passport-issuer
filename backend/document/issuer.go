@@ -161,7 +161,7 @@ func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.C
 	log.Info.Printf("Starting passive authentication for passports")
 
 	if len(data.DataGroups) == 0 {
-		return document.Document{}, fmt.Errorf("no data groups the document data")
+		return document.Document{}, fmt.Errorf("no data groups found")
 	}
 
 	if data.EFSOD == "" {
