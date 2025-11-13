@@ -1,4 +1,4 @@
-module go-document-issuer
+module go-passport-issuer
 
 go 1.24.0
 
