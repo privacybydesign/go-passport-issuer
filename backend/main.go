@@ -15,36 +15,18 @@ import (
 type Config struct {
 	ServerConfig ServerConfig `json:"server_config"`
 
-	JwtPrivateKeyPath string `json:"jwt_private_key_path"`
-	IrmaServerUrl     string `json:"irma_server_url"`
-	IssuerId          string `json:"issuer_id"`
-	FullCredential    string `json:"full_credential"`
-	SdJwtBatchSize    uint   `json:"sd_jwt_batch_size"`
+	JwtPrivateKeyPath       string   `json:"jwt_private_key_path"`
+	IrmaServerUrl           string   `json:"irma_server_url"`
+	IssuerId                string   `json:"issuer_id"`
+	FullCredential          string   `json:"full_credential"`
+	SdJwtBatchSize          uint     `json:"sd_jwt_batch_size"`
+	DrivingLicenceCertPaths []string `json:"driving_licence_cert_paths"`
 
 	StorageType         string                    `json:"storage_type"`
 	RedisConfig         redis.RedisConfig         `json:"redis_config,omitempty"`
 	RedisSentinelConfig redis.RedisSentinelConfig `json:"redis_sentinel_config,omitempty"`
 }
 
-func loadDrivingLicenceCertPool(certPath string) (cms.CertPool, error) {
-	certPEM, err := os.ReadFile(certPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read cert file: %w", err)
-	}
-
-	block, _ := pem.Decode(certPEM)
-	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block")
-	}
-
-	certPool := &cms.GenericCertPool{}
-	err = certPool.Add(block.Bytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return certPool, nil
-}
 func main() {
 	configPath := flag.String("config", "", "Path for the config.json to use")
 	flag.Parse()
@@ -81,8 +63,8 @@ func main() {
 	if err != nil {
 		log.Error.Fatalf("CscaCertPool error: %s", err)
 	}
-
-	drivingLicenceCertPool, err := loadDrivingLicenceCertPool("./certificates/v1/1.cer")
+	// Load here all existing generations of driving licence certs
+	drivingLicenceCertPool, err := loadDrivingLicenceCertPool(config.DrivingLicenceCertPaths)
 	if err != nil {
 		log.Error.Fatalf("Failed to load driving license cert: %s", err)
 	}
@@ -148,4 +130,29 @@ func createTokenStorage(config *Config) (TokenStorage, error) {
 		return NewInMemoryTokenStorage(), nil
 	}
 	return nil, fmt.Errorf("%v is not a valid storage type", config.StorageType)
+}
+
+func loadDrivingLicenceCertPool(certPaths []string) (cms.CertPool, error) {
+	certPool := &cms.GenericCertPool{}
+
+	for _, certPath := range certPaths {
+		certPEM, err := os.ReadFile(certPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read cert file %s: %w", certPath, err)
+		}
+
+		block, _ := pem.Decode(certPEM)
+		if block == nil {
+			return nil, fmt.Errorf("failed to decode PEM block from %s", certPath)
+		}
+
+		err = certPool.Add(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to add cert from %s: %w", certPath, err)
+		}
+
+		log.Info.Printf("Loaded driving licence cert: %s", certPath)
+	}
+
+	return certPool, nil
 }
