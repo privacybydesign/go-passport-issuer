@@ -9,6 +9,7 @@ import (
 	"fmt"
 	log "go-passport-issuer/logging"
 	"go-passport-issuer/models"
+	"go-passport-issuer/passport"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -32,12 +33,13 @@ type ServerConfig struct {
 }
 
 type ServerState struct {
-	irmaServerURL string
-	tokenStorage  TokenStorage
-	jwtCreator    JwtCreator
-	cscaCertPool  *cms.CombinedCertPool
-	validator     PassportValidator
-	converter     PassportDataConverter
+	irmaServerURL          string
+	tokenStorage           TokenStorage
+	jwtCreator             JwtCreator
+	passportCertPool       *cms.CombinedCertPool
+	drivingLicenceCertPool cms.CertPool
+	validator              PassportValidator
+	converter              PassportDataConverter
 }
 
 type SpaHandler struct {
@@ -110,6 +112,9 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/api/verify-passport", func(w http.ResponseWriter, r *http.Request) {
 		handleVerifyPassport(state, w, r)
 	})
+	router.HandleFunc("/api/verify-driving-licence", func(w http.ResponseWriter, r *http.Request) {
+		handleVerifyDrivingLicence(state, w, r)
+	})
 	router.HandleFunc("/.well-known/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/.well-known/assetlinks.json", HandleAssetLinksRequest).Methods(http.MethodGet)
@@ -143,6 +148,38 @@ type PassportVerificationResponse struct {
 	IsExpired        bool `json:"is_expired"`
 }
 
+func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *http.Request) {
+	defer closeRequestBody(r)
+
+	if !requirePOST(w, r) {
+		return
+	}
+
+	log.Info.Printf("Received request to verify driving license")
+
+	request, err := VerifyDrivingLicenceRequest(r, state)
+	if err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving license", err)
+		return
+	}
+
+	response := PassportVerificationResponse{
+		AuthenticContent: true,
+		AuthenticChip:    false,
+		IsExpired:        false,
+	}
+
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
+		return
+	}
+
+	// Remove the sessionID from cache
+	err = state.tokenStorage.RemoveToken(request.SessionId)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token", err)
+	}
+}
 func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer closeRequestBody(r)
 
@@ -237,8 +274,8 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 
 }
 
-func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.PassportValidationRequest, error) {
-	var request models.PassportValidationRequest
+func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.ValidationRequest, error) {
+	var request models.ValidationRequest
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		return document.Document{}, false, request, fmt.Errorf("decode request body: %w", err)
 	}
@@ -254,7 +291,7 @@ func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Docume
 	}
 
 	var doc document.Document
-	doc, err = state.validator.Passive(request, state.cscaCertPool)
+	doc, err = state.validator.Passive(request, state.passportCertPool)
 	if err != nil {
 		return document.Document{}, false, request, fmt.Errorf("passive authentication failed: %w", err)
 	}
@@ -265,6 +302,30 @@ func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Docume
 	}
 
 	return doc, activeAuth, request, nil
+}
+
+func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (request models.ValidationRequest, err error) {
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		return request, fmt.Errorf("decode request body: %w", err)
+	}
+
+	// Verify session/nonce
+	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+	if err != nil {
+		return request, fmt.Errorf("failed to get nonce from storage: %w", err)
+	}
+
+	if nonce == "" || nonce != request.Nonce {
+		return request, fmt.Errorf("invalid session or nonce")
+	}
+
+	// passive auth only (without returning document)
+	err = passport.PassiveAuthenticationEDL(request, state.drivingLicenceCertPool)
+	if err != nil {
+		return request, fmt.Errorf("passive authentication failed: %w", err)
+	}
+
+	return request, nil
 }
 
 // -----------------------------------------------------------------------------------

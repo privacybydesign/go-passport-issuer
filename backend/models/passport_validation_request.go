@@ -1,6 +1,6 @@
 package models
 
-type PassportValidationRequest struct {
+type ValidationRequest struct {
 	SessionId           string            `json:"session_id"`
 	Nonce               string            `json:"nonce"`
 	DataGroups          map[string]string `json:"data_groups"`

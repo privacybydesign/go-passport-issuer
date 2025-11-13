@@ -235,8 +235,8 @@ func requireErrorContains(t *testing.T, err error, expectedMsg string) {
 	require.Contains(t, err.Error(), expectedMsg)
 }
 
-func createTestPassportRequest() models.PassportValidationRequest {
-	return models.PassportValidationRequest{
+func createTestPassportRequest() models.ValidationRequest {
+	return models.ValidationRequest{
 		DataGroups: map[string]string{
 			"DG1": testDg1Hex,
 			"DG2": dg2Hex,
@@ -245,7 +245,7 @@ func createTestPassportRequest() models.PassportValidationRequest {
 	}
 }
 
-func setupPassportAuthTest(t *testing.T) (models.PassportValidationRequest, cms.CertPool) {
+func setupPassportAuthTest(t *testing.T) (models.ValidationRequest, cms.CertPool) {
 	t.Helper()
 	data := createTestPassportRequest()
 	trustedCerts := createTrustedCertPool(t, testCsca)
@@ -343,11 +343,11 @@ func TestPassiveAuthentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data := models.PassportValidationRequest{
+			data := models.ValidationRequest{
 				DataGroups: tt.dataGroups,
 				EFSOD:      tt.efsod,
 			}
-			_, err := PassiveAuthentication(data, tt.certPool)
+			_, err := PassiveAuthenticationPassport(data, tt.certPool)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tt.expectedError)
 		})
@@ -355,14 +355,14 @@ func TestPassiveAuthentication(t *testing.T) {
 }
 
 func TestPassiveAuthenticationWithRealSOD(t *testing.T) {
-	// Test that PassiveAuthentication can parse real SOD data from gmrtd test cases
+	// Test that PassiveAuthenticationPassport can parse real SOD data from gmrtd test cases
 	// based on an expired UK passport
 	// Source: https://github.com/gmrtd/gmrtd/blob/main/passiveauth/passive_auth_test.go
 
 	data, trustedCerts := setupPassportAuthTest(t)
 
 	// Test that SOD can be parsed correctly and that passive auth works.
-	_, err := PassiveAuthentication(data, trustedCerts)
+	_, err := PassiveAuthenticationPassport(data, trustedCerts)
 	require.NoError(t, err)
 }
 
@@ -370,7 +370,7 @@ func TestPassiveAuthenticationIgnoresInvalidDG7(t *testing.T) {
 	data, trustedCerts := setupPassportAuthTest(t)
 	data.DataGroups["DG7"] = "00"
 
-	doc, err := PassiveAuthentication(data, trustedCerts)
+	doc, err := PassiveAuthenticationPassport(data, trustedCerts)
 	require.NoError(t, err)
 	require.Nil(t, doc.Mf.Lds1.Dg7)
 }
@@ -405,7 +405,7 @@ func TestActiveAuthentication(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			data := models.PassportValidationRequest{
+			data := models.ValidationRequest{
 				Nonce:               tt.nonce,
 				ActiveAuthSignature: tt.signature,
 			}
@@ -427,7 +427,7 @@ func TestActiveAuthentication_InvalidSignature(t *testing.T) {
 	doc := document.Document{}
 	doc.Mf.Lds1.Dg15 = dg15
 
-	data := models.PassportValidationRequest{
+	data := models.ValidationRequest{
 		Nonce:               "AABBCCDD",
 		ActiveAuthSignature: "DEADBEEF",
 	}
@@ -457,7 +457,7 @@ func TestPassiveAuthenticationIgnoresInvalidOptionalDataGroups(t *testing.T) {
 			data, trustedCerts := setupPassportAuthTest(t)
 			data.DataGroups[tc.dataGroupName] = tc.dataGroupHex
 
-			doc, err := PassiveAuthentication(data, trustedCerts)
+			doc, err := PassiveAuthenticationPassport(data, trustedCerts)
 			require.NoError(t, err, "should not fail when %s is invalid", tc.dataGroupName)
 
 			// Verify that the invalid data group was not set
@@ -468,7 +468,7 @@ func TestPassiveAuthenticationIgnoresInvalidOptionalDataGroups(t *testing.T) {
 
 func TestPassiveAuthenticationMandatoryDataGroups(t *testing.T) {
 	t.Run("invalid DG1 fails", func(t *testing.T) {
-		data := models.PassportValidationRequest{
+		data := models.ValidationRequest{
 			DataGroups: map[string]string{
 				"DG1": "00",
 			},
@@ -477,7 +477,7 @@ func TestPassiveAuthenticationMandatoryDataGroups(t *testing.T) {
 
 		trustedCerts := createTrustedCertPool(t, testCsca)
 
-		_, err := PassiveAuthentication(data, trustedCerts)
+		_, err := PassiveAuthenticationPassport(data, trustedCerts)
 		requireErrorContains(t, err, "failed to create DG1 (mandatory)")
 	})
 
@@ -485,7 +485,7 @@ func TestPassiveAuthenticationMandatoryDataGroups(t *testing.T) {
 		data, trustedCerts := setupPassportAuthTest(t)
 		data.DataGroups["DG2"] = "00"
 
-		_, err := PassiveAuthentication(data, trustedCerts)
+		_, err := PassiveAuthenticationPassport(data, trustedCerts)
 		requireErrorContains(t, err, "failed to create DG2 (mandatory)")
 	})
 
@@ -494,12 +494,12 @@ func TestPassiveAuthenticationMandatoryDataGroups(t *testing.T) {
 		delete(data.DataGroups, "DG2")
 		data.DataGroups["DG15"] = "00"
 
-		_, err := PassiveAuthentication(data, trustedCerts)
+		_, err := PassiveAuthenticationPassport(data, trustedCerts)
 		requireErrorContains(t, err, "failed to create DG15 (mandatory if provided)")
 	})
 
 	t.Run("missing DG1 fails", func(t *testing.T) {
-		data := models.PassportValidationRequest{
+		data := models.ValidationRequest{
 			DataGroups: map[string]string{
 				// DG1 is missing, but we include DG7 to get past the empty check
 				"DG7": "675A3158561234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890",
@@ -509,7 +509,7 @@ func TestPassiveAuthenticationMandatoryDataGroups(t *testing.T) {
 
 		trustedCerts := createTrustedCertPool(t, testCsca)
 
-		_, err := PassiveAuthentication(data, trustedCerts)
+		_, err := PassiveAuthenticationPassport(data, trustedCerts)
 		requireErrorContains(t, err, "DG1 is mandatory but was not provided")
 	})
 
@@ -517,7 +517,7 @@ func TestPassiveAuthenticationMandatoryDataGroups(t *testing.T) {
 		data, trustedCerts := setupPassportAuthTest(t)
 		delete(data.DataGroups, "DG2")
 
-		_, err := PassiveAuthentication(data, trustedCerts)
+		_, err := PassiveAuthenticationPassport(data, trustedCerts)
 		requireErrorContains(t, err, "DG2 is mandatory but was not provided")
 	})
 }

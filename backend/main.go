@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	log "go-passport-issuer/logging"
@@ -25,6 +26,25 @@ type Config struct {
 	RedisSentinelConfig redis.RedisSentinelConfig `json:"redis_sentinel_config,omitempty"`
 }
 
+func loadDrivingLicenceCertPool(certPath string) (cms.CertPool, error) {
+	certPEM, err := os.ReadFile(certPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read cert file: %w", err)
+	}
+
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM block")
+	}
+
+	certPool := &cms.GenericCertPool{}
+	err = certPool.Add(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return certPool, nil
+}
 func main() {
 	configPath := flag.String("config", "", "Path for the config.json to use")
 	flag.Parse()
@@ -57,18 +77,24 @@ func main() {
 		log.Error.Fatalf("failed to instantiate token storage: %v", err)
 	}
 
-	cscaCertPool, err := cms.GetDefaultMasterList()
+	passportCertPool, err := cms.GetDefaultMasterList()
 	if err != nil {
 		log.Error.Fatalf("CscaCertPool error: %s", err)
 	}
 
+	drivingLicenceCertPool, err := loadDrivingLicenceCertPool("./certificates/v1/1.cer")
+	if err != nil {
+		log.Error.Fatalf("Failed to load driving license cert: %s", err)
+	}
+
 	serverState := ServerState{
-		irmaServerURL: config.IrmaServerUrl,
-		jwtCreator:    jwtCreator,
-		tokenStorage:  tokenStorage,
-		cscaCertPool:  cscaCertPool,
-		validator:     passportValidatorImpl{},
-		converter:     IssuanceRequestConverterImpl{},
+		irmaServerURL:          config.IrmaServerUrl,
+		jwtCreator:             jwtCreator,
+		tokenStorage:           tokenStorage,
+		passportCertPool:       passportCertPool,
+		drivingLicenceCertPool: drivingLicenceCertPool,
+		validator:              passportValidatorImpl{},
+		converter:              IssuanceRequestConverterImpl{},
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)

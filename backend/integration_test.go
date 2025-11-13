@@ -36,12 +36,12 @@ func startTestServer(t *testing.T, storage TokenStorage) *Server {
 	t.Helper()
 
 	testState := &ServerState{
-		irmaServerURL: "https://irma.example",
-		tokenStorage:  storage,
-		jwtCreator:    fakeJwtCreator{jwt: "test-jwt"},
-		cscaCertPool:  &cms.CombinedCertPool{},
-		validator:     fakeValidator{},
-		converter:     fakeConverter{},
+		irmaServerURL:    "https://irma.example",
+		tokenStorage:     storage,
+		jwtCreator:       fakeJwtCreator{jwt: "test-jwt"},
+		passportCertPool: &cms.CombinedCertPool{},
+		validator:        fakeValidator{},
+		converter:        fakeConverter{},
 	}
 
 	srv, err := NewServer(testState, testConfig)
@@ -118,10 +118,10 @@ func startValidation(t *testing.T) (sessionID, nonce string) {
 }
 
 // Request builders
-type reqOpt func(*models.PassportValidationRequest)
+type reqOpt func(*models.ValidationRequest)
 
 func withDG(name, hexVal string) reqOpt {
-	return func(r *models.PassportValidationRequest) {
+	return func(r *models.ValidationRequest) {
 		if r.DataGroups == nil {
 			r.DataGroups = map[string]string{}
 		}
@@ -130,15 +130,15 @@ func withDG(name, hexVal string) reqOpt {
 }
 
 func withEFSOD(hexVal string) reqOpt {
-	return func(r *models.PassportValidationRequest) { r.EFSOD = hexVal }
+	return func(r *models.ValidationRequest) { r.EFSOD = hexVal }
 }
 
 func withSig(hexVal string) reqOpt {
-	return func(r *models.PassportValidationRequest) { r.ActiveAuthSignature = hexVal }
+	return func(r *models.ValidationRequest) { r.ActiveAuthSignature = hexVal }
 }
 
-func newReq(sessionId, nonce string, opts ...reqOpt) models.PassportValidationRequest {
-	r := models.PassportValidationRequest{
+func newReq(sessionId, nonce string, opts ...reqOpt) models.ValidationRequest {
+	r := models.ValidationRequest{
 		SessionId:  sessionId,
 		Nonce:      nonce,
 		DataGroups: map[string]string{},
@@ -166,11 +166,11 @@ func (f fakeJwtCreator) CreateJwt(_ models.PassportData) (string, error) { retur
 
 type fakeValidator struct{}
 
-func (fakeValidator) Passive(_ models.PassportValidationRequest, _ *cms.CombinedCertPool) (document.Document, error) {
+func (fakeValidator) Passive(_ models.ValidationRequest, _ *cms.CombinedCertPool) (document.Document, error) {
 	return document.Document{}, nil
 }
 
-func (fakeValidator) Active(_ models.PassportValidationRequest, _ document.Document) (bool, error) {
+func (fakeValidator) Active(_ models.ValidationRequest, _ document.Document) (bool, error) {
 	return true, nil
 }
 
