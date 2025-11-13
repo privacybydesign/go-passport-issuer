@@ -178,6 +178,9 @@ func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.C
 
 	// Type-specific: DG parsing
 	err = parsePassportDGs(&doc, data.DataGroups)
+	if err != nil {
+		return document.Document{}, fmt.Errorf("failed to parse passport DGs: %w", err)
+	}
 	log.Info.Printf("Starting passive authentication for passport with issuing state: %s", doc.Mf.Lds1.Dg1.Mrz.IssuingState)
 
 	err = passiveauth.PassiveAuth(&doc, certPool)
