@@ -1,4 +1,4 @@
-package passport
+package document
 
 import (
 	"bytes"

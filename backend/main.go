@@ -88,13 +88,14 @@ func main() {
 	}
 
 	serverState := ServerState{
-		irmaServerURL:          config.IrmaServerUrl,
-		jwtCreator:             jwtCreator,
-		tokenStorage:           tokenStorage,
-		passportCertPool:       passportCertPool,
-		drivingLicenceCertPool: drivingLicenceCertPool,
-		validator:              passportValidatorImpl{},
-		converter:              IssuanceRequestConverterImpl{},
+		irmaServerURL:           config.IrmaServerUrl,
+		jwtCreator:              jwtCreator,
+		tokenStorage:            tokenStorage,
+		passportCertPool:        passportCertPool,
+		drivingLicenceCertPool:  drivingLicenceCertPool,
+		passportValidator:       PassportValidatorImpl{},
+		drivingLicenceValidator: DrivingLicenceValidatorImpl{},
+		converter:               IssuanceRequestConverterImpl{},
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)

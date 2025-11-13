@@ -9,7 +9,6 @@ import (
 	"fmt"
 	log "go-passport-issuer/logging"
 	"go-passport-issuer/models"
-	"go-passport-issuer/passport"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -33,13 +32,14 @@ type ServerConfig struct {
 }
 
 type ServerState struct {
-	irmaServerURL          string
-	tokenStorage           TokenStorage
-	jwtCreator             JwtCreator
-	passportCertPool       *cms.CombinedCertPool
-	drivingLicenceCertPool cms.CertPool
-	validator              PassportValidator
-	converter              PassportDataConverter
+	irmaServerURL           string
+	tokenStorage            TokenStorage
+	jwtCreator              JwtCreator
+	passportCertPool        *cms.CombinedCertPool
+	drivingLicenceCertPool  cms.CertPool
+	passportValidator       PassportValidator
+	drivingLicenceValidator DrivingLicenceValidator
+	converter               PassportDataConverter
 }
 
 type SpaHandler struct {
@@ -291,12 +291,12 @@ func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Docume
 	}
 
 	var doc document.Document
-	doc, err = state.validator.Passive(request, state.passportCertPool)
+	doc, err = state.passportValidator.Passive(request, state.passportCertPool)
 	if err != nil {
 		return document.Document{}, false, request, fmt.Errorf("passive authentication failed: %w", err)
 	}
 
-	activeAuth, err := state.validator.Active(request, doc)
+	activeAuth, err := state.passportValidator.Active(request, doc)
 	if err != nil {
 		return document.Document{}, false, request, fmt.Errorf("active authentication failed: %w", err)
 	}
@@ -320,7 +320,7 @@ func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (request m
 	}
 
 	// passive auth only (without returning document)
-	err = passport.PassiveAuthenticationEDL(request, state.drivingLicenceCertPool)
+	err = state.drivingLicenceValidator.Passive(request, state.drivingLicenceCertPool)
 	if err != nil {
 		return request, fmt.Errorf("passive authentication failed: %w", err)
 	}
