@@ -163,6 +163,8 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 		return
 	}
 
+	// TODO: check document expiry once we can parse DG1 on the server side
+
 	response := PassportVerificationResponse{
 		AuthenticContent: true,
 		AuthenticChip:    true,
