@@ -49,7 +49,7 @@ It should look like this:
     "full_credential": "pbdf-staging.pbdf.passport",
     "storage_type": "memory",
     "driving_licence_cert_paths": [
-    "./certificates/version/eDL.cer"
+      "./certificates/version/eDL.cer"
   ]
 }
 ```
