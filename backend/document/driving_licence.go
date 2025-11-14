@@ -53,7 +53,6 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 	}
 	hashAlgo := doc.Mf.Lds1.Sod.LdsSecurityObject.HashAlgorithm.Algorithm
 
-	hashAlgo = doc.Mf.Lds1.Sod.LdsSecurityObject.HashAlgorithm.Algorithm
 	for dgName, dgHex := range data.DataGroups {
 		dgBytes := utils.HexToBytes(dgHex)
 		dgNum, err := parseDgNumber(dgName) // DgHash function requires dg number
