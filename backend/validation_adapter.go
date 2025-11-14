@@ -33,10 +33,14 @@ func (PassportValidatorImpl) Active(req models.ValidationRequest, doc document.D
 
 type DrivingLicenceValidator interface {
 	Passive(models.ValidationRequest, *cms.CertPool) error
+	Active(models.ValidationRequest) error
 }
 
 func (DrivingLicenceValidatorImpl) Passive(req models.ValidationRequest, pool *cms.CertPool) error {
 	return mrtdDoc.PassiveAuthenticationEDL(req, pool)
+}
+func (DrivingLicenceValidatorImpl) Active(req models.ValidationRequest) error {
+	return mrtdDoc.ActiveAuthenticationEDL(req)
 }
 
 type DrivingLicenceValidatorImpl struct{}

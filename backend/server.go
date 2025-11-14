@@ -165,7 +165,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 
 	response := PassportVerificationResponse{
 		AuthenticContent: true,
-		AuthenticChip:    false,
+		AuthenticChip:    true,
 		IsExpired:        false,
 	}
 
@@ -323,6 +323,14 @@ func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (request m
 	err = state.drivingLicenceValidator.Passive(request, state.drivingLicenceCertPool)
 	if err != nil {
 		return request, fmt.Errorf("passive authentication failed: %w", err)
+	}
+
+	log.Info.Printf("doing AA now")
+
+	// active auth
+	err = state.drivingLicenceValidator.Active(request)
+	if err != nil {
+		return request, fmt.Errorf("active authentication failed: %w", err)
 	}
 
 	return request, nil

@@ -8,9 +8,11 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gmrtd/gmrtd/activeauth"
 	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/cryptoutils"
 	"github.com/gmrtd/gmrtd/document"
+	"github.com/gmrtd/gmrtd/tlv"
 	"github.com/gmrtd/gmrtd/utils"
 )
 
@@ -83,4 +85,53 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 	log.Info.Printf("verifying the request SOD against the certificate chain succeeded")
 
 	return nil
+}
+
+func ActiveAuthenticationEDL(data models.ValidationRequest) (err error) {
+	if data.Nonce == "" || data.ActiveAuthSignature == "" {
+		return fmt.Errorf("missing nonce or signature")
+	}
+
+	dg13Hex, exists := data.DataGroups["DG13"]
+	if !exists {
+		return fmt.Errorf("DG13 not found in data groups")
+	}
+
+	dg13Bytes := utils.HexToBytes(dg13Hex)
+
+	// Parse DG13 to extract the SubjectPublicKeyInfo
+	pubKeyBytes, err := extractDG13PublicKeyInfo(dg13Bytes)
+	if err != nil {
+		return fmt.Errorf("failed to extract public key from DG13: %w", err)
+	}
+
+	// NOTE: gmrtd is passport specific, so we get the public key from dg13 of edl
+	// and create a document with dg15 of key extracted from dg13
+	// TODO: change this once gmrtd supports eDL groups as well
+	doc := document.Document{}
+	doc.Mf.Lds1.Dg15 = &document.DG15{
+		SubjectPublicKeyInfoBytes: pubKeyBytes,
+	}
+
+	aaSigBytes := utils.HexToBytes(data.ActiveAuthSignature)
+	nonceBytes := utils.HexToBytes(data.Nonce)
+
+	activeauth := activeauth.NewActiveAuth(nil, &doc)
+	err = activeauth.ValidateActiveAuthSignature(aaSigBytes, nonceBytes)
+	if err != nil {
+		return fmt.Errorf("failed to validate active authentication signature: %w", err)
+	}
+
+	return nil
+}
+
+func extractDG13PublicKeyInfo(dg13Bytes []byte) ([]byte, error) {
+	// Unwrap outer 0x6F tag
+	nodes, err := tlv.Decode(dg13Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	// value of tag 0x6F is the SubjectPublicKeyInfo
+	return nodes.GetNode(0x6F).GetValue(), nil
 }
