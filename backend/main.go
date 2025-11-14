@@ -136,19 +136,20 @@ func loadDrivingLicenceCertPool(certPaths []string) (cms.CertPool, error) {
 	certPool := &cms.GenericCertPool{}
 
 	for _, certPath := range certPaths {
-		certPEM, err := os.ReadFile(certPath)
+		data, err := os.ReadFile(certPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read cert file %s: %w", certPath, err)
+			return nil, fmt.Errorf("failed to read %s: %w", certPath, err)
 		}
 
-		block, _ := pem.Decode(certPEM)
-		if block == nil {
-			return nil, fmt.Errorf("failed to decode PEM block from %s", certPath)
+		// Gen 1 cert are PEM while gen 2 and 3 are DER.
+		if block, _ := pem.Decode(data); block != nil {
+			err = certPool.Add(block.Bytes)
+		} else {
+			err = certPool.Add(data)
 		}
 
-		err = certPool.Add(block.Bytes)
 		if err != nil {
-			return nil, fmt.Errorf("failed to add cert from %s: %w", certPath, err)
+			return nil, fmt.Errorf("failed to add cert %s: %w", certPath, err)
 		}
 
 		log.Info.Printf("Loaded driving licence cert: %s", certPath)

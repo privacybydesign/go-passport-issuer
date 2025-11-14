@@ -27,10 +27,9 @@ func parseDgNumber(dgName string) (int, error) {
 	return num, nil
 }
 func PassiveAuthenticationEDL(data models.ValidationRequest, certPool cms.CertPool) (err error) {
-	log.Info.Printf("Starting passive authentication for driving licence. This will not return doc object for now.")
 
 	if len(data.DataGroups) == 0 {
-		return fmt.Errorf("no data groups the driving licence data")
+		return fmt.Errorf("no data groups found")
 	}
 
 	if data.EFSOD == "" {
@@ -76,7 +75,7 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool cms.CertPo
 	if err != nil {
 		return fmt.Errorf("SOD signature verification failed: %w", err)
 	}
-	log.Info.Printf("verifying signature with RDW cert succeeded")
+	log.Info.Printf("verifying the request SOD against the certificate chain succeeded")
 
 	return nil
 }
