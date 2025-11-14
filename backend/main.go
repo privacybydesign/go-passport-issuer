@@ -74,7 +74,7 @@ func main() {
 		jwtCreator:              jwtCreator,
 		tokenStorage:            tokenStorage,
 		passportCertPool:        passportCertPool,
-		drivingLicenceCertPool:  drivingLicenceCertPool,
+		drivingLicenceCertPool:  &drivingLicenceCertPool,
 		passportValidator:       PassportValidatorImpl{},
 		drivingLicenceValidator: DrivingLicenceValidatorImpl{},
 		converter:               IssuanceRequestConverterImpl{},

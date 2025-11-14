@@ -36,7 +36,7 @@ type ServerState struct {
 	tokenStorage            TokenStorage
 	jwtCreator              JwtCreator
 	passportCertPool        *cms.CombinedCertPool
-	drivingLicenceCertPool  cms.CertPool
+	drivingLicenceCertPool  *cms.CertPool
 	passportValidator       PassportValidator
 	drivingLicenceValidator DrivingLicenceValidator
 	converter               PassportDataConverter
