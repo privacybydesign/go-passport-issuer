@@ -36,12 +36,12 @@ func startTestServer(t *testing.T, storage TokenStorage) *Server {
 	t.Helper()
 
 	testState := &ServerState{
-		irmaServerURL: "https://irma.example",
-		tokenStorage:  storage,
-		jwtCreator:    fakeJwtCreator{jwt: "test-jwt"},
-		cscaCertPool:  &cms.CombinedCertPool{},
-		validator:     fakeValidator{},
-		converter:     fakeConverter{},
+		irmaServerURL:     "https://irma.example",
+		tokenStorage:      storage,
+		jwtCreator:        fakeJwtCreator{jwt: "test-jwt"},
+		passportCertPool:  &cms.CombinedCertPool{},
+		passportValidator: fakeValidator{},
+		converter:         fakeConverter{},
 	}
 
 	srv, err := NewServer(testState, testConfig)
@@ -118,10 +118,10 @@ func startValidation(t *testing.T) (sessionID, nonce string) {
 }
 
 // Request builders
-type reqOpt func(*models.PassportValidationRequest)
+type reqOpt func(*models.ValidationRequest)
 
 func withDG(name, hexVal string) reqOpt {
-	return func(r *models.PassportValidationRequest) {
+	return func(r *models.ValidationRequest) {
 		if r.DataGroups == nil {
 			r.DataGroups = map[string]string{}
 		}
@@ -130,15 +130,15 @@ func withDG(name, hexVal string) reqOpt {
 }
 
 func withEFSOD(hexVal string) reqOpt {
-	return func(r *models.PassportValidationRequest) { r.EFSOD = hexVal }
+	return func(r *models.ValidationRequest) { r.EFSOD = hexVal }
 }
 
 func withSig(hexVal string) reqOpt {
-	return func(r *models.PassportValidationRequest) { r.ActiveAuthSignature = hexVal }
+	return func(r *models.ValidationRequest) { r.ActiveAuthSignature = hexVal }
 }
 
-func newReq(sessionId, nonce string, opts ...reqOpt) models.PassportValidationRequest {
-	r := models.PassportValidationRequest{
+func newReq(sessionId, nonce string, opts ...reqOpt) models.ValidationRequest {
+	r := models.ValidationRequest{
 		SessionId:  sessionId,
 		Nonce:      nonce,
 		DataGroups: map[string]string{},
@@ -166,11 +166,11 @@ func (f fakeJwtCreator) CreateJwt(_ models.PassportData) (string, error) { retur
 
 type fakeValidator struct{}
 
-func (fakeValidator) Passive(_ models.PassportValidationRequest, _ *cms.CombinedCertPool) (document.Document, error) {
+func (fakeValidator) Passive(_ models.ValidationRequest, _ *cms.CombinedCertPool) (document.Document, error) {
 	return document.Document{}, nil
 }
 
-func (fakeValidator) Active(_ models.PassportValidationRequest, _ document.Document) (bool, error) {
+func (fakeValidator) Active(_ models.ValidationRequest, _ document.Document) (bool, error) {
 	return true, nil
 }
 
@@ -245,7 +245,7 @@ func TestPassiveAuthFail_NoDataGroups(t *testing.T) {
 	require.NoError(t, err)
 
 	req := newReq(testSessionId, "n")
-	_, err = passportValidatorImpl{}.Passive(req, pool)
+	_, err = PassportValidatorImpl{}.Passive(req, pool)
 	require.Errorf(t, err, "no data groups found in passport data")
 }
 
@@ -255,7 +255,7 @@ func TestPassiveAuthFail_NoEFSOD(t *testing.T) {
 
 	req := newReq(testSessionId, "n", withDG("DG1", "00"))
 	req.EFSOD = "" // simulate missing
-	_, err = passportValidatorImpl{}.Passive(req, pool)
+	_, err = PassportValidatorImpl{}.Passive(req, pool)
 	require.Errorf(t, err, "EF_SOD is missing in passport data")
 }
 
@@ -267,7 +267,7 @@ func TestPassiveAuthFail_UnsupportedDG(t *testing.T) {
 		withDG("DG99", "00"),
 		withEFSOD(readBinToHex(t, "test-data/EF_SOD.bin")),
 	)
-	_, err = passportValidatorImpl{}.Passive(req, pool)
+	_, err = PassportValidatorImpl{}.Passive(req, pool)
 	require.Errorf(t, err, "unsupported data group: DG99")
 }
 
@@ -276,7 +276,7 @@ func TestPassiveAuthFail_BadSOD(t *testing.T) {
 	require.NoError(t, err)
 
 	req := newReq(testSessionId, testNonce, withDG("DG1", "00"), withEFSOD("00")) // bad SOD
-	_, err = passportValidatorImpl{}.Passive(req, certPool)
+	_, err = PassportValidatorImpl{}.Passive(req, certPool)
 	require.Errorf(t, err, "failed to create SOD")
 }
 
@@ -288,7 +288,7 @@ func TestPassiveAuthFail_BadDG(t *testing.T) {
 		withDG("DG1", "12"), // bad DG1
 		withEFSOD(readBinToHex(t, "test-data/EF_SOD.bin")),
 	)
-	_, err = passportValidatorImpl{}.Passive(req, cscaCertPool)
+	_, err = PassportValidatorImpl{}.Passive(req, cscaCertPool)
 	require.ErrorContains(t, err, "failed to create DG1")
 
 }
@@ -308,7 +308,7 @@ func TestActiveAuthFail_BadSig(t *testing.T) {
 	doc.Mf.Lds1.Dg15, err = document.NewDG15(utils.HexToBytes(req.DataGroups["DG15"]))
 	require.NoError(t, err)
 
-	_, err = passportValidatorImpl{}.Active(req, doc)
+	_, err = PassportValidatorImpl{}.Active(req, doc)
 	require.ErrorContains(t, err, "failed to validate active authentication signature")
 }
 
@@ -324,7 +324,7 @@ func TestActiveAuthSkip_NoDG15(t *testing.T) {
 	doc.Mf.Lds1.Dg1, err = document.NewDG1(utils.HexToBytes(req.DataGroups["DG1"]))
 	require.NoError(t, err)
 
-	skipped, err := passportValidatorImpl{}.Active(req, doc)
+	skipped, err := PassportValidatorImpl{}.Active(req, doc)
 	require.NoError(t, err)
 	require.False(t, skipped)
 }
@@ -343,7 +343,7 @@ func TestActiveAuthSkip_NoSig(t *testing.T) {
 	doc.Mf.Lds1.Dg15, err = document.NewDG15(utils.HexToBytes(req.DataGroups["DG15"]))
 	require.NoError(t, err)
 
-	skipped, err := passportValidatorImpl{}.Active(req, doc)
+	skipped, err := PassportValidatorImpl{}.Active(req, doc)
 	require.NoError(t, err)
 	require.False(t, skipped)
 }

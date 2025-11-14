@@ -1,4 +1,4 @@
-package passport
+package document
 
 import (
 	"fmt"
@@ -36,39 +36,22 @@ func parseOptionalDataGroup[T any](dgName string, data []byte, parseFunc func([]
 	return result
 }
 
-func PassiveAuthentication(data models.PassportValidationRequest, certPool cms.CertPool) (doc document.Document, err error) {
-	log.Info.Printf("Starting passive authentication")
+func parsePassportDGs(doc *document.Document, dataGroups map[string]string) error {
+	var err error
 
-	if len(data.DataGroups) == 0 {
-		return document.Document{}, fmt.Errorf("no data groups found in passport data")
-	}
-
-	if data.EFSOD == "" {
-		return document.Document{}, fmt.Errorf("EF_SOD is missing in passport data")
-	}
-
-	log.Info.Printf("Constructing document from data groups")
-
-	var sodFileBytes = utils.HexToBytes(data.EFSOD)
-	doc.Mf.Lds1.Sod, err = document.NewSOD(sodFileBytes)
-	if err != nil {
-		return document.Document{}, fmt.Errorf("failed to create SOD: %w", err)
-	}
-	for dg := range data.DataGroups {
-		dataGroupBytes := utils.HexToBytes(data.DataGroups[dg])
+	for dg := range dataGroups {
+		dataGroupBytes := utils.HexToBytes(dataGroups[dg])
 
 		switch dg {
 		case "DG1":
-			// DG1 is mandatory
 			doc.Mf.Lds1.Dg1, err = document.NewDG1(dataGroupBytes)
 			if err != nil {
-				return document.Document{}, fmt.Errorf("failed to create DG1 (mandatory): %w", err)
+				return fmt.Errorf("failed to create DG1 (mandatory): %w", err)
 			}
 		case "DG2":
-			// DG2 is mandatory
 			doc.Mf.Lds1.Dg2, err = document.NewDG2(dataGroupBytes)
 			if err != nil {
-				return document.Document{}, fmt.Errorf("failed to create DG2 (mandatory): %w", err)
+				return fmt.Errorf("failed to create DG2 (mandatory): %w", err)
 			}
 		case "DG7":
 			doc.Mf.Lds1.Dg7 = parseOptionalDataGroup("DG7", dataGroupBytes, document.NewDG7)
@@ -84,24 +67,51 @@ func PassiveAuthentication(data models.PassportValidationRequest, certPool cms.C
 			// DG15 is mandatory if provided
 			doc.Mf.Lds1.Dg15, err = document.NewDG15(dataGroupBytes)
 			if err != nil {
-				return document.Document{}, fmt.Errorf("failed to create DG15 (mandatory if provided): %w", err)
+				return fmt.Errorf("failed to create DG15 (mandatory if provided): %w", err)
 			}
 		case "DG16":
 			doc.Mf.Lds1.Dg16 = parseOptionalDataGroup("DG16", dataGroupBytes, document.NewDG16)
 		default:
-			return document.Document{}, fmt.Errorf("unsupported data group: %s", dg)
+			return fmt.Errorf("unsupported data group: %s", dg)
 		}
 	}
 
-	// Validate that mandatory data groups were provided
+	// Validate mandatory DGs
 	if doc.Mf.Lds1.Dg1 == nil {
-		return document.Document{}, fmt.Errorf("DG1 is mandatory but was not provided")
+		return fmt.Errorf("DG1 is mandatory but was not provided")
 	}
 	if doc.Mf.Lds1.Dg2 == nil {
-		return document.Document{}, fmt.Errorf("DG2 is mandatory but was not provided")
+		return fmt.Errorf("DG2 is mandatory but was not provided")
 	}
 
-	log.Info.Printf("Starting passive authentication for issuing state: %s", doc.Mf.Lds1.Dg1.Mrz.IssuingState)
+	return nil
+}
+
+func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.CertPool) (doc document.Document, err error) {
+	log.Info.Printf("Starting passive authentication for passports")
+
+	if len(data.DataGroups) == 0 {
+		return document.Document{}, fmt.Errorf("no data groups found")
+	}
+
+	if data.EFSOD == "" {
+		return document.Document{}, fmt.Errorf("EF_SOD is missing in the validation request")
+	}
+
+	log.Info.Printf("Constructing document from data groups")
+
+	var sodFileBytes = utils.HexToBytes(data.EFSOD)
+	doc.Mf.Lds1.Sod, err = document.NewSOD(sodFileBytes)
+	if err != nil {
+		return document.Document{}, fmt.Errorf("failed to create SOD: %w", err)
+	}
+
+	// Type-specific: DG parsing
+	err = parsePassportDGs(&doc, data.DataGroups)
+	if err != nil {
+		return document.Document{}, fmt.Errorf("failed to parse passport DGs: %w", err)
+	}
+	log.Info.Printf("Starting passive authentication for passport with issuing state: %s", doc.Mf.Lds1.Dg1.Mrz.IssuingState)
 
 	err = passiveauth.PassiveAuth(&doc, certPool)
 	if err != nil {
@@ -109,9 +119,10 @@ func PassiveAuthentication(data models.PassportValidationRequest, certPool cms.C
 	}
 
 	return doc, nil
+
 }
 
-func ActiveAuthentication(data models.PassportValidationRequest, doc document.Document) (bool, error) {
+func ActiveAuthentication(data models.ValidationRequest, doc document.Document) (bool, error) {
 	if data.Nonce == "" || data.ActiveAuthSignature == "" || doc.Mf.Lds1.Dg15 == nil {
 		return false, nil
 	}

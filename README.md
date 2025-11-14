@@ -47,7 +47,10 @@ It should look like this:
     "jwt_private_key_path": "../local-secrets/passport-issuer/private.pem",
     "issuer_id": "passport_issuer",
     "full_credential": "pbdf-staging.pbdf.passport",
-    "storage_type": "memory"
+    "storage_type": "memory",
+    "driving_licence_cert_paths": [
+      "./certificates/version/eDL.cer"
+  ]
 }
 ```
 The `jwt_private_key_path` should point to a valid RSA private key in PEM format, which is used to sign JWT tokens for the IRMA server.

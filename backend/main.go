@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	log "go-passport-issuer/logging"
@@ -14,11 +15,12 @@ import (
 type Config struct {
 	ServerConfig ServerConfig `json:"server_config"`
 
-	JwtPrivateKeyPath string `json:"jwt_private_key_path"`
-	IrmaServerUrl     string `json:"irma_server_url"`
-	IssuerId          string `json:"issuer_id"`
-	FullCredential    string `json:"full_credential"`
-	SdJwtBatchSize    uint   `json:"sd_jwt_batch_size"`
+	JwtPrivateKeyPath       string   `json:"jwt_private_key_path"`
+	IrmaServerUrl           string   `json:"irma_server_url"`
+	IssuerId                string   `json:"issuer_id"`
+	FullCredential          string   `json:"full_credential"`
+	SdJwtBatchSize          uint     `json:"sd_jwt_batch_size"`
+	DrivingLicenceCertPaths []string `json:"driving_licence_cert_paths"`
 
 	StorageType         string                    `json:"storage_type"`
 	RedisConfig         redis.RedisConfig         `json:"redis_config,omitempty"`
@@ -57,18 +59,25 @@ func main() {
 		log.Error.Fatalf("failed to instantiate token storage: %v", err)
 	}
 
-	cscaCertPool, err := cms.GetDefaultMasterList()
+	passportCertPool, err := cms.GetDefaultMasterList()
 	if err != nil {
 		log.Error.Fatalf("CscaCertPool error: %s", err)
 	}
+	// Load here all existing generations of driving licence certs
+	drivingLicenceCertPool, err := loadDrivingLicenceCertPool(config.DrivingLicenceCertPaths)
+	if err != nil {
+		log.Error.Fatalf("Failed to load driving license cert: %s", err)
+	}
 
 	serverState := ServerState{
-		irmaServerURL: config.IrmaServerUrl,
-		jwtCreator:    jwtCreator,
-		tokenStorage:  tokenStorage,
-		cscaCertPool:  cscaCertPool,
-		validator:     passportValidatorImpl{},
-		converter:     IssuanceRequestConverterImpl{},
+		irmaServerURL:           config.IrmaServerUrl,
+		jwtCreator:              jwtCreator,
+		tokenStorage:            tokenStorage,
+		passportCertPool:        passportCertPool,
+		drivingLicenceCertPool:  &drivingLicenceCertPool,
+		passportValidator:       PassportValidatorImpl{},
+		drivingLicenceValidator: DrivingLicenceValidatorImpl{},
+		converter:               IssuanceRequestConverterImpl{},
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)
@@ -121,4 +130,30 @@ func createTokenStorage(config *Config) (TokenStorage, error) {
 		return NewInMemoryTokenStorage(), nil
 	}
 	return nil, fmt.Errorf("%v is not a valid storage type", config.StorageType)
+}
+
+func loadDrivingLicenceCertPool(certPaths []string) (cms.CertPool, error) {
+	certPool := &cms.GenericCertPool{}
+
+	for _, certPath := range certPaths {
+		data, err := os.ReadFile(certPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read %s: %w", certPath, err)
+		}
+
+		// Gen 1 cert are PEM while gen 2 and 3 are DER.
+		if block, _ := pem.Decode(data); block != nil {
+			err = certPool.Add(block.Bytes)
+		} else {
+			err = certPool.Add(data)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to add cert %s: %w", certPath, err)
+		}
+
+		log.Info.Printf("Loaded driving licence cert: %s", certPath)
+	}
+
+	return certPool, nil
 }
