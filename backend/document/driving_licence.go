@@ -26,7 +26,7 @@ func parseDgNumber(dgName string) (int, error) {
 
 	return num, nil
 }
-func PassiveAuthenticationEDL(data models.ValidationRequest, certPool cms.CertPool) (err error) {
+func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertPool) (err error) {
 
 	if len(data.DataGroups) == 0 {
 		return fmt.Errorf("no data groups found")
@@ -71,7 +71,7 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool cms.CertPo
 	}
 	log.Info.Printf("passive auth succeeded")
 
-	_, err = doc.Mf.Lds1.Sod.SD.Verify(certPool)
+	_, err = doc.Mf.Lds1.Sod.SD.Verify(*certPool)
 	if err != nil {
 		return fmt.Errorf("SOD signature verification failed: %w", err)
 	}

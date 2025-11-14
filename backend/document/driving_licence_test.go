@@ -9,7 +9,7 @@ import (
 )
 
 // This test uses DG2 and SOD and Certificate belonging to passport due to no available
-// eDL test data
+// eDL test data, but the EDL passive authentication logic should work for any corresponding DG, SOD and Cert
 
 func createTestEDLRequest() models.ValidationRequest {
 	return models.ValidationRequest{
@@ -28,47 +28,15 @@ func setupEdlVerifyTest(t *testing.T) (models.ValidationRequest, cms.CertPool) {
 }
 
 func TestPassiveAuthenticationEDL_InvalidInputs(t *testing.T) {
-	tests := []struct {
-		name             string
-		dataGroups       map[string]string
-		efsod            string
-		passportCertPool *cms.CombinedCertPool
-		expectedError    string
-	}{
-		{
-			name:             "empty data groups returns error",
-			dataGroups:       map[string]string{},
-			efsod:            "some_sod_data",
-			passportCertPool: nil,
-			expectedError:    "no data groups found",
-		},
-		{
-			name: "missing EF_SOD returns error",
-			dataGroups: map[string]string{
-				"DG1": "some_data",
-			},
-			efsod:            "",
-			passportCertPool: nil,
-			expectedError:    "EF_SOD is missing",
-		},
-		{
-			name: "invalid SOD returns error",
-			dataGroups: map[string]string{
-				"DG1": "some_data",
-			},
-			efsod:            "AABBCC",
-			passportCertPool: &cms.CombinedCertPool{},
-			expectedError:    "failed to create SOD",
-		},
-	}
+	_, trustedCerts := setupEdlVerifyTest(t)
 
-	for _, tt := range tests {
+	for _, tt := range invalidPassiveAuthInput {
 		t.Run(tt.name, func(t *testing.T) {
 			data := models.ValidationRequest{
 				DataGroups: tt.dataGroups,
 				EFSOD:      tt.efsod,
 			}
-			err := PassiveAuthenticationEDL(data, tt.passportCertPool)
+			err := PassiveAuthenticationEDL(data, &trustedCerts)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tt.expectedError)
 		})
@@ -78,6 +46,6 @@ func TestPassiveAuthenticationEDL_InvalidInputs(t *testing.T) {
 func TestPassiveAuthenticationEDL_WithRealSOD(t *testing.T) {
 	data, trustedCerts := setupEdlVerifyTest(t)
 
-	err := PassiveAuthenticationEDL(data, trustedCerts)
+	err := PassiveAuthenticationEDL(data, &trustedCerts)
 	require.NoError(t, err)
 }
