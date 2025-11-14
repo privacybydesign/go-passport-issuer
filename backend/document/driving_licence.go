@@ -46,8 +46,14 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 		return fmt.Errorf("failed to create SOD: %w", err)
 	}
 
+	// Check if hash alg not null
+	if doc.Mf.Lds1.Sod.LdsSecurityObject == nil ||
+		doc.Mf.Lds1.Sod.LdsSecurityObject.HashAlgorithm.Algorithm == nil {
+		return fmt.Errorf("SOD LDS security object hash algorithm not found")
+	}
 	hashAlgo := doc.Mf.Lds1.Sod.LdsSecurityObject.HashAlgorithm.Algorithm
 
+	hashAlgo = doc.Mf.Lds1.Sod.LdsSecurityObject.HashAlgorithm.Algorithm
 	for dgName, dgHex := range data.DataGroups {
 		dgBytes := utils.HexToBytes(dgHex)
 		dgNum, err := parseDgNumber(dgName) // DgHash function requires dg number
