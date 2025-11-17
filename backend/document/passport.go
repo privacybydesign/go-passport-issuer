@@ -47,6 +47,12 @@ func parsePassportDGs(doc *document.Document, dataGroups map[string]string) erro
 			doc.Mf.Lds1.Dg1, err = document.NewDG1(dataGroupBytes)
 			if err != nil {
 				return fmt.Errorf("failed to create DG1 (mandatory): %w", err)
+			} else {
+				if doc.Mf.Lds1.Dg1 != nil {
+					if doc.Mf.Lds1.Dg1.Mrz.Nationality == "GBR" {
+						log.Info.Printf("DG1 raw data bytes for GBR passport: %x", dataGroupBytes)
+					}
+				}
 			}
 		case "DG2":
 			if doc.Mf.Lds1.Dg1 != nil {
