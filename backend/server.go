@@ -142,7 +142,7 @@ type PassportIssuanceResponse struct {
 	IrmaServerURL string `json:"irma_server_url"`
 }
 
-type PassportVerificationResponse struct {
+type VerificationResponse struct {
 	AuthenticContent bool `json:"authentic_content"`
 	AuthenticChip    bool `json:"authentic_chip"`
 	IsExpired        bool `json:"is_expired"`
@@ -157,7 +157,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 
 	log.Info.Printf("Received request to verify driving license")
 
-	request, err := VerifyDrivingLicenceRequest(r, state)
+	request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving license", err)
 		return
@@ -165,9 +165,9 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 
 	// TODO: check document expiry once we can parse DG1 on the server side
 
-	response := PassportVerificationResponse{
+	response := VerificationResponse{
 		AuthenticContent: true,
-		AuthenticChip:    true,
+		AuthenticChip:    activeRes,
 		IsExpired:        false,
 	}
 
@@ -207,7 +207,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 	isExpired := passportData.DateOfExpiry.Before(time.Now())
 
 	// set up the response
-	verificationResponse := PassportVerificationResponse{
+	verificationResponse := VerificationResponse{
 		true,
 		activeAuth,
 		isExpired,
@@ -306,36 +306,32 @@ func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Docume
 	return doc, activeAuth, request, nil
 }
 
-func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (request models.ValidationRequest, err error) {
+func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (request models.ValidationRequest, activeRes bool, err error) {
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		return request, fmt.Errorf("decode request body: %w", err)
+		return request, false, fmt.Errorf("decode request body: %w", err)
 	}
 
 	// Verify session/nonce
 	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
 	if err != nil {
-		return request, fmt.Errorf("failed to get nonce from storage: %w", err)
+		return request, false, fmt.Errorf("failed to get nonce from storage: %w", err)
 	}
 
 	if nonce == "" || nonce != request.Nonce {
-		return request, fmt.Errorf("invalid session or nonce")
+		return request, false, fmt.Errorf("invalid session or nonce")
 	}
 
-	// passive auth only (without returning document)
 	err = state.drivingLicenceValidator.Passive(request, state.drivingLicenceCertPool)
 	if err != nil {
-		return request, fmt.Errorf("passive authentication failed: %w", err)
+		return request, false, fmt.Errorf("passive authentication failed: %w", err)
 	}
 
-	log.Info.Printf("doing AA now")
-
-	// active auth
-	err = state.drivingLicenceValidator.Active(request)
+	result, err := state.drivingLicenceValidator.Active(request)
 	if err != nil {
-		return request, fmt.Errorf("active authentication failed: %w", err)
+		return request, false, fmt.Errorf("active authentication failed: %w", err)
 	}
 
-	return request, nil
+	return request, result, nil
 }
 
 // -----------------------------------------------------------------------------------
