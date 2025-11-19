@@ -52,6 +52,32 @@ var (
 			expectedError:    "failed to create SOD",
 		},
 	}
+	invalidActiveAuthInput = []struct {
+		name      string
+		nonce     string
+		signature string
+	}{
+		{
+			name:      "missing nonce returns false with no error",
+			nonce:     "",
+			signature: "signature",
+		},
+		{
+			name:      "missing signature returns false with no error",
+			nonce:     "nonce",
+			signature: "",
+		},
+		{
+			name:      "missing DG15 returns false with no error",
+			nonce:     "nonce",
+			signature: "signature",
+		},
+		{
+			name:      "all missing returns false with no error",
+			nonce:     "",
+			signature: "",
+		},
+	}
 )
 
 func TestBoolToYesNo(t *testing.T) {
@@ -376,34 +402,8 @@ func TestPassiveAuthenticationPassportIgnoresInvalidDG7(t *testing.T) {
 }
 
 func TestActiveAuthenticationPassport(t *testing.T) {
-	tests := []struct {
-		name      string
-		nonce     string
-		signature string
-	}{
-		{
-			name:      "missing nonce returns false with no error",
-			nonce:     "",
-			signature: "signature",
-		},
-		{
-			name:      "missing signature returns false with no error",
-			nonce:     "nonce",
-			signature: "",
-		},
-		{
-			name:      "missing DG15 returns false with no error",
-			nonce:     "nonce",
-			signature: "signature",
-		},
-		{
-			name:      "all missing returns false with no error",
-			nonce:     "",
-			signature: "",
-		},
-	}
 
-	for _, tt := range tests {
+	for _, tt := range invalidActiveAuthInput {
 		t.Run(tt.name, func(t *testing.T) {
 			data := models.ValidationRequest{
 				Nonce:               tt.nonce,

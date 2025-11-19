@@ -39,7 +39,7 @@ type DrivingLicenceValidator interface {
 func (DrivingLicenceValidatorImpl) Passive(req models.ValidationRequest, pool *cms.CertPool) error {
 	return mrtdDoc.PassiveAuthenticationEDL(req, pool)
 }
-func (DrivingLicenceValidatorImpl) Active(req models.ValidationRequest) error {
+func (DrivingLicenceValidatorImpl) Active(req models.ValidationRequest) (bool, error) {
 	return mrtdDoc.ActiveAuthenticationEDL(req)
 }
 

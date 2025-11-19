@@ -87,14 +87,14 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 	return nil
 }
 
-func ActiveAuthenticationEDL(data models.ValidationRequest) (err error) {
+func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err error) {
 	if data.Nonce == "" || data.ActiveAuthSignature == "" {
-		return fmt.Errorf("missing nonce or signature")
+		return false, nil
 	}
 
 	dg13Hex, exists := data.DataGroups["DG13"]
 	if !exists {
-		return fmt.Errorf("DG13 not found in data groups")
+		return false, nil
 	}
 
 	dg13Bytes := utils.HexToBytes(dg13Hex)
@@ -102,11 +102,11 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (err error) {
 	// Parse DG13 to extract the SubjectPublicKeyInfo
 	pubKeyBytes, err := extractDG13PublicKeyInfo(dg13Bytes)
 	if err != nil {
-		return fmt.Errorf("failed to extract public key from DG13: %w", err)
+		return false, fmt.Errorf("failed to extract public key from DG13: %w", err)
 	}
 
-	// NOTE: gmrtd is passport specific, so we get the public key from dg13 of edl
-	// and create a document with dg15 of key extracted from dg13
+	// NOTE: gmrtd is passport specific, so we get the public key from DG13 of eDL
+	// and create a document with DG15 of key extracted from dg13
 	// TODO: change this once gmrtd supports eDL groups as well
 	doc := document.Document{}
 	doc.Mf.Lds1.Dg15 = &document.DG15{
@@ -119,10 +119,10 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (err error) {
 	activeauth := activeauth.NewActiveAuth(nil, &doc)
 	err = activeauth.ValidateActiveAuthSignature(aaSigBytes, nonceBytes)
 	if err != nil {
-		return fmt.Errorf("failed to validate active authentication signature: %w", err)
+		return false, fmt.Errorf("failed to validate active authentication signature: %w", err)
 	}
 
-	return nil
+	return true, nil
 }
 
 func extractDG13PublicKeyInfo(dg13Bytes []byte) ([]byte, error) {
