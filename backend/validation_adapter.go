@@ -33,7 +33,7 @@ func (PassportValidatorImpl) Active(req models.ValidationRequest, doc document.D
 
 type DrivingLicenceValidator interface {
 	Passive(models.ValidationRequest, *cms.CertPool) error
-	Active(models.ValidationRequest) error
+	Active(models.ValidationRequest) (bool, error)
 }
 
 func (DrivingLicenceValidatorImpl) Passive(req models.ValidationRequest, pool *cms.CertPool) error {
