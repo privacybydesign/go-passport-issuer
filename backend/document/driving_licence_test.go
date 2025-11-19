@@ -43,6 +43,36 @@ func TestPassiveAuthenticationEDLInvalidInputs(t *testing.T) {
 	}
 }
 
+func TestActiveAuthenticationEDL(t *testing.T) {
+	for _, tt := range invalidActiveAuthInput {
+		t.Run(tt.name, func(t *testing.T) {
+			data := models.ValidationRequest{
+				Nonce:               tt.nonce,
+				ActiveAuthSignature: tt.signature,
+			}
+			result, err := ActiveAuthenticationEDL(data)
+			require.NoError(t, err)
+			require.False(t, result)
+		})
+	}
+
+}
+
+func TestActiveAuthenticationEDLInvalidSignature(t *testing.T) {
+	var dg13Hex = "6F81A130819E300D06092A864886F70D010101050003818C00308188028180CF9A8BA6EAD230E592AA6B5DA04558CC005A5291B295418575D68D637F41AF105813293D1D43F3685F014FFF3007730E6A15B7801558C6911F1084B7B8553BEE577F84EA7B8BF346128DA380D57E500FAF5AB70971DD9B25F387343E0B6CFA1316B3F58F6B9D3E93A72DD6BE3C7A79D960CE8CBAF8726F5E4FBF289287941FD70203010001"
+
+	data := models.ValidationRequest{
+		Nonce:               "6F",
+		ActiveAuthSignature: "6F",
+		DataGroups:          map[string]string{"DG13": dg13Hex},
+	}
+
+	result, err := ActiveAuthenticationEDL(data)
+	require.Error(t, err)
+	require.False(t, result)
+	require.Contains(t, err.Error(), "failed to validate active authentication signature")
+}
+
 func TestPassiveAuthenticationEDLWithRealSOD(t *testing.T) {
 	data, trustedCerts := setupEdlVerifyTest(t, createTestEDLRequest, testSodHex)
 
