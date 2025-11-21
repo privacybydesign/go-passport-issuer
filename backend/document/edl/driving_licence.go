@@ -1,4 +1,4 @@
-package document
+package edl
 
 import (
 	"bytes"
@@ -12,7 +12,6 @@ import (
 	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/cryptoutils"
 	"github.com/gmrtd/gmrtd/document"
-	"github.com/gmrtd/gmrtd/tlv"
 	"github.com/gmrtd/gmrtd/utils"
 )
 
@@ -100,7 +99,7 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err er
 	dg13Bytes := utils.HexToBytes(dg13Hex)
 
 	// Parse DG13 to extract the SubjectPublicKeyInfo
-	pubKeyBytes, err := extractDG13PublicKeyInfo(dg13Bytes)
+	pubKeyBytes, err := ExtractDG13PublicKeyInfo(dg13Bytes)
 	if err != nil {
 		return false, fmt.Errorf("failed to extract public key from DG13: %w", err)
 	}
@@ -123,15 +122,4 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err er
 	}
 
 	return true, nil
-}
-
-func extractDG13PublicKeyInfo(dg13Bytes []byte) ([]byte, error) {
-	// Unwrap outer 0x6F tag
-	nodes, err := tlv.Decode(dg13Bytes)
-	if err != nil {
-		return nil, err
-	}
-
-	// value of tag 0x6F is the SubjectPublicKeyInfo
-	return nodes.GetNode(0x6F).GetValue(), nil
 }

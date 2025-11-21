@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"go-passport-issuer/document/edl"
 	log "go-passport-issuer/logging"
 	"go-passport-issuer/models"
 	"net/http"
@@ -106,7 +107,7 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/api/start-validation", func(w http.ResponseWriter, r *http.Request) {
 		handleStartValidatePassport(state, w, r)
 	})
-	router.HandleFunc("/api/verify-and-issue", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/api/issue-passport", func(w http.ResponseWriter, r *http.Request) {
 		handleIssuePassport(state, w, r)
 	})
 	router.HandleFunc("/api/verify-passport", func(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +115,9 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	})
 	router.HandleFunc("/api/verify-driving-licence", func(w http.ResponseWriter, r *http.Request) {
 		handleVerifyDrivingLicence(state, w, r)
+	})
+	router.HandleFunc("/api/issue-driving-licence", func(w http.ResponseWriter, r *http.Request) {
+		handleIssueEDL(state, w, r)
 	})
 	router.HandleFunc("/.well-known/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
@@ -142,6 +146,11 @@ type PassportIssuanceResponse struct {
 	IrmaServerURL string `json:"irma_server_url"`
 }
 
+type EDLIssuanceResponse struct {
+	DG1 edl.EDLDG1 `json:"dg1"`
+	DG6 edl.EDLDG6 `json:"dg6"`
+}
+
 type VerificationResponse struct {
 	AuthenticContent bool `json:"authentic_content"`
 	AuthenticChip    bool `json:"authentic_chip"`
@@ -157,7 +166,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 
 	log.Info.Printf("Received request to verify driving license")
 
-	request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
+	_, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving license", err)
 		return
@@ -182,6 +191,33 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token", err)
 	}
 }
+
+func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) {
+	defer closeRequestBody(r)
+
+	if !requirePOST(w, r) {
+		return
+	}
+
+	log.Info.Printf("Received request to verify and issue driving licence")
+	doc, _, _, err := VerifyDrivingLicenceRequest(r, state)
+	if err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving licence", err)
+		return
+	}
+	// TODO: responding with parsed data for now, should become issunace session pointer
+	response := EDLIssuanceResponse{
+		DG1: *doc.Dg1,
+		DG6: *doc.Dg6,
+	}
+
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
+		return
+	}
+
+}
+
 func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer closeRequestBody(r)
 
@@ -306,32 +342,36 @@ func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Docume
 	return doc, activeAuth, request, nil
 }
 
-func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (request models.ValidationRequest, activeRes bool, err error) {
+func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.EDLDocument, request models.ValidationRequest, activeRes bool, err error) {
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		return request, false, fmt.Errorf("decode request body: %w", err)
+		return doc, request, false, fmt.Errorf("decode request body: %w", err)
 	}
 
 	// Verify session/nonce
 	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
 	if err != nil {
-		return request, false, fmt.Errorf("failed to get nonce from storage: %w", err)
+		return doc, request, false, fmt.Errorf("failed to get nonce from storage: %w", err)
 	}
 
 	if nonce == "" || nonce != request.Nonce {
-		return request, false, fmt.Errorf("invalid session or nonce")
+		return doc, request, false, fmt.Errorf("invalid session or nonce")
 	}
 
 	err = state.drivingLicenceValidator.Passive(request, state.drivingLicenceCertPool)
 	if err != nil {
-		return request, false, fmt.Errorf("passive authentication failed: %w", err)
+		return doc, request, false, fmt.Errorf("passive authentication failed: %w", err)
 	}
 
 	result, err := state.drivingLicenceValidator.Active(request)
 	if err != nil {
-		return request, false, fmt.Errorf("active authentication failed: %w", err)
+		return doc, request, false, fmt.Errorf("active authentication failed: %w", err)
 	}
 
-	return request, result, nil
+	doc, err = edl.ParseEDLDocument(request.DataGroups, request.EFSOD)
+	if err != nil {
+		return doc, request, false, fmt.Errorf("failed to parse EDL document: %w", err)
+	}
+	return doc, request, result, nil
 }
 
 // -----------------------------------------------------------------------------------
