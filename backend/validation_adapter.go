@@ -1,7 +1,8 @@
 package main
 
 import (
-	mrtdDoc "go-passport-issuer/document"
+	"go-passport-issuer/document/edl"
+	"go-passport-issuer/document/passport"
 	"go-passport-issuer/models"
 
 	"github.com/gmrtd/gmrtd/cms"
@@ -24,11 +25,11 @@ type PassportDataConverter interface {
 type PassportValidatorImpl struct{}
 
 func (PassportValidatorImpl) Passive(req models.ValidationRequest, pool *cms.CombinedCertPool) (document.Document, error) {
-	return mrtdDoc.PassiveAuthenticationPassport(req, pool)
+	return passport.PassiveAuthenticationPassport(req, pool)
 }
 
 func (PassportValidatorImpl) Active(req models.ValidationRequest, doc document.Document) (bool, error) {
-	return mrtdDoc.ActiveAuthentication(req, doc)
+	return passport.ActiveAuthentication(req, doc)
 }
 
 type DrivingLicenceValidator interface {
@@ -37,10 +38,10 @@ type DrivingLicenceValidator interface {
 }
 
 func (DrivingLicenceValidatorImpl) Passive(req models.ValidationRequest, pool *cms.CertPool) error {
-	return mrtdDoc.PassiveAuthenticationEDL(req, pool)
+	return edl.PassiveAuthenticationEDL(req, pool)
 }
 func (DrivingLicenceValidatorImpl) Active(req models.ValidationRequest) (bool, error) {
-	return mrtdDoc.ActiveAuthenticationEDL(req)
+	return edl.ActiveAuthenticationEDL(req)
 }
 
 type DrivingLicenceValidatorImpl struct{}
@@ -48,5 +49,5 @@ type DrivingLicenceValidatorImpl struct{}
 type IssuanceRequestConverterImpl struct{}
 
 func (IssuanceRequestConverterImpl) ToPassportData(doc document.Document, active bool) (models.PassportData, error) {
-	return mrtdDoc.ToPassportData(doc, active)
+	return passport.ToPassportData(doc, active)
 }
