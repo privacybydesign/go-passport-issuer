@@ -58,7 +58,6 @@ func decodeTestCase(t *testing.T, s string) []byte {
 
 func TestParseEdlDg1(t *testing.T) {
 	dg1Bytes := decodeTestCase(t, DG_1_TEST)
-	fmt.Printf("\ndg1: %s\n", hex.EncodeToString(dg1Bytes))
 
 	result, err := edl.ParseEDLDG1(dg1Bytes)
 	require.NoError(t, err)
