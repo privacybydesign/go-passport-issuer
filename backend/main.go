@@ -16,6 +16,7 @@ type Config struct {
 	ServerConfig            ServerConfig              `json:"server_config"`
 	IrmaServerUrl           string                    `json:"irma_server_url"`
 	IssuerId                string                    `json:"issuer_id"`
+	JwtPrivateKeyPath       string                    `json:"jwt_private_key_path"`
 	SdJwtBatchSize          uint                      `json:"sd_jwt_batch_size"`
 	DrivingLicenceCertPaths []string                  `json:"driving_licence_cert_paths"`
 	Credentials             AllCredentialConfigs      `json:"credentials"`
@@ -25,8 +26,7 @@ type Config struct {
 }
 
 type CredentialConfig struct {
-	JwtPrivateKeyPath string `json:"jwt_private_key_path"`
-	FullCredential    string `json:"full_credential"`
+	FullCredential string `json:"full_credential"`
 }
 
 type AllCredentialConfigs struct {
@@ -57,7 +57,7 @@ func main() {
 	log.Info.Printf("hosting on: %v:%v", config.ServerConfig.Host, config.ServerConfig.Port)
 
 	passportJwtCreator, err := NewIrmaJwtCreator(
-		config.Credentials.Passport.JwtPrivateKeyPath,
+		config.JwtPrivateKeyPath,
 		config.IssuerId,
 		config.Credentials.Passport.FullCredential,
 		config.SdJwtBatchSize,
@@ -67,7 +67,7 @@ func main() {
 	}
 
 	edlJwtCreator, err := NewIrmaJwtCreator(
-		config.Credentials.DrivingLicence.JwtPrivateKeyPath,
+		config.JwtPrivateKeyPath,
 		config.IssuerId,
 		config.Credentials.DrivingLicence.FullCredential,
 		config.SdJwtBatchSize,
