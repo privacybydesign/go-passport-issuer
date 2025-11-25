@@ -36,7 +36,7 @@ type EDLDG1 struct {
 }
 
 type EDLDG5 struct {
-	RawData []byte
+	RawData   []byte
 	Signature images.ImageContainer
 }
 

@@ -344,7 +344,7 @@ func ParseEDLDG5(dg5Bytes []byte) (*EDLDG5, error) {
 		RawData: dg5Bytes,
 		Signature: images.ImageContainer{
 			ImageDataType: &imageType,
-			ImageData: imageData,
+			ImageData:     imageData,
 		},
 	}, nil
 }
