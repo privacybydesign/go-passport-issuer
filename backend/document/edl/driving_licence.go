@@ -132,7 +132,7 @@ func ToDrivingLicenceData(doc EDLDocument, activeAuth bool) (request models.EDLD
 	log.Info.Printf("Converting DG6 images to PNG")
 	pngs, err := doc.Dg6.ConvertToPNG()
 	if err != nil {
-		return models.EDLData{}, fmt.Errorf("failed to convert EF DG2 images to PNG: %w", err)
+		return models.EDLData{}, fmt.Errorf("failed to convert DG6 image to PNG: %w", err)
 	}
 
 	var dob = doc.Dg1.DateOfBirth
