@@ -3,6 +3,7 @@ package edl
 import (
 	"encoding/hex"
 	"fmt"
+	"go-passport-issuer/images"
 	"strconv"
 	"time"
 
@@ -119,13 +120,14 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 		facialData[0] != 0x46 || facialData[1] != 0x41 ||
 		facialData[2] != 0x43 || facialData[3] != 0x00 {
 		// No FAC header, return raw data
+
 		return &EDLDG6{
-			RawData:   dg6Bytes,
-			ImageData: facialData,
-			ImageType: "JPEG",
+			RawData: dg6Bytes,
+			ImageContainer: images.ImageContainer{
+				ImageData: facialData,
+			},
 		}, nil
 	}
-
 	// Parse FAC structure to extract image
 	offset := 4 // Skip "FAC\0"
 
@@ -162,9 +164,9 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 
 	// Read image data type to determine JPEG vs JPEG2000
 	imageDataType := facialData[offset]
-	imageType := "JPEG"
+	imageType := 0
 	if imageDataType == 1 {
-		imageType = "JPEG2000"
+		imageType = 1
 	}
 	offset += 1
 
@@ -179,9 +181,11 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 	imageData := facialData[offset:]
 
 	return &EDLDG6{
-		RawData:   dg6Bytes,
-		ImageData: imageData,
-		ImageType: imageType,
+		RawData: dg6Bytes,
+		ImageContainer: images.ImageContainer{
+			ImageData:     imageData,
+			ImageDataType: &imageType,
+		},
 	}, nil
 }
 

@@ -3,10 +3,12 @@ package edl
 import (
 	"bytes"
 	"fmt"
+	mrtdDoc "go-passport-issuer/document"
 	log "go-passport-issuer/logging"
 	"go-passport-issuer/models"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gmrtd/gmrtd/activeauth"
 	"github.com/gmrtd/gmrtd/cms"
@@ -122,4 +124,39 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err er
 	}
 
 	return true, nil
+}
+
+func ToDrivingLicenceData(doc EDLDocument, activeAuth bool) (request models.EDLData, err error) {
+	log.Info.Printf("Converting document read out to driving licence issuance request")
+
+	log.Info.Printf("Converting DG6 images to PNG")
+	pngs, err := doc.Dg6.ConvertToPNG()
+	if err != nil {
+		return models.EDLData{}, fmt.Errorf("failed to convert EF DG2 images to PNG: %w", err)
+	}
+
+	var dob = doc.Dg1.DateOfBirth
+	request = models.EDLData{
+		DocumentNumber:       doc.Dg1.DocumentNumber,
+		FirstName:            doc.Dg1.HolderSurname,
+		LastName:             doc.Dg1.HolderOtherName,
+		IssuingMemberState:   doc.Dg1.IssuingMemberState,
+		IssuingAuthority:     doc.Dg1.IssuingAuthority,
+		DateOfBirth:          doc.Dg1.DateOfBirth,
+		YearOfBirth:          dob.Format("2006"),
+		PlaceOfBirth:         doc.Dg1.PlaceOfBirth,
+		DateOfExpiry:         doc.Dg1.DateOfExpiry,
+		Over12:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-12, 0, 0))),
+		Over16:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-16, 0, 0))),
+		Over18:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-18, 0, 0))),
+		Over21:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-21, 0, 0))),
+		Over65:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-65, 0, 0))),
+		ActiveAuthentication: mrtdDoc.BoolToYesNo(activeAuth),
+	}
+
+	if len(pngs) > 0 {
+		request.Photo = pngs[0]
+	}
+
+	return request, nil
 }

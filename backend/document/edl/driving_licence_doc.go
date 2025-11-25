@@ -1,6 +1,7 @@
 package edl
 
 import (
+	"go-passport-issuer/images"
 	"time"
 
 	"github.com/gmrtd/gmrtd/document"
@@ -35,9 +36,8 @@ type EDLDG1 struct {
 }
 
 type EDLDG6 struct {
-	RawData   []byte
-	ImageData []byte
-	ImageType string
+	RawData []byte
+	images.ImageContainer
 }
 
 type EDLDG13 struct {

@@ -111,6 +111,10 @@ type EfParseError struct{ msg string }
 
 func (e EfParseError) Error() string { return e.msg }
 
+type ImageContainer struct {
+	ImageData     []byte
+	ImageDataType *int
+}
 type EfDG2 struct {
 	VersionNumber        int
 	LengthOfRecord       int
@@ -132,8 +136,7 @@ type EfDG2 struct {
 	DeviceType           int
 	Quality              int
 
-	ImageData     []byte
-	imageDataType *int // 0 = JPEG, 1 = JPEG2000
+	ImageContainer
 }
 
 func NewEfDG2FromBytes(data []byte) (*EfDG2, error) {
@@ -144,11 +147,11 @@ func NewEfDG2FromBytes(data []byte) (*EfDG2, error) {
 	return dg2, nil
 }
 
-func (e *EfDG2) ImageType() (ImageType, bool) {
-	if e.imageDataType == nil {
+func (ic *ImageContainer) ImageType() (ImageType, bool) {
+	if ic.ImageDataType == nil {
 		return 0, false
 	}
-	if *e.imageDataType == 0 {
+	if *ic.ImageDataType == 0 {
 		return ImageJPEG, true
 	}
 	return ImageJPEG2000, true
@@ -363,7 +366,7 @@ func (e *EfDG2) readBiometricDataBlock(tlvs []tlvNode) error {
 		return err
 	}
 	offset += 1
-	e.imageDataType = &idt
+	e.ImageContainer.ImageDataType = &idt
 
 	if e.ImageWidth, err = beInt(data, offset, 2); err != nil {
 		return err
@@ -419,11 +422,14 @@ type chunk struct {
 }
 
 func (e *EfDG2) ConvertToPNG() ([]string, error) {
-	if len(e.ImageData) == 0 {
+	return e.ImageContainer.ConvertToPNG()
+}
+func (ic *ImageContainer) ConvertToPNG() ([]string, error) {
+	if len(ic.ImageData) == 0 {
 		return nil, fmt.Errorf("data not provided")
 	}
 
-	parts := extractImagesFromDG2(e.ImageData)
+	parts := extractImagesFromDG2(ic.ImageData)
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("no embedded JPEG/JP2/J2K/JLS signatures found in DG2")
 	}
