@@ -35,7 +35,7 @@ type ServerConfig struct {
 type ServerState struct {
 	irmaServerURL           string
 	tokenStorage            TokenStorage
-	jwtCreator              JwtCreator
+	jwtCreators             AllJwtCreators
 	passportCertPool        *cms.CombinedCertPool
 	drivingLicenceCertPool  *cms.CertPool
 	passportValidator       PassportValidator
@@ -207,7 +207,7 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	jwt, err := state.jwtCreator.CreateEDLJwt(issuanceRequest)
+	jwt, err := state.jwtCreators.DrivingLicence.CreateEDLJwt(issuanceRequest)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, "failed to create JWT", "failed to create JWT", err)
 		return
@@ -300,7 +300,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	jwt, err := state.jwtCreator.CreatePassportJwt(issuanceRequest)
+	jwt, err := state.jwtCreators.Passport.CreatePassportJwt(issuanceRequest)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, "failed to create JWT", "failed to create JWT", err)
 		return

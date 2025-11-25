@@ -35,10 +35,14 @@ var testConfig = ServerConfig{
 func startTestServer(t *testing.T, storage TokenStorage) *Server {
 	t.Helper()
 
+	jwtCreators := AllJwtCreators{
+		Passport:       fakeJwtCreator{jwt: "test-jwt"},
+		DrivingLicence: fakeJwtCreator{jwt: "test-jwt"},
+	}
 	testState := &ServerState{
 		irmaServerURL:     "https://irma.example",
 		tokenStorage:      storage,
-		jwtCreator:        fakeJwtCreator{jwt: "test-jwt"},
+		jwtCreators:       jwtCreators,
 		passportCertPool:  &cms.CombinedCertPool{},
 		passportValidator: fakeValidator{},
 		converter:         fakeConverter{},
@@ -162,7 +166,13 @@ func readBinToHex(t *testing.T, path string) string {
 
 type fakeJwtCreator struct{ jwt string }
 
-func (f fakeJwtCreator) CreateJwt(_ models.PassportData) (string, error) { return f.jwt, nil }
+func (f fakeJwtCreator) CreatePassportJwt(_ models.PassportData) (string, error) {
+	return f.jwt, nil
+}
+
+func (f fakeJwtCreator) CreateEDLJwt(_ models.EDLData) (string, error) {
+	return f.jwt, nil
+}
 
 type fakeValidator struct{}
 
@@ -194,7 +204,7 @@ func TestVerifyAndIssue_Success_RemovesSessionID(t *testing.T) {
 	session, nonce := startValidation(t)
 	req := newReq(session, nonce)
 
-	resp, body, _ := postJSON[map[string]any](t, "http://localhost:8081/api/verify-and-issue", req)
+	resp, body, _ := postJSON[map[string]any](t, "http://localhost:8081/api/issue-passport", req)
 	mustStatus(t, resp, http.StatusOK, body)
 
 	got, err := storage.RetrieveToken(session)
@@ -211,7 +221,7 @@ func TestVerifyAndIssue_Fail_BadNonce(t *testing.T) {
 	require.NoError(t, storage.StoreToken(session, nonce))
 
 	req := newReq(session, "bad-nonce")
-	resp, body, _ := postJSON[map[string]any](t, "http://localhost:8081/api/verify-and-issue", req)
+	resp, body, _ := postJSON[map[string]any](t, "http://localhost:8081/api/issue-passport", req)
 	mustStatus(t, resp, http.StatusBadRequest, body)
 }
 
@@ -222,10 +232,10 @@ func TestVerifyAndIssue_Fail_SessionReuse(t *testing.T) {
 	session, nonce := startValidation(t)
 	req := newReq(session, nonce)
 
-	resp1, body1, _ := postJSON[map[string]any](t, "http://localhost:8081/api/verify-and-issue", req)
+	resp1, body1, _ := postJSON[map[string]any](t, "http://localhost:8081/api/issue-passport", req)
 	mustStatus(t, resp1, http.StatusOK, body1)
 
-	resp2, body2, _ := postJSON[map[string]any](t, "http://localhost:8081/api/verify-and-issue", req)
+	resp2, body2, _ := postJSON[map[string]any](t, "http://localhost:8081/api/issue-passport", req)
 	mustStatus(t, resp2, http.StatusBadRequest, body2)
 }
 
@@ -236,7 +246,7 @@ func TestVerifyAndIssue_Success(t *testing.T) {
 	session, nonce := startValidation(t)
 	req := newReq(session, nonce)
 
-	resp, body, _ := postJSON[map[string]any](t, "http://localhost:8081/api/verify-and-issue", req)
+	resp, body, _ := postJSON[map[string]any](t, "http://localhost:8081/api/issue-passport", req)
 	mustStatus(t, resp, http.StatusOK, body)
 }
 
