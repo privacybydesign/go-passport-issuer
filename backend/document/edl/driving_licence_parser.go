@@ -315,12 +315,12 @@ func ParseEDLDG5(dg5Bytes []byte) (*EDLDG5, error) {
 	}
 	root := nodes.GetNode(0x67)
 	if !root.IsValidNode() {
-		return nil, fmt.Errorf("Tag 0x67 not found in DG5")
+		return nil, fmt.Errorf("tag 0x67 not found in DG5")
 	}
 
 	imageTypeNode := root.GetNode(0x89)
 	if !imageTypeNode.IsValidNode() {
-		return nil, fmt.Errorf("Tag 0x89 not found in DG5")
+		return nil, fmt.Errorf("tag 0x89 not found in DG5")
 	}
 
 	imageType := int(imageTypeNode.GetValue()[0])
@@ -335,7 +335,7 @@ func ParseEDLDG5(dg5Bytes []byte) (*EDLDG5, error) {
 
 	imageNode := root.GetNode(0x5f43)
 	if !imageNode.IsValidNode() {
-		return nil, fmt.Errorf("Tag 0x5f43 not found in DG5")
+		return nil, fmt.Errorf("tag 0x5f43 not found in DG5")
 	}
 
 	imageData := imageNode.GetValue()
