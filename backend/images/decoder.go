@@ -366,7 +366,7 @@ func (e *EfDG2) readBiometricDataBlock(tlvs []tlvNode) error {
 		return err
 	}
 	offset += 1
-	e.ImageContainer.ImageDataType = &idt
+	e.ImageDataType = &idt
 
 	if e.ImageWidth, err = beInt(data, offset, 2); err != nil {
 		return err

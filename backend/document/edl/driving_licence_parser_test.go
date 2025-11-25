@@ -119,7 +119,7 @@ func TestParseEdlDg6(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.ImageData, 17621)
 
-	imageType, ok := result.ImageContainer.ImageType()
+	imageType, ok := result.ImageType()
 	require.True(t, ok)
 	require.Equal(t, imageType, images.ImageJPEG)
 

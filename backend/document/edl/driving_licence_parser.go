@@ -101,12 +101,12 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 
 	biometricGroupNode := outerNode.GetNode(0x7F61)
 	if !biometricGroupNode.IsValidNode() {
-		return nil, fmt.Errorf("Biometric group tag (0x7F61) not found")
+		return nil, fmt.Errorf("biometric group tag (0x7F61) not found")
 	}
 
 	biometricInfoNode := biometricGroupNode.GetNode(0x7F60)
 	if !biometricInfoNode.IsValidNode() {
-		return nil, fmt.Errorf("Biometric info template (0x7F60) not found")
+		return nil, fmt.Errorf("biometric info template (0x7F60) not found")
 	}
 
 	bdbNode := biometricInfoNode.GetNode(0x5F2E)
