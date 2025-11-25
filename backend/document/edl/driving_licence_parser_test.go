@@ -3,6 +3,7 @@ package edl_test
 import (
 	"encoding/hex"
 	"go-passport-issuer/document/edl"
+	"go-passport-issuer/images"
 	"strings"
 	"testing"
 	"time"
@@ -102,7 +103,10 @@ func TestParseEdlDg6(t *testing.T) {
 	result, err := edl.ParseEDLDG6(dg6Bytes)
 	require.NoError(t, err)
 	require.Len(t, result.ImageData, 17621, "length doesn't match (%v != %v)", len(result.ImageData), 17621)
-	require.Equal(t, result.ImageType, "JPEG")
+
+	imageType, ok := result.ImageContainer.ImageType()
+	require.True(t, ok)
+	require.Equal(t, imageType, images.ImageJPEG)
 }
 
 func TestParseEdlDg1(t *testing.T) {

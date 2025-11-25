@@ -163,7 +163,7 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 	offset += 1 // face image type (1 byte)
 
 	// Read image data type to determine JPEG vs JPEG2000
-	imageDataType := facialData[offset]
+	imageDataType := int(facialData[offset])
 	offset += 1
 
 	offset += 2 // image width (2 bytes)
