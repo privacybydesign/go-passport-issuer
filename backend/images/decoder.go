@@ -195,7 +195,7 @@ func (e *EfDG2) Parse(content []byte) error {
 	// BITs follow BICT inside BIGT
 	offset := tlvEncodedLen(bict)
 	bv := tlvValue(bigt)
-	for i := 0; i < bitCount; i++ {
+	for range bitCount {
 		if offset >= len(bv) {
 			return EfParseError{"Unexpected end of BIGT while reading BITs"}
 		}

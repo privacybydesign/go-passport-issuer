@@ -1,6 +1,7 @@
 package edl
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"go-passport-issuer/images"
@@ -60,11 +61,11 @@ func ParseEDLDocument(dataGroups map[string]string, sodHex string) (*EDLDocument
 		dg6Bytes := utils.HexToBytes(dg6Hex)
 		dg6, err := ParseEDLDG6(dg6Bytes)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse DG1: %w", err)
+			return nil, fmt.Errorf("failed to parse DG6: %w", err)
 		}
 		doc.Dg6 = dg6
 	} else {
-		return nil, fmt.Errorf("DG1 is mandatory but not provided")
+		return nil, fmt.Errorf("DG6 is mandatory but not provided")
 	}
 
 	// Parse DG13
@@ -84,7 +85,7 @@ func ParseEDLDocument(dataGroups map[string]string, sodHex string) (*EDLDocument
 }
 
 func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
-	if len(dg6Bytes) < 1 {
+	if len(dg6Bytes) == 0 {
 		return nil, fmt.Errorf("DG6 is empty")
 	}
 
@@ -116,11 +117,8 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 	facialData := bdbNode.GetValue()
 
 	// Check for "FAC\0" header
-	if len(facialData) < 4 ||
-		facialData[0] != 0x46 || facialData[1] != 0x41 ||
-		facialData[2] != 0x43 || facialData[3] != 0x00 {
-		// No FAC header, return raw data
-
+	if len(facialData) < 4 || !bytes.Equal(facialData[:4], []byte{0x46, 0x41, 0x43, 0x00}) {
+		// No FAC header, so return raw data
 		return &EDLDG6{
 			RawData: dg6Bytes,
 			ImageContainer: images.ImageContainer{
@@ -131,6 +129,7 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 	// Parse FAC structure to extract image
 	offset := 4 // Skip "FAC\0"
 
+	// check if there are at least 40 bytes left after this point
 	if len(facialData) < offset+40 {
 		return nil, fmt.Errorf("FAC data too short")
 	}
@@ -156,6 +155,7 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 	// Skip feature points (8 bytes each)
 	offset += nrFeaturePoints * 8
 
+	// check if there are at least 14 bytes left after this point
 	if len(facialData) < offset+14 {
 		return nil, fmt.Errorf("FAC data too short for image header")
 	}
@@ -163,11 +163,7 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 	offset += 1 // face image type (1 byte)
 
 	// Read image data type to determine JPEG vs JPEG2000
-	imageDataType := facialData[offset]
-	imageType := 0
-	if imageDataType == 1 {
-		imageType = 1
-	}
+	imageDataType := int(facialData[offset])
 	offset += 1
 
 	offset += 2 // image width (2 bytes)
@@ -184,13 +180,13 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 		RawData: dg6Bytes,
 		ImageContainer: images.ImageContainer{
 			ImageData:     imageData,
-			ImageDataType: &imageType,
+			ImageDataType: &imageDataType,
 		},
 	}, nil
 }
 
 func ParseEDLDG1(dg1Bytes []byte) (*EDLDG1, error) {
-	if len(dg1Bytes) < 1 {
+	if len(dg1Bytes) == 0 {
 		return nil, fmt.Errorf("DG1 is empty")
 	}
 
@@ -243,60 +239,72 @@ func ParseEDLDG1(dg1Bytes []byte) (*EDLDG1, error) {
 
 	// Parse BCD-encoded dates
 	if node := personalDataTLV.GetNode(DATE_OF_BIRTH); node.IsValidNode() {
-		dg1.DateOfBirth, _ = parseBCDDate(node.GetValue())
+		dg1.DateOfBirth, err = parseBCDDate(node.GetValue())
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse date of birth: %w", err)
+		}
 	}
 	if node := personalDataTLV.GetNode(DATE_OF_ISSUE); node.IsValidNode() {
-		dg1.DateOfIssue, _ = parseBCDDate(node.GetValue())
+		dg1.DateOfIssue, err = parseBCDDate(node.GetValue())
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse date of issue: %w", err)
+		}
 	}
 	if node := personalDataTLV.GetNode(DATE_OF_EXPIRY); node.IsValidNode() {
-		dg1.DateOfExpiry, _ = parseBCDDate(node.GetValue())
+		dg1.DateOfExpiry, err = parseBCDDate(node.GetValue())
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse date of expiry: %w", err)
+		}
 	}
 
 	// Parse categories (0x7F63) - directly under 0x61
 	secondaryNode := rootNode.GetNode(DG1_SECONDARY_TAG)
-	if secondaryNode.IsValidNode() {
-		// Get all 0x87 category tags
-		for i := 1; ; i++ {
-			categoryNode := secondaryNode.GetNodeByOccur(CATEGORY_TAG, i)
-			if !categoryNode.IsValidNode() {
-				break
-			}
 
-			categoryData := categoryNode.GetValue()
-
-			// Find semicolons
-			firstSemicolon := -1
-			secondSemicolon := -1
-			for j, b := range categoryData {
-				if b == 0x3b {
-					if firstSemicolon == -1 {
-						firstSemicolon = j
-					} else {
-						secondSemicolon = j
-						break
-					}
-				}
-			}
-
-			if firstSemicolon != -1 && secondSemicolon != -1 && len(categoryData) >= secondSemicolon+5 {
-				categoryName := string(categoryData[0:firstSemicolon])
-				issueDateBCD := categoryData[firstSemicolon+1 : firstSemicolon+5]
-				expiryDateBCD := categoryData[secondSemicolon+1 : secondSemicolon+5]
-
-				issueDate, _ := parseBCDDate(issueDateBCD)
-				expiryDate, _ := parseBCDDate(expiryDateBCD)
-
-				dg1.Categories = append(dg1.Categories, DrivingLicenseCategory{
-					Category:     categoryName,
-					DateOfIssue:  issueDate,
-					DateOfExpiry: expiryDate,
-				})
-			}
-		}
-	} else {
+	if !secondaryNode.IsValidNode() {
 		dg1.Categories = []DrivingLicenseCategory{}
+		return dg1, nil
 	}
 
+	const semicolonHex = 0x3b // utf8 for a semicolon
+
+	// Get all 0x87 category tags
+	for i := 1; ; i++ {
+		categoryNode := secondaryNode.GetNodeByOccur(CATEGORY_TAG, i)
+		if !categoryNode.IsValidNode() {
+			break
+		}
+
+		categoryData := categoryNode.GetValue()
+
+		// Find semicolons
+		firstSemicolon := -1
+		secondSemicolon := -1
+		for j, b := range categoryData {
+			if b == semicolonHex {
+				if firstSemicolon == -1 {
+					firstSemicolon = j
+				} else {
+					secondSemicolon = j
+					break
+				}
+			}
+		}
+
+		if firstSemicolon != -1 && secondSemicolon != -1 && len(categoryData) >= secondSemicolon+5 {
+			categoryName := string(categoryData[0:firstSemicolon])
+			issueDateBCD := categoryData[firstSemicolon+1 : firstSemicolon+5]
+			expiryDateBCD := categoryData[secondSemicolon+1 : secondSemicolon+5]
+
+			issueDate, _ := parseBCDDate(issueDateBCD)
+			expiryDate, _ := parseBCDDate(expiryDateBCD)
+
+			dg1.Categories = append(dg1.Categories, DrivingLicenseCategory{
+				Category:     categoryName,
+				DateOfIssue:  issueDate,
+				DateOfExpiry: expiryDate,
+			})
+		}
+	}
 	return dg1, nil
 }
 
@@ -323,9 +331,20 @@ func parseBCDDate(bcd []byte) (time.Time, error) {
 	dateStr := hex.EncodeToString(bcd)
 
 	// Parse as DDMMYYYY
-	day, _ := strconv.Atoi(dateStr[0:2])
-	month, _ := strconv.Atoi(dateStr[2:4])
-	year, _ := strconv.Atoi(dateStr[4:8])
+	day, err := strconv.Atoi(dateStr[0:2])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to parse day: %w", err)
+	}
+
+	month, err := strconv.Atoi(dateStr[2:4])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to parse month: %w", err)
+	}
+
+	year, err := strconv.Atoi(dateStr[4:8])
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to parse year: %w", err)
+	}
 
 	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC), nil
 }
