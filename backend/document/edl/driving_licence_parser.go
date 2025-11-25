@@ -116,7 +116,7 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 	facialData := bdbNode.GetValue()
 
 	// Check for "FAC\0" header
-	if !bytes.Equal(facialData, []byte{0x46, 0x41, 0x43, 0x00}) {
+	if len(facialData) < 4 || !bytes.Equal(facialData[:4], []byte{0x46, 0x41, 0x43, 0x00}) {
 		// No FAC header, so return raw data
 		return &EDLDG6{
 			RawData:   dg6Bytes,
