@@ -97,7 +97,7 @@ func decodeTestCase(t *testing.T, s string) []byte {
 	return r
 }
 
-func TestParseEdlDg5(t *testing.T){ 
+func TestParseEdlDg5(t *testing.T) {
 	dg5Bytes := decodeTestCase(t, DG_5_TEST)
 
 	result, err := edl.ParseEDLDG5(dg5Bytes)
@@ -117,7 +117,7 @@ func TestParseEdlDg6(t *testing.T) {
 
 	result, err := edl.ParseEDLDG6(dg6Bytes)
 	require.NoError(t, err)
-	require.Len(t, result.ImageData, 17621, "length doesn't match (%v != %v)", len(result.ImageData), 17621)
+	require.Len(t, result.ImageData, 17621)
 
 	imageType, ok := result.ImageContainer.ImageType()
 	require.True(t, ok)
