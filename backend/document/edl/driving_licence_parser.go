@@ -308,6 +308,47 @@ func ParseEDLDG1(dg1Bytes []byte) (*EDLDG1, error) {
 	return dg1, nil
 }
 
+func ParseEDLDG5(dg5Bytes []byte) (*EDLDG5, error) {
+	nodes, err := tlv.Decode(dg5Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse DG5 TLV: %w", err)
+	}
+	root := nodes.GetNode(0x67)
+	if !root.IsValidNode() {
+		return nil, fmt.Errorf("Tag 0x67 not found in DG5")
+	}
+
+	imageTypeNode := root.GetNode(0x89)
+	if !imageTypeNode.IsValidNode() {
+		return nil, fmt.Errorf("Tag 0x89 not found in DG5")
+	}
+
+	imageType := int(imageTypeNode.GetValue()[0])
+	switch imageType {
+	case 0x03:
+		imageType = 0x00
+	case 0x04:
+		imageType = 0x01
+	default:
+		return nil, fmt.Errorf("invalid image type (%v) in DG5", imageType)
+	}
+
+	imageNode := root.GetNode(0x5f43)
+	if !imageNode.IsValidNode() {
+		return nil, fmt.Errorf("Tag 0x5f43 not found in DG5")
+	}
+
+	imageData := imageNode.GetValue()
+
+	return &EDLDG5{
+		RawData: dg5Bytes,
+		Signature: images.ImageContainer{
+			ImageDataType: &imageType,
+			ImageData: imageData,
+		},
+	}, nil
+}
+
 func ExtractDG13PublicKeyInfo(dg13Bytes []byte) ([]byte, error) {
 
 	// Unwrap outer 0x6F tag

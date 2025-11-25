@@ -35,6 +35,11 @@ type EDLDG1 struct {
 	Categories         []DrivingLicenseCategory
 }
 
+type EDLDG5 struct {
+	RawData []byte
+	Signature images.ImageContainer
+}
+
 type EDLDG6 struct {
 	RawData []byte
 	images.ImageContainer
