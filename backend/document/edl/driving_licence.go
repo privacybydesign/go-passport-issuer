@@ -138,8 +138,8 @@ func ToDrivingLicenceData(doc EDLDocument, activeAuth bool) (request models.EDLD
 	var dob = doc.Dg1.DateOfBirth
 	request = models.EDLData{
 		DocumentNumber:       doc.Dg1.DocumentNumber,
-		FirstName:            doc.Dg1.HolderSurname,
-		LastName:             doc.Dg1.HolderOtherName,
+		FirstName:            doc.Dg1.HolderFirstName,
+		LastName:             doc.Dg1.HolderSurname,
 		IssuingMemberState:   doc.Dg1.IssuingMemberState,
 		IssuingAuthority:     doc.Dg1.IssuingAuthority,
 		DateOfBirth:          doc.Dg1.DateOfBirth,

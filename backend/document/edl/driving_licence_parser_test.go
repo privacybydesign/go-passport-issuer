@@ -133,7 +133,7 @@ func TestParseEdlDg1(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, result.HolderSurname, "Bassie")
-	require.Equal(t, result.HolderOtherName, "Barrie")
+	require.Equal(t, result.HolderFirstName, "Barrie")
 	require.Equal(t, result.PlaceOfBirth, "Meppel")
 	require.Equal(t, result.IssuingAuthority, "Gemeente Meppel")
 	require.Equal(t, result.DocumentNumber, "1234567890")

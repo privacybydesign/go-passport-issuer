@@ -25,7 +25,7 @@ type EDLDG1 struct {
 	RawData            []byte
 	IssuingMemberState string
 	HolderSurname      string
-	HolderOtherName    string
+	HolderFirstName    string
 	DateOfBirth        time.Time
 	PlaceOfBirth       string
 	DateOfIssue        time.Time

@@ -225,7 +225,7 @@ func ParseEDLDG1(dg1Bytes []byte) (*EDLDG1, error) {
 		dg1.HolderSurname = string(node.GetValue())
 	}
 	if node := personalDataTLV.GetNode(HOLDER_OTHER_NAME); node.IsValidNode() {
-		dg1.HolderOtherName = string(node.GetValue())
+		dg1.HolderFirstName = string(node.GetValue())
 	}
 	if node := personalDataTLV.GetNode(PLACE_OF_BIRTH); node.IsValidNode() {
 		dg1.PlaceOfBirth = string(node.GetValue())
