@@ -11,7 +11,8 @@ import (
 )
 
 type JwtCreator interface {
-	CreateJwt(passport models.PassportData) (jwt string, err error)
+	CreatePassportJwt(passport models.PassportData) (jwt string, err error)
+	CreateEDLJwt(edl models.EDLData) (jwt string, err error)
 }
 
 func NewIrmaJwtCreator(privateKeyPath string,
@@ -46,8 +47,8 @@ type DefaultJwtCreator struct {
 	sdJwtBatchSize uint
 }
 
-func (jc *DefaultJwtCreator) CreateJwt(passport models.PassportData) (string, error) {
-	issuanceRequest := jc.createIssuanceRequest(passport)
+func (jc *DefaultJwtCreator) createJwt(attributes map[string]string) (string, error) {
+	issuanceRequest := jc.createIssuanceRequest(attributes)
 
 	return irma.SignSessionRequest(
 		issuanceRequest,
@@ -57,36 +58,65 @@ func (jc *DefaultJwtCreator) CreateJwt(passport models.PassportData) (string, er
 	)
 }
 
+func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (string, error) {
+	attributes := map[string]string{
+		"photo":                passport.Photo,
+		"documentNumber":       passport.DocumentNumber,
+		"documentType":         passport.DocumentType,
+		"firstName":            passport.FirstName,
+		"lastName":             passport.LastName,
+		"nationality":          passport.Nationality,
+		"dateOfBirth":          passport.DateOfBirth.Format("2006-01-02"),
+		"yearOfBirth":          passport.DateOfBirth.Format("2006"),
+		"isEuCitizen":          passport.IsEuCitizen,
+		"dateOfExpiry":         passport.DateOfExpiry.Format("2006-01-02"),
+		"gender":               passport.Gender,
+		"country":              passport.Country,
+		"over12":               passport.Over12,
+		"over16":               passport.Over16,
+		"over18":               passport.Over18,
+		"over21":               passport.Over21,
+		"over65":               passport.Over65,
+		"activeAuthentication": passport.ActiveAuthentication,
+	}
+
+	return jc.createJwt(attributes)
+}
+
+func (jc *DefaultJwtCreator) CreateEDLJwt(edl models.EDLData) (string, error) {
+	attributes := map[string]string{
+		"photo":                edl.Photo,
+		"documentNumber":       edl.DocumentNumber,
+		"firstName":            edl.FirstName,
+		"lastName":             edl.LastName,
+		"issuingMemberState":   edl.IssuingMemberState,
+		"issuingAuthority":     edl.IssuingAuthority,
+		"dateOfBirth":          edl.DateOfBirth.Format("2006-01-02"),
+		"yearOfBirth":          edl.DateOfBirth.Format("2006"),
+		"placeOfBirth":         edl.PlaceOfBirth,
+		"dateOfExpiry":         edl.DateOfExpiry.Format("2006-01-02"),
+		"over12":               edl.Over12,
+		"over16":               edl.Over16,
+		"over18":               edl.Over18,
+		"over21":               edl.Over21,
+		"over65":               edl.Over65,
+		"activeAuthentication": edl.ActiveAuthentication,
+	}
+
+	return jc.createJwt(attributes)
+}
+
 // createIssuanceRequest creates an IRMA issuance request with the passport data
 // This is a separate method to allow for easier testing
-func (jc *DefaultJwtCreator) createIssuanceRequest(passport models.PassportData) *irma.IssuanceRequest {
+func (jc *DefaultJwtCreator) createIssuanceRequest(attributes map[string]string) *irma.IssuanceRequest {
 	validity := irma.Timestamp(time.Unix(time.Now().AddDate(1, 0, 0).Unix(), 0)) // 1 year from now
 
 	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
 		{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier(jc.credential),
-			Attributes: map[string]string{
-				"photo":                passport.Photo,
-				"documentNumber":       passport.DocumentNumber,
-				"documentType":         passport.DocumentType,
-				"firstName":            passport.FirstName,
-				"lastName":             passport.LastName,
-				"nationality":          passport.Nationality,
-				"dateOfBirth":          passport.DateOfBirth.Format("2006-01-02"),
-				"yearOfBirth":          passport.DateOfBirth.Format("2006"),
-				"isEuCitizen":          passport.IsEuCitizen,
-				"dateOfExpiry":         passport.DateOfExpiry.Format("2006-01-02"),
-				"gender":               passport.Gender,
-				"country":              passport.Country,
-				"over12":               passport.Over12,
-				"over16":               passport.Over16,
-				"over18":               passport.Over18,
-				"over21":               passport.Over21,
-				"over65":               passport.Over65,
-				"activeAuthentication": passport.ActiveAuthentication,
-			},
-			SdJwtBatchSize: jc.sdJwtBatchSize,
-			Validity:       &validity,
+			Attributes:       attributes,
+			SdJwtBatchSize:   jc.sdJwtBatchSize,
+			Validity:         &validity,
 		},
 	})
 }

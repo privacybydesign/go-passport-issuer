@@ -141,14 +141,9 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	}, nil
 }
 
-type PassportIssuanceResponse struct {
+type IssuanceResponse struct {
 	Jwt           string `json:"jwt"`
 	IrmaServerURL string `json:"irma_server_url"`
-}
-
-type EDLIssuanceResponse struct {
-	DG1 edl.EDLDG1 `json:"dg1"`
-	DG6 edl.EDLDG6 `json:"dg6"`
 }
 
 type VerificationResponse struct {
@@ -200,15 +195,27 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 	}
 
 	log.Info.Printf("Received request to verify and issue driving licence")
-	doc, _, _, err := VerifyDrivingLicenceRequest(r, state)
+	doc, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving licence", err)
 		return
 	}
-	// TODO: responding with parsed data for now, should become issunace session pointer
-	response := EDLIssuanceResponse{
-		DG1: *doc.Dg1,
-		DG6: *doc.Dg6,
+
+	issuanceRequest, err := edl.ToDrivingLicenceData(*doc, activeRes)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
+		return
+	}
+
+	jwt, err := state.jwtCreator.CreateEDLJwt(issuanceRequest)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, "failed to create JWT", "failed to create JWT", err)
+		return
+	}
+
+	response := IssuanceResponse{
+		Jwt:           jwt,
+		IrmaServerURL: state.irmaServerURL,
 	}
 
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
@@ -216,6 +223,12 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Remove the sessionID from the cache
+	err = state.tokenStorage.RemoveToken(request.SessionId)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token from storage", err)
+		return
+	}
 }
 
 func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
@@ -287,13 +300,13 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	jwt, err := state.jwtCreator.CreateJwt(issuanceRequest)
+	jwt, err := state.jwtCreator.CreatePassportJwt(issuanceRequest)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, "failed to create JWT", "failed to create JWT", err)
 		return
 	}
 
-	response := PassportIssuanceResponse{
+	response := IssuanceResponse{
 		Jwt:           jwt,
 		IrmaServerURL: state.irmaServerURL,
 	}
