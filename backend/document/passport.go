@@ -4,10 +4,9 @@ import (
 	"fmt"
 	"go-passport-issuer/images"
 	"go-passport-issuer/models"
+	"log/slog"
 	"strings"
 	"time"
-
-	log "go-passport-issuer/logging"
 
 	"github.com/gmrtd/gmrtd/activeauth"
 	"github.com/gmrtd/gmrtd/cms"
@@ -30,7 +29,7 @@ var euCountries = []string{
 func parseOptionalDataGroup[T any](dgName string, data []byte, parseFunc func([]byte) (*T, error)) *T {
 	result, err := parseFunc(data)
 	if err != nil {
-		log.Info.Printf("Skipping %s due to parsing error: %v", dgName, err)
+		slog.Info("Skipping data group due to parsing error", "data_group", dgName, "error", err)
 		return nil
 	}
 	return result
@@ -88,7 +87,7 @@ func parsePassportDGs(doc *document.Document, dataGroups map[string]string) erro
 }
 
 func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.CertPool) (doc document.Document, err error) {
-	log.Info.Printf("Starting passive authentication for passports")
+	slog.Info("Starting passive authentication for passports")
 
 	if len(data.DataGroups) == 0 {
 		return document.Document{}, fmt.Errorf("no data groups found")
@@ -98,7 +97,7 @@ func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.C
 		return document.Document{}, fmt.Errorf("EF_SOD is missing in the validation request")
 	}
 
-	log.Info.Printf("Constructing document from data groups")
+	slog.Info("Constructing document from data groups")
 
 	var sodFileBytes = utils.HexToBytes(data.EFSOD)
 	doc.Mf.Lds1.Sod, err = document.NewSOD(sodFileBytes)
@@ -111,7 +110,7 @@ func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.C
 	if err != nil {
 		return document.Document{}, fmt.Errorf("failed to parse passport DGs: %w", err)
 	}
-	log.Info.Printf("Starting passive authentication for passport with issuing state: %s", doc.Mf.Lds1.Dg1.Mrz.IssuingState)
+	slog.Info("Starting passive authentication for passport", "issuing_state", doc.Mf.Lds1.Dg1.Mrz.IssuingState)
 
 	err = passiveauth.PassiveAuth(&doc, certPool)
 	if err != nil {
@@ -127,7 +126,7 @@ func ActiveAuthentication(data models.ValidationRequest, doc document.Document) 
 		return false, nil
 	}
 
-	log.Info.Printf("Starting active authentication signature validation")
+	slog.Info("Starting active authentication signature validation")
 
 	aaSigBytes := utils.HexToBytes(data.ActiveAuthSignature)
 	nonceBytes := utils.HexToBytes(data.Nonce)
@@ -150,22 +149,22 @@ func IsEuCitizen(nationality string) bool {
 }
 
 func ToPassportData(doc document.Document, activeAuth bool) (request models.PassportData, err error) {
-	log.Info.Printf("Converting document to passport issuance request")
+	slog.Debug("Converting document to passport issuance request")
 
 	var dob, doe time.Time
-	log.Info.Printf("Parsing date of birth")
+	slog.Debug("Parsing date of birth")
 	dob, err = ParseDateOfBirth(doc.Mf.Lds1.Dg1.Mrz.DateOfBirth)
 	if err != nil {
 		return models.PassportData{}, fmt.Errorf("failed to parse date of birth: %w", err)
 	}
 
-	log.Info.Printf("Parsing date of expiry")
+	slog.Debug("Parsing date of expiry")
 	doe, err = ParseExpiryDate(doc.Mf.Lds1.Dg1.Mrz.DateOfExpiry)
 	if err != nil {
 		return models.PassportData{}, fmt.Errorf("failed to parse date of expiry: %w", err)
 	}
 
-	log.Info.Printf("Converting EF DG2 images to PNG")
+	slog.Debug("Converting EF DG2 images to PNG")
 	efDG2, err := images.NewEfDG2FromBytes(doc.Mf.Lds1.Dg2.RawData)
 	if err != nil {
 		return models.PassportData{}, fmt.Errorf("failed to create EfDG2: %w", err)
