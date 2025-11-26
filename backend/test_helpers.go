@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"go-passport-issuer/document/edl"
 	"go-passport-issuer/models"
 	"io"
@@ -46,7 +47,7 @@ func startTestServer(t *testing.T, storage TokenStorage) *Server {
 	require.NoError(t, err)
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(http.ErrServerClosed, err) {
 			t.Errorf("server error: %v", err)
 		}
 	}()
@@ -190,14 +191,14 @@ type fakeConverter struct{}
 func (fakeConverter) ToPassportData(_ document.Document, _ bool) (models.PassportData, error) {
 	return models.PassportData{DocumentNumber: "X"}, nil
 }
-func (fakeConverter) ToDrivingLicenceData(_ edl.EDLDocument, _ bool) (models.EDLData, error) {
+func (fakeConverter) ToDrivingLicenceData(_ edl.DrivingLicenceDocument, _ bool) (models.EDLData, error) {
 	return models.EDLData{DocumentNumber: "123"}, nil
 }
 
 type fakeEDLParser struct{}
 
-func (fakeEDLParser) ParseEDLDocument(map[string]string, string) (*edl.EDLDocument, error) {
-	return &edl.EDLDocument{}, nil
+func (fakeEDLParser) ParseEDLDocument(map[string]string, string) (*edl.DrivingLicenceDocument, error) {
+	return &edl.DrivingLicenceDocument{}, nil
 }
 
 var testNonce, _ = GenerateNonce(8)

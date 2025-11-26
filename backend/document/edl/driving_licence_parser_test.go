@@ -106,6 +106,7 @@ func TestParseEDLDocument(t *testing.T) {
 		"DG13": removeWhitespace(dg13Hex),
 	}
 	edldoc, err := edl.ParseEDLDocument(DATAGROUPS, passport.TestSodHex) // sod just needs to be a hex string in format of a SOD
+	require.NotNil(t, edldoc)
 	require.Equal(t, edldoc.Dg1.HolderSurname, "Bassie")
 	require.NoError(t, err)
 }

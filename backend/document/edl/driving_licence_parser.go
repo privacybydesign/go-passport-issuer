@@ -31,8 +31,8 @@ const (
 )
 
 // ParseEDLDocument parses all eDL data groups into a structured document
-func ParseEDLDocument(dataGroups map[string]string, sodHex string) (*EDLDocument, error) {
-	doc := &EDLDocument{}
+func ParseEDLDocument(dataGroups map[string]string, sodHex string) (*DrivingLicenceDocument, error) {
+	doc := &DrivingLicenceDocument{}
 
 	// Parse SOD
 	if sodHex != "" {
@@ -75,7 +75,7 @@ func ParseEDLDocument(dataGroups map[string]string, sodHex string) (*EDLDocument
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse DG13: %w", err)
 		}
-		doc.Dg13 = &EDLDG13{
+		doc.Dg13 = &DG13{
 			RawData:              dg13Bytes,
 			SubjectPublicKeyInfo: pubKeyBytes,
 		}
@@ -84,7 +84,7 @@ func ParseEDLDocument(dataGroups map[string]string, sodHex string) (*EDLDocument
 	return doc, nil
 }
 
-func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
+func ParseEDLDG6(dg6Bytes []byte) (*DG6, error) {
 	if len(dg6Bytes) == 0 {
 		return nil, fmt.Errorf("DG6 is empty")
 	}
@@ -119,7 +119,7 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 	// Check for "FAC\0" header
 	if len(facialData) < 4 || !bytes.Equal(facialData[:4], []byte{0x46, 0x41, 0x43, 0x00}) {
 		// No FAC header, so return raw data
-		return &EDLDG6{
+		return &DG6{
 			RawData: dg6Bytes,
 			ImageContainer: images.ImageContainer{
 				ImageData: facialData,
@@ -176,7 +176,7 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 	// Rest is the actual image data
 	imageData := facialData[offset:]
 
-	return &EDLDG6{
+	return &DG6{
 		RawData: dg6Bytes,
 		ImageContainer: images.ImageContainer{
 			ImageData:     imageData,
@@ -185,7 +185,7 @@ func ParseEDLDG6(dg6Bytes []byte) (*EDLDG6, error) {
 	}, nil
 }
 
-func ParseEDLDG1(dg1Bytes []byte) (*EDLDG1, error) {
+func ParseEDLDG1(dg1Bytes []byte) (*DG1, error) {
 	if len(dg1Bytes) == 0 {
 		return nil, fmt.Errorf("DG1 is empty")
 	}
@@ -213,7 +213,7 @@ func ParseEDLDG1(dg1Bytes []byte) (*EDLDG1, error) {
 		return nil, fmt.Errorf("failed to decode personal details TLV: %w", err)
 	}
 
-	dg1 := &EDLDG1{
+	dg1 := &DG1{
 		RawData: dg1Bytes,
 	}
 
@@ -308,7 +308,7 @@ func ParseEDLDG1(dg1Bytes []byte) (*EDLDG1, error) {
 	return dg1, nil
 }
 
-func ParseEDLDG5(dg5Bytes []byte) (*EDLDG5, error) {
+func ParseEDLDG5(dg5Bytes []byte) (*DG5, error) {
 	nodes, err := tlv.Decode(dg5Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse DG5 TLV: %w", err)
@@ -340,7 +340,7 @@ func ParseEDLDG5(dg5Bytes []byte) (*EDLDG5, error) {
 
 	imageData := imageNode.GetValue()
 
-	return &EDLDG5{
+	return &DG5{
 		RawData: dg5Bytes,
 		Signature: images.ImageContainer{
 			ImageDataType: &imageType,

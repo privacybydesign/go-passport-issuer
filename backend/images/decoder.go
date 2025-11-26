@@ -82,8 +82,6 @@ func berLenLen(l int) int {
 
 // Constants & types
 const (
-	FID = 0x0102
-	SFI = 0x02
 	TAG = 0x75
 
 	BIOMETRIC_INFORMATION_GROUP_TEMPLATE_TAG = 0x7F61
@@ -435,7 +433,7 @@ func (ic *ImageContainer) ConvertToPNG() ([]string, error) {
 	}
 
 	var count int
-	var images = []string{}
+	var images []string
 	for i, p := range parts {
 		img, typ, err := decodeToImage(p.data, p.ext)
 		if err != nil {
@@ -452,7 +450,7 @@ func (ic *ImageContainer) ConvertToPNG() ([]string, error) {
 		}
 	}
 	if count == 0 {
-		return nil, fmt.Errorf("found image-like chunks but none could be decoded—do you have JP2/J2K support installed?")
+		return nil, fmt.Errorf("found image-like chunks but none could be decoded—make sure you have JP2/J2K support installed")
 	}
 	return images, nil
 }

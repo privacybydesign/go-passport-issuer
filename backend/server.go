@@ -188,11 +188,8 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 		return
 	}
 
-	// Remove the sessionID from cache
-	err = state.tokenStorage.RemoveToken(request.SessionId)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_TOKEN_REMOVAL, err)
-	}
+	removeSessionToken(w, state.tokenStorage, request.SessionId)
+
 }
 
 func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) {
@@ -204,6 +201,7 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 
 	log.Info.Printf("Received request to verify and issue driving licence")
 	doc, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
+
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving licence", err)
 		return
@@ -231,12 +229,8 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Remove the sessionID from the cache
-	err = state.tokenStorage.RemoveToken(request.SessionId)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_TOKEN_REMOVAL, err)
-		return
-	}
+	removeSessionToken(w, state.tokenStorage, request.SessionId)
+
 }
 
 func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
@@ -264,25 +258,18 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 	isExpired := passportData.DateOfExpiry.Before(time.Now())
 
 	// set up the response
-	verificationResponse := VerificationResponse{
-		true,
-		activeAuth,
-		isExpired,
+	response := VerificationResponse{
+		AuthenticContent: true,
+		AuthenticChip:    activeAuth,
+		IsExpired:        isExpired,
 	}
-
-	response := verificationResponse
 
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
 
-	// Remove the sessionID from the cache
-	err = state.tokenStorage.RemoveToken(request.SessionId)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_TOKEN_REMOVAL, err)
-		return
-	}
+	removeSessionToken(w, state.tokenStorage, request.SessionId)
 
 }
 
@@ -301,8 +288,8 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var issuanceRequest models.PassportData
-	issuanceRequest, err = state.converter.ToPassportData(doc, activeAuth)
+	issuanceRequest, err := state.converter.ToPassportData(doc, activeAuth)
+
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
 		return
@@ -324,29 +311,19 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Remove the sessionID from the cache
-	err = state.tokenStorage.RemoveToken(request.SessionId)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_TOKEN_REMOVAL, err)
-		return
-	}
+	removeSessionToken(w, state.tokenStorage, request.SessionId)
 
 }
 
 func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.ValidationRequest, error) {
-	var request models.ValidationRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		return document.Document{}, false, request, fmt.Errorf("decode request body: %w", err)
-	}
 
-	// Check if the sessionId and nonce are in the cache
-	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+	request, err := decodeValidationRequest(r)
 	if err != nil {
-		return document.Document{}, false, request, fmt.Errorf("%s: %w", ERR_TOKEN_RETRIEVAL, err)
+		return document.Document{}, false, request, err
 	}
 
-	if nonce == "" || nonce != request.Nonce {
-		return document.Document{}, false, request, fmt.Errorf(ERR_INVALID_NONCE_SESSION)
+	if err := validateSession(state.tokenStorage, request.SessionId, request.Nonce); err != nil {
+		return document.Document{}, false, request, err
 	}
 
 	var doc document.Document
@@ -363,18 +340,15 @@ func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Docume
 	return doc, activeAuth, request, nil
 }
 
-func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.EDLDocument, request models.ValidationRequest, activeRes bool, err error) {
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		return doc, request, false, fmt.Errorf("decode request body: %w", err)
-	}
-	// Verify session/nonce
-	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.DrivingLicenceDocument, request models.ValidationRequest, activeRes bool, err error) {
+
+	request, err = decodeValidationRequest(r)
 	if err != nil {
-		return doc, request, false, fmt.Errorf("failed to get nonce from storage: %w", err)
+		return doc, request, false, err
 	}
 
-	if nonce == "" || nonce != request.Nonce {
-		return doc, request, false, fmt.Errorf(ERR_INVALID_NONCE_SESSION)
+	if err := validateSession(state.tokenStorage, request.SessionId, request.Nonce); err != nil {
+		return doc, request, false, err
 	}
 
 	err = state.documentValidator.PassiveEDL(request, state.drivingLicenceCertPool)
@@ -395,6 +369,36 @@ func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.
 }
 
 // -----------------------------------------------------------------------------------
+
+// validateSession validates session and nonce
+func validateSession(storage TokenStorage, sessionId, nonce string) error {
+	storedNonce, err := storage.RetrieveToken(sessionId)
+	if err != nil {
+		return fmt.Errorf("%s: %w", ERR_TOKEN_RETRIEVAL, err)
+	}
+
+	if storedNonce == "" || storedNonce != nonce {
+		return fmt.Errorf(ERR_INVALID_NONCE_SESSION)
+	}
+
+	return nil
+}
+
+// removeSessionToken removes token and logs error if failed
+func removeSessionToken(w http.ResponseWriter, storage TokenStorage, sessionId string) {
+	if err := storage.RemoveToken(sessionId); err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_TOKEN_REMOVAL, err)
+	}
+}
+
+// decodeValidationRequest decodes the request body
+func decodeValidationRequest(r *http.Request) (models.ValidationRequest, error) {
+	var request models.ValidationRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		return request, fmt.Errorf("decode request body: %w", err)
+	}
+	return request, nil
+}
 
 type ValidatePassportResponse struct {
 	SessionId string `json:"session_id"`
@@ -467,7 +471,7 @@ func GenerateSessionId() string {
 	return fmt.Sprintf("%x", sessionId)
 }
 
-// Generates a random nonce
+// GenerateNonce Generates a random nonce
 func GenerateNonce(i int) (string, error) {
 	nonce := make([]byte, i)
 	if _, err := rand.Read(nonce); err != nil {

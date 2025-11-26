@@ -19,18 +19,18 @@ type DocumentValidator interface {
 }
 
 type DrivingLicenceParser interface {
-	ParseEDLDocument(dataGroups map[string]string, sodHex string) (*edl.EDLDocument, error)
+	ParseEDLDocument(dataGroups map[string]string, sodHex string) (*edl.DrivingLicenceDocument, error)
 }
 
 type DrivingLicenceParserImpl struct{}
 
-func (DrivingLicenceParserImpl) ParseEDLDocument(dataGroups map[string]string, sodHex string) (*edl.EDLDocument, error) {
+func (DrivingLicenceParserImpl) ParseEDLDocument(dataGroups map[string]string, sodHex string) (*edl.DrivingLicenceDocument, error) {
 	return edl.ParseEDLDocument(dataGroups, sodHex)
 }
 
 type DocumentDataConverter interface {
 	ToPassportData(document.Document, bool) (models.PassportData, error)
-	ToDrivingLicenceData(edl.EDLDocument, bool) (models.EDLData, error)
+	ToDrivingLicenceData(edl.DrivingLicenceDocument, bool) (models.EDLData, error)
 }
 
 // Production implementations
@@ -58,6 +58,6 @@ func (IssuanceRequestConverterImpl) ToPassportData(doc document.Document, active
 	return passport.ToPassportData(doc, active)
 }
 
-func (IssuanceRequestConverterImpl) ToDrivingLicenceData(doc edl.EDLDocument, active bool) (models.EDLData, error) {
+func (IssuanceRequestConverterImpl) ToDrivingLicenceData(doc edl.DrivingLicenceDocument, active bool) (models.EDLData, error) {
 	return edl.ToDrivingLicenceData(doc, active)
 }

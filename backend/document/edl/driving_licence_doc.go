@@ -7,12 +7,12 @@ import (
 	"github.com/gmrtd/gmrtd/document"
 )
 
-// EDLDocument represents a parsed European Driving License
-type EDLDocument struct {
+// DrivingLicenceDocument represents a parsed European Driving License
+type DrivingLicenceDocument struct {
 	Sod  *document.SOD
-	Dg1  *EDLDG1
-	Dg6  *EDLDG6
-	Dg13 *EDLDG13
+	Dg1  *DG1
+	Dg6  *DG6
+	Dg13 *DG13
 }
 
 type DrivingLicenseCategory struct {
@@ -21,7 +21,7 @@ type DrivingLicenseCategory struct {
 	DateOfExpiry time.Time
 }
 
-type EDLDG1 struct {
+type DG1 struct {
 	RawData            []byte
 	IssuingMemberState string
 	HolderSurname      string
@@ -35,17 +35,17 @@ type EDLDG1 struct {
 	Categories         []DrivingLicenseCategory
 }
 
-type EDLDG5 struct {
+type DG5 struct {
 	RawData   []byte
 	Signature images.ImageContainer
 }
 
-type EDLDG6 struct {
+type DG6 struct {
 	RawData []byte
 	images.ImageContainer
 }
 
-type EDLDG13 struct {
+type DG13 struct {
 	RawData              []byte
 	SubjectPublicKeyInfo []byte
 }

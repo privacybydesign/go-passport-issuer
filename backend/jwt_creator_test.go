@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	jwt "github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,12 +42,12 @@ func TestCreatingJwt(t *testing.T) {
 		ActiveAuthentication: "true",
 	}
 
-	jwt, err := jc.CreatePassportJwt(testPassportIssuanceRequest)
+	createdjwt, err := jc.CreatePassportJwt(testPassportIssuanceRequest)
 	if err != nil {
 		t.Fatalf("failed to create jwt: %v", err)
 	}
 
-	if jwt == "" {
+	if createdjwt == "" {
 		t.Fatal("jwt is empty")
 	}
 }
