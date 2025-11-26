@@ -3,6 +3,7 @@ package edl_test
 import (
 	"encoding/hex"
 	"go-passport-issuer/document/edl"
+	"go-passport-issuer/document/passport"
 	"go-passport-issuer/images"
 	"strings"
 	"testing"
@@ -97,6 +98,17 @@ func decodeTestCase(t *testing.T, s string) []byte {
 	return r
 }
 
+func TestParseEDLDocument(t *testing.T) {
+	var DATAGROUPS = map[string]string{
+		"DG1":  removeWhitespace(DG_1_TEST),
+		"DG5":  removeWhitespace(DG_5_TEST),
+		"DG6":  removeWhitespace(DG_6_TEST),
+		"DG13": removeWhitespace(dg13Hex),
+	}
+	edldoc, err := edl.ParseEDLDocument(DATAGROUPS, passport.TestSodHex) // sod just needs to be a hex string in format of a SOD
+	require.Equal(t, edldoc.Dg1.HolderSurname, "Bassie")
+	require.NoError(t, err)
+}
 func TestParseEdlDg5(t *testing.T) {
 	dg5Bytes := decodeTestCase(t, DG_5_TEST)
 

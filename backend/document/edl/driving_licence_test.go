@@ -1,6 +1,7 @@
-package edl
+package edl_test
 
 import (
+	"go-passport-issuer/document/edl"
 	"go-passport-issuer/document/passport"
 	"go-passport-issuer/models"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 // This test uses DG2 and SOD and Certificate belonging to passport due to no available
 // eDL test data, but the EDL passive authentication logic should work for any corresponding DG, SOD and Cert
+const dg13Hex = "6F81A130819E300D06092A864886F70D010101050003818C00308188028180CF9A8BA6EAD230E592AA6B5DA04558CC005A5291B295418575D68D637F41AF105813293D1D43F3685F014FFF3007730E6A15B7801558C6911F1084B7B8553BEE577F84EA7B8BF346128DA380D57E500FAF5AB70971DD9B25F387343E0B6CFA1316B3F58F6B9D3E93A72DD6BE3C7A79D960CE8CBAF8726F5E4FBF289287941FD70203010001"
 
 func createTestEDLRequest(sod string) models.ValidationRequest {
 	return models.ValidationRequest{
@@ -37,7 +39,7 @@ func TestPassiveAuthenticationEDLInvalidInputs(t *testing.T) {
 				DataGroups: tt.DataGroups,
 				EFSOD:      tt.Efsod,
 			}
-			err := PassiveAuthenticationEDL(data, &trustedCerts)
+			err := edl.PassiveAuthenticationEDL(data, &trustedCerts)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tt.ExpectedError)
 		})
@@ -51,7 +53,7 @@ func TestActiveAuthenticationEDL(t *testing.T) {
 				Nonce:               tt.Nonce,
 				ActiveAuthSignature: tt.Signature,
 			}
-			result, err := ActiveAuthenticationEDL(data)
+			result, err := edl.ActiveAuthenticationEDL(data)
 			require.NoError(t, err)
 			require.False(t, result)
 		})
@@ -60,7 +62,6 @@ func TestActiveAuthenticationEDL(t *testing.T) {
 }
 
 func TestActiveAuthenticationEDLInvalidSignature(t *testing.T) {
-	var dg13Hex = "6F81A130819E300D06092A864886F70D010101050003818C00308188028180CF9A8BA6EAD230E592AA6B5DA04558CC005A5291B295418575D68D637F41AF105813293D1D43F3685F014FFF3007730E6A15B7801558C6911F1084B7B8553BEE577F84EA7B8BF346128DA380D57E500FAF5AB70971DD9B25F387343E0B6CFA1316B3F58F6B9D3E93A72DD6BE3C7A79D960CE8CBAF8726F5E4FBF289287941FD70203010001"
 
 	data := models.ValidationRequest{
 		Nonce:               "6F",
@@ -68,7 +69,7 @@ func TestActiveAuthenticationEDLInvalidSignature(t *testing.T) {
 		DataGroups:          map[string]string{"DG13": dg13Hex},
 	}
 
-	result, err := ActiveAuthenticationEDL(data)
+	result, err := edl.ActiveAuthenticationEDL(data)
 	require.Error(t, err)
 	require.False(t, result)
 	require.Contains(t, err.Error(), "failed to validate active authentication signature")
@@ -77,7 +78,7 @@ func TestActiveAuthenticationEDLInvalidSignature(t *testing.T) {
 func TestPassiveAuthenticationEDLWithRealSOD(t *testing.T) {
 	data, trustedCerts := setupEdlVerifyTest(t, createTestEDLRequest, passport.TestSodHex)
 
-	err := PassiveAuthenticationEDL(data, &trustedCerts)
+	err := edl.PassiveAuthenticationEDL(data, &trustedCerts)
 	require.NoError(t, err)
 }
 
@@ -87,19 +88,6 @@ var badSOD = "778207853082078106092A864886F70D010702A08207723082076E020103310D30
 func TestPassiveAuthenticationEDLWithBadSOD(t *testing.T) {
 	data, trustedCerts := setupEdlVerifyTest(t, createTestEDLRequest, badSOD)
 
-	err := PassiveAuthenticationEDL(data, &trustedCerts)
+	err := edl.PassiveAuthenticationEDL(data, &trustedCerts)
 	require.ErrorContains(t, err, "SOD signature verification failed")
 }
-
-//func TestDG1Parse(t *testing.T) {
-//	dg1bytes := utils.HexToBytes("")
-//	_, err := ParseEDLDG1(dg1bytes)
-//	require.NoError(t, err)
-//}
-
-//func TestDG6Parse(t *testing.T) {
-//	dg6bytes := utils.HexToBytes("")
-//	_, err := ParseEDLDG6(dg6bytes)
-//	require.NoError(t, err)
-//
-//}
