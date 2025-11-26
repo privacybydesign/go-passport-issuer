@@ -117,8 +117,8 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err er
 	aaSigBytes := utils.HexToBytes(data.ActiveAuthSignature)
 	nonceBytes := utils.HexToBytes(data.Nonce)
 
-	activeauth := activeauth.NewActiveAuth(nil, &doc)
-	err = activeauth.ValidateActiveAuthSignature(aaSigBytes, nonceBytes)
+	activeAuth := activeauth.NewActiveAuth(nil, &doc)
+	err = activeAuth.ValidateActiveAuthSignature(aaSigBytes, nonceBytes)
 	if err != nil {
 		return false, fmt.Errorf("failed to validate active authentication signature: %w", err)
 	}

@@ -295,8 +295,14 @@ func ParseEDLDG1(dg1Bytes []byte) (*DG1, error) {
 			issueDateBCD := categoryData[firstSemicolon+1 : firstSemicolon+5]
 			expiryDateBCD := categoryData[secondSemicolon+1 : secondSemicolon+5]
 
-			issueDate, _ := parseBCDDate(issueDateBCD)
-			expiryDate, _ := parseBCDDate(expiryDateBCD)
+			issueDate, err := parseBCDDate(issueDateBCD)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse date of issue: %w", err)
+			}
+			expiryDate, err := parseBCDDate(expiryDateBCD)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse date of expiry: %w", err)
+			}
 
 			dg1.Categories = append(dg1.Categories, DrivingLicenseCategory{
 				Category:     categoryName,

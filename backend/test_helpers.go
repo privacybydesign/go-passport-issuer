@@ -47,7 +47,7 @@ func startTestServer(t *testing.T, storage TokenStorage) *Server {
 	require.NoError(t, err)
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(http.ErrServerClosed, err) {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			t.Errorf("server error: %v", err)
 		}
 	}()

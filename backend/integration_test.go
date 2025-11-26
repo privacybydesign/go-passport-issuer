@@ -11,13 +11,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const PASSPORT_ISSUE_ENDPOINT = "/api/issue-passport"
+const EDL_ISSUE_ENDPOINT = "/api/issue-edl"
+const TEST_HOST = "http://localhost:8081%s"
+
 func TestIssueDocumentSuccessRemovesSessionID(t *testing.T) {
 	testCases := []struct {
 		name     string
 		endpoint string
 	}{
-		{"Passport", "/api/issue-passport"},
-		{"DrivingLicence", "/api/issue-driving-licence"},
+		{"Passport", PASSPORT_ISSUE_ENDPOINT},
+		{"DrivingLicence", EDL_ISSUE_ENDPOINT},
 	}
 
 	for _, tc := range testCases {
@@ -28,7 +32,7 @@ func TestIssueDocumentSuccessRemovesSessionID(t *testing.T) {
 			session, nonce := startValidation(t)
 			req := newReq(session, nonce)
 
-			url := fmt.Sprintf("http://localhost:8081%s", tc.endpoint)
+			url := fmt.Sprintf(TEST_HOST, tc.endpoint)
 			resp, body, _ := postJSON[map[string]any](t, url, req)
 			mustStatus(t, resp, http.StatusOK, body)
 
@@ -43,8 +47,8 @@ func TestIssueDocumentFailBadNonce(t *testing.T) {
 		name     string
 		endpoint string
 	}{
-		{"Passport", "/api/issue-passport"},
-		{"DrivingLicence", "/api/issue-driving-licence"},
+		{"Passport", PASSPORT_ISSUE_ENDPOINT},
+		{"DrivingLicence", EDL_ISSUE_ENDPOINT},
 	}
 
 	for _, tc := range testCases {
@@ -53,11 +57,12 @@ func TestIssueDocumentFailBadNonce(t *testing.T) {
 			startTestServer(t, storage)
 
 			session := GenerateSessionId()
-			nonce, _ := GenerateNonce(8)
+			nonce, err := GenerateNonce(8)
+			require.NoError(t, err)
 			require.NoError(t, storage.StoreToken(session, nonce))
 
 			req := newReq(session, "bad-nonce")
-			url := fmt.Sprintf("http://localhost:8081%s", tc.endpoint)
+			url := fmt.Sprintf(TEST_HOST, tc.endpoint)
 			resp, body, _ := postJSON[map[string]any](t, url, req)
 			mustStatus(t, resp, http.StatusBadRequest, body)
 		})
@@ -68,8 +73,8 @@ func TestIssueDocumentFailSessionReuse(t *testing.T) {
 		name     string
 		endpoint string
 	}{
-		{"Passport", "/api/issue-passport"},
-		{"DrivingLicence", "/api/issue-driving-licence"},
+		{"Passport", PASSPORT_ISSUE_ENDPOINT},
+		{"DrivingLicence", EDL_ISSUE_ENDPOINT},
 	}
 
 	for _, tc := range testCases {
@@ -80,7 +85,7 @@ func TestIssueDocumentFailSessionReuse(t *testing.T) {
 			session, nonce := startValidation(t)
 			req := newReq(session, nonce)
 
-			url := fmt.Sprintf("http://localhost:8081%s", tc.endpoint)
+			url := fmt.Sprintf(TEST_HOST, tc.endpoint)
 			resp1, body1, _ := postJSON[map[string]any](t, url, req)
 			mustStatus(t, resp1, http.StatusOK, body1)
 
@@ -94,8 +99,8 @@ func TestIssueDocumentSuccess(t *testing.T) {
 		name     string
 		endpoint string
 	}{
-		{"Passport", "/api/issue-passport"},
-		{"DrivingLicence", "/api/issue-driving-licence"},
+		{"Passport", PASSPORT_ISSUE_ENDPOINT},
+		{"DrivingLicence", EDL_ISSUE_ENDPOINT},
 	}
 
 	for _, tc := range testCases {
@@ -106,7 +111,7 @@ func TestIssueDocumentSuccess(t *testing.T) {
 			session, nonce := startValidation(t)
 			req := newReq(session, nonce)
 
-			url := fmt.Sprintf("http://localhost:8081%s", tc.endpoint)
+			url := fmt.Sprintf(TEST_HOST, tc.endpoint)
 			resp, body, _ := postJSON[map[string]any](t, url, req)
 			require.Equal(t, 200, resp.StatusCode, body)
 			mustStatus(t, resp, http.StatusOK, body)
@@ -242,7 +247,8 @@ func TestPassportVerifyFailBadNonce(t *testing.T) {
 	startTestServer(t, storage)
 
 	session := GenerateSessionId()
-	nonce, _ := GenerateNonce(8)
+	nonce, err := GenerateNonce(8)
+	require.NoError(t, err)
 	require.NoError(t, storage.StoreToken(session, nonce))
 
 	req := newReq(session, "bad-nonce")

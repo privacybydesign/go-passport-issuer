@@ -58,6 +58,9 @@ func (jc *DefaultJwtCreator) createJwt(attributes map[string]string) (string, er
 	)
 }
 
+const DATE_FORMAT_CYMD = "2006-01-02"
+const DATE_FORMAT_YEAR = "2006"
+
 func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (string, error) {
 	attributes := map[string]string{
 		"photo":                passport.Photo,
@@ -66,10 +69,10 @@ func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (st
 		"firstName":            passport.FirstName,
 		"lastName":             passport.LastName,
 		"nationality":          passport.Nationality,
-		"dateOfBirth":          passport.DateOfBirth.Format("2006-01-02"),
-		"yearOfBirth":          passport.DateOfBirth.Format("2006"),
+		"dateOfBirth":          passport.DateOfBirth.Format(DATE_FORMAT_CYMD),
+		"yearOfBirth":          passport.DateOfBirth.Format(DATE_FORMAT_YEAR),
 		"isEuCitizen":          passport.IsEuCitizen,
-		"dateOfExpiry":         passport.DateOfExpiry.Format("2006-01-02"),
+		"dateOfExpiry":         passport.DateOfExpiry.Format(DATE_FORMAT_CYMD),
 		"gender":               passport.Gender,
 		"country":              passport.Country,
 		"over12":               passport.Over12,
@@ -91,10 +94,10 @@ func (jc *DefaultJwtCreator) CreateEDLJwt(edl models.EDLData) (string, error) {
 		"lastName":             edl.LastName,
 		"issuingMemberState":   edl.IssuingMemberState,
 		"issuingAuthority":     edl.IssuingAuthority,
-		"dateOfBirth":          edl.DateOfBirth.Format("2006-01-02"),
-		"yearOfBirth":          edl.DateOfBirth.Format("2006"),
+		"dateOfBirth":          edl.DateOfBirth.Format(DATE_FORMAT_CYMD),
+		"yearOfBirth":          edl.DateOfBirth.Format(DATE_FORMAT_YEAR),
 		"placeOfBirth":         edl.PlaceOfBirth,
-		"dateOfExpiry":         edl.DateOfExpiry.Format("2006-01-02"),
+		"dateOfExpiry":         edl.DateOfExpiry.Format(DATE_FORMAT_CYMD),
 		"over12":               edl.Over12,
 		"over16":               edl.Over16,
 		"over18":               edl.Over18,

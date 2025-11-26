@@ -8,6 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const TEST_MONTHDATE = "0101"
+
 func TestBoolToYesNo(t *testing.T) {
 	t.Run("true converts to Yes", func(t *testing.T) {
 		result := BoolToYesNo(true)
@@ -32,7 +34,7 @@ func TestParseExpiryDate(t *testing.T) {
 	t.Run("one year after current year doesn't get 100 subtracted", func(t *testing.T) {
 		now := time.Now()
 		nextYear := now.Year()%100 + 1
-		result, err := ParseExpiryDate(fmt.Sprintf("%v0101", nextYear))
+		result, err := ParseExpiryDate(fmt.Sprintf("%v%s", nextYear, TEST_MONTHDATE))
 		require.NoError(t, err)
 		require.Equal(t, result.Year(), now.Year()+1)
 		require.Equal(t, result.Month(), time.January)
@@ -42,7 +44,7 @@ func TestParseExpiryDate(t *testing.T) {
 	t.Run("30 years before now year get 100 years added", func(t *testing.T) {
 		thirtyYearsAgo := time.Now().AddDate(-30, 0, 0)
 		thirtyYearsAgoMod := thirtyYearsAgo.Year() % 100
-		result, err := ParseExpiryDate(fmt.Sprintf("%v0101", thirtyYearsAgoMod))
+		result, err := ParseExpiryDate(fmt.Sprintf("%v%s", thirtyYearsAgoMod, TEST_MONTHDATE))
 		require.NoError(t, err)
 		require.Equal(t, result.Year(), thirtyYearsAgo.Year()+100)
 		require.Equal(t, result.Month(), time.January)
@@ -52,7 +54,7 @@ func TestParseExpiryDate(t *testing.T) {
 	t.Run("29 years before now is untouched", func(t *testing.T) {
 		thirtyYearsAgo := time.Now().AddDate(-29, 0, 0)
 		thirtyYearsAgoMod := thirtyYearsAgo.Year() % 100
-		result, err := ParseExpiryDate(fmt.Sprintf("%v0101", thirtyYearsAgoMod))
+		result, err := ParseExpiryDate(fmt.Sprintf("%v%s", thirtyYearsAgoMod, TEST_MONTHDATE))
 		require.NoError(t, err)
 		require.Equal(t, result.Year(), thirtyYearsAgo.Year())
 		require.Equal(t, result.Month(), time.January)
@@ -62,7 +64,7 @@ func TestParseExpiryDate(t *testing.T) {
 	t.Run("30 years after now is untouched", func(t *testing.T) {
 		thirtyYearsFromNow := time.Now().AddDate(30, 0, 0)
 		thirtyYearsFromNowMod := thirtyYearsFromNow.Year() % 100
-		result, err := ParseExpiryDate(fmt.Sprintf("%v0101", thirtyYearsFromNowMod))
+		result, err := ParseExpiryDate(fmt.Sprintf("%v%s", thirtyYearsFromNowMod, TEST_MONTHDATE))
 		require.NoError(t, err)
 		require.Equal(t, result.Year(), thirtyYearsFromNow.Year())
 		require.Equal(t, result.Month(), time.January)
@@ -120,7 +122,7 @@ func TestParseDateOfBirth(t *testing.T) {
 
 	t.Run("one year after current year gets 100 subtracted", func(t *testing.T) {
 		nextYear := time.Now().Year()%100 + 1
-		result, err := ParseDateOfBirth(fmt.Sprintf("%v0101", nextYear))
+		result, err := ParseDateOfBirth(fmt.Sprintf("%v%s", nextYear, TEST_MONTHDATE))
 		require.NoError(t, err)
 		require.Equal(t, result.Year(), nextYear+1900)
 		require.Equal(t, result.Month(), time.January)
@@ -129,7 +131,7 @@ func TestParseDateOfBirth(t *testing.T) {
 
 	t.Run("current year doesn't get 100 subtracted", func(t *testing.T) {
 		currYear := time.Now().Year() % 100
-		result, err := ParseDateOfBirth(fmt.Sprintf("%v0101", currYear))
+		result, err := ParseDateOfBirth(fmt.Sprintf("%v%s", currYear, TEST_MONTHDATE))
 		require.NoError(t, err)
 		require.Equal(t, result.Year(), time.Now().Year())
 		require.Equal(t, result.Month(), time.January)
@@ -138,7 +140,7 @@ func TestParseDateOfBirth(t *testing.T) {
 
 	t.Run("one year before current year doesn't get 100 subtracted", func(t *testing.T) {
 		lastYear := time.Now().Year()%100 - 1
-		result, err := ParseDateOfBirth(fmt.Sprintf("%v0101", lastYear))
+		result, err := ParseDateOfBirth(fmt.Sprintf("%v%s", lastYear, TEST_MONTHDATE))
 		require.NoError(t, err)
 		require.Equal(t, result.Year(), time.Now().Year()-1)
 		require.Equal(t, result.Month(), time.January)
