@@ -12,7 +12,7 @@ import (
 )
 
 const PASSPORT_ISSUE_ENDPOINT = "/api/issue-passport"
-const EDL_ISSUE_ENDPOINT = "/api/issue-edl"
+const EDL_ISSUE_ENDPOINT = "/api/issue-driving-licence"
 const TEST_HOST = "http://localhost:8081%s"
 
 func TestIssueDocumentSuccessRemovesSessionID(t *testing.T) {

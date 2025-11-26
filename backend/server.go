@@ -378,7 +378,7 @@ func validateSession(storage TokenStorage, sessionId, nonce string) error {
 	}
 
 	if storedNonce == "" || storedNonce != nonce {
-		return fmt.Errorf(ERR_INVALID_NONCE_SESSION)
+		return fmt.Errorf("%s", ERR_INVALID_NONCE_SESSION)
 	}
 
 	return nil
