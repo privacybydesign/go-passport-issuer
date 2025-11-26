@@ -169,18 +169,18 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 
 	log.Info.Printf("Received request to verify driving license")
 
-	_, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
+	doc, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving license", err)
 		return
 	}
 
-	// TODO: check document expiry once we can parse DG1 on the server side
+	isExpired := doc.Dg1.DateOfExpiry.Before(time.Now())
 
 	response := VerificationResponse{
 		AuthenticContent: true,
 		AuthenticChip:    activeRes,
-		IsExpired:        false,
+		IsExpired:        isExpired,
 	}
 
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
