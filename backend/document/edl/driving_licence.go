@@ -127,9 +127,6 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err er
 }
 
 func ToDrivingLicenceData(doc EDLDocument, activeAuth bool) (request models.EDLData, err error) {
-	log.Info.Printf("Converting document read out to driving licence issuance request")
-
-	log.Info.Printf("Converting DG6 images to PNG")
 	pngs, err := doc.Dg6.ConvertToPNG()
 	if err != nil {
 		return models.EDLData{}, fmt.Errorf("failed to convert DG6 image to PNG: %w", err)
