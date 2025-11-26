@@ -11,43 +11,53 @@ import (
 
 // abstract interfaces for easier testing
 
-type PassportValidator interface {
-	Passive(models.ValidationRequest, *cms.CombinedCertPool) (document.Document, error)
-	Active(models.ValidationRequest, document.Document) (bool, error)
+type DocumentValidator interface {
+	PassivePassport(models.ValidationRequest, *cms.CombinedCertPool) (document.Document, error)
+	ActivePassport(models.ValidationRequest, document.Document) (bool, error)
+	PassiveEDL(models.ValidationRequest, *cms.CertPool) error
+	ActiveEDL(models.ValidationRequest) (bool, error)
 }
 
-type PassportDataConverter interface {
+type DrivingLicenceParser interface {
+	ParseEDLDocument(dataGroups map[string]string, sodHex string) (*edl.EDLDocument, error)
+}
+
+type DrivingLicenceParserImpl struct{}
+
+func (DrivingLicenceParserImpl) ParseEDLDocument(dataGroups map[string]string, sodHex string) (*edl.EDLDocument, error) {
+	return edl.ParseEDLDocument(dataGroups, sodHex)
+}
+
+type DocumentDataConverter interface {
 	ToPassportData(document.Document, bool) (models.PassportData, error)
+	ToDrivingLicenceData(edl.EDLDocument, bool) (models.EDLData, error)
 }
 
 // Production implementations
 
-type PassportValidatorImpl struct{}
+type DocumentValidatorImpl struct{}
 
-func (PassportValidatorImpl) Passive(req models.ValidationRequest, pool *cms.CombinedCertPool) (document.Document, error) {
+func (DocumentValidatorImpl) PassivePassport(req models.ValidationRequest, pool *cms.CombinedCertPool) (document.Document, error) {
 	return passport.PassiveAuthenticationPassport(req, pool)
 }
 
-func (PassportValidatorImpl) Active(req models.ValidationRequest, doc document.Document) (bool, error) {
+func (DocumentValidatorImpl) ActivePassport(req models.ValidationRequest, doc document.Document) (bool, error) {
 	return passport.ActiveAuthentication(req, doc)
 }
 
-type DrivingLicenceValidator interface {
-	Passive(models.ValidationRequest, *cms.CertPool) error
-	Active(models.ValidationRequest) (bool, error)
-}
-
-func (DrivingLicenceValidatorImpl) Passive(req models.ValidationRequest, pool *cms.CertPool) error {
+func (DocumentValidatorImpl) PassiveEDL(req models.ValidationRequest, pool *cms.CertPool) error {
 	return edl.PassiveAuthenticationEDL(req, pool)
 }
-func (DrivingLicenceValidatorImpl) Active(req models.ValidationRequest) (bool, error) {
+func (DocumentValidatorImpl) ActiveEDL(req models.ValidationRequest) (bool, error) {
 	return edl.ActiveAuthenticationEDL(req)
 }
-
-type DrivingLicenceValidatorImpl struct{}
 
 type IssuanceRequestConverterImpl struct{}
 
 func (IssuanceRequestConverterImpl) ToPassportData(doc document.Document, active bool) (models.PassportData, error) {
 	return passport.ToPassportData(doc, active)
+}
+
+func (IssuanceRequestConverterImpl) ToDrivingLicenceData(doc edl.EDLDocument, active bool) (models.EDLData, error) {
+	return edl.ToDrivingLicenceData(doc, active)
 }

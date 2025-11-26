@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -10,79 +11,129 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIssuePassport_Success_RemovesSessionID(t *testing.T) {
-	storage := NewInMemoryTokenStorage()
-	startTestServer(t, storage)
+func TestIssueDocument_Success_RemovesSessionID(t *testing.T) {
+	testCases := []struct {
+		name     string
+		endpoint string
+	}{
+		{"Passport", "/api/issue-passport"},
+		{"DrivingLicence", "/api/issue-driving-licence"},
+	}
 
-	session, nonce := startValidation(t)
-	req := newReq(session, nonce)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			storage := NewInMemoryTokenStorage()
+			startTestServer(t, storage)
 
-	resp, body, _ := postJSON[map[string]any](t, "http://localhost:8081/api/issue-passport", req)
-	mustStatus(t, resp, http.StatusOK, body)
+			session, nonce := startValidation(t)
+			req := newReq(session, nonce)
 
-	got, err := storage.RetrieveToken(session)
-	require.Error(t, err)     // removed
-	require.Equal(t, "", got) // no token left
+			url := fmt.Sprintf("http://localhost:8081%s", tc.endpoint)
+			resp, body, _ := postJSON[map[string]any](t, url, req)
+			mustStatus(t, resp, http.StatusOK, body)
+
+			got, err := storage.RetrieveToken(session)
+			require.Error(t, err)     // removed
+			require.Equal(t, "", got) // no token left
+		})
+	}
+}
+func TestIssueDocument_Fail_BadNonce(t *testing.T) {
+	testCases := []struct {
+		name     string
+		endpoint string
+	}{
+		{"Passport", "/api/issue-passport"},
+		{"DrivingLicence", "/api/issue-driving-licence"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			storage := NewInMemoryTokenStorage()
+			startTestServer(t, storage)
+
+			session := GenerateSessionId()
+			nonce, _ := GenerateNonce(8)
+			require.NoError(t, storage.StoreToken(session, nonce))
+
+			req := newReq(session, "bad-nonce")
+			url := fmt.Sprintf("http://localhost:8081%s", tc.endpoint)
+			resp, body, _ := postJSON[map[string]any](t, url, req)
+			mustStatus(t, resp, http.StatusBadRequest, body)
+		})
+	}
+}
+func TestIssueDocument_Fail_SessionReuse(t *testing.T) {
+	testCases := []struct {
+		name     string
+		endpoint string
+	}{
+		{"Passport", "/api/issue-passport"},
+		{"DrivingLicence", "/api/issue-driving-licence"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			storage := NewInMemoryTokenStorage()
+			startTestServer(t, storage)
+
+			session, nonce := startValidation(t)
+			req := newReq(session, nonce)
+
+			url := fmt.Sprintf("http://localhost:8081%s", tc.endpoint)
+			resp1, body1, _ := postJSON[map[string]any](t, url, req)
+			mustStatus(t, resp1, http.StatusOK, body1)
+
+			resp2, body2, _ := postJSON[map[string]any](t, url, req)
+			mustStatus(t, resp2, http.StatusBadRequest, body2)
+		})
+	}
+}
+func TestIssueDocument_Success(t *testing.T) {
+	testCases := []struct {
+		name     string
+		endpoint string
+	}{
+		{"Passport", "/api/issue-passport"},
+		{"DrivingLicence", "/api/issue-driving-licence"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			storage := NewInMemoryTokenStorage()
+			startTestServer(t, storage)
+
+			session, nonce := startValidation(t)
+			req := newReq(session, nonce)
+
+			url := fmt.Sprintf("http://localhost:8081%s", tc.endpoint)
+			resp, body, _ := postJSON[map[string]any](t, url, req)
+			require.Equal(t, 200, resp.StatusCode, body)
+			mustStatus(t, resp, http.StatusOK, body)
+		})
+	}
 }
 
-func TestIssuePassport_Fail_BadNonce(t *testing.T) {
-	storage := NewInMemoryTokenStorage()
-	startTestServer(t, storage)
-
-	session := GenerateSessionId()
-	nonce, _ := GenerateNonce(8)
-	require.NoError(t, storage.StoreToken(session, nonce))
-
-	req := newReq(session, "bad-nonce")
-	resp, body, _ := postJSON[map[string]any](t, "http://localhost:8081/api/issue-passport", req)
-	mustStatus(t, resp, http.StatusBadRequest, body)
-}
-
-func TestIssuePassport_Fail_SessionReuse(t *testing.T) {
-	storage := NewInMemoryTokenStorage()
-	startTestServer(t, storage)
-
-	session, nonce := startValidation(t)
-	req := newReq(session, nonce)
-
-	resp1, body1, _ := postJSON[map[string]any](t, "http://localhost:8081/api/issue-passport", req)
-	mustStatus(t, resp1, http.StatusOK, body1)
-
-	resp2, body2, _ := postJSON[map[string]any](t, "http://localhost:8081/api/issue-passport", req)
-	mustStatus(t, resp2, http.StatusBadRequest, body2)
-}
-
-func TestIssuePassport_Success(t *testing.T) {
-	storage := NewInMemoryTokenStorage()
-	startTestServer(t, storage)
-
-	session, nonce := startValidation(t)
-	req := newReq(session, nonce)
-
-	resp, body, _ := postJSON[map[string]any](t, "http://localhost:8081/api/issue-passport", req)
-	mustStatus(t, resp, http.StatusOK, body)
-}
-
-func TestPassiveAuthFail_NoDataGroups(t *testing.T) {
+func TestPassportPassiveAuthFail_NoDataGroups(t *testing.T) {
 	pool, err := cms.GetDefaultMasterList()
 	require.NoError(t, err)
 
 	req := newReq(testSessionId, "n")
-	_, err = PassportValidatorImpl{}.Passive(req, pool)
+	_, err = DocumentValidatorImpl{}.PassivePassport(req, pool)
 	require.Errorf(t, err, "no data groups found in passport data")
 }
 
-func TestPassiveAuthFail_NoEFSOD(t *testing.T) {
+func TestPassportPassiveAuthFail_NoEFSOD(t *testing.T) {
 	pool, err := cms.GetDefaultMasterList()
 	require.NoError(t, err)
 
 	req := newReq(testSessionId, "n", withDG("DG1", "00"))
 	req.EFSOD = "" // simulate missing
-	_, err = PassportValidatorImpl{}.Passive(req, pool)
+	_, err = DocumentValidatorImpl{}.PassivePassport(req, pool)
 	require.Errorf(t, err, "EF_SOD is missing in passport data")
 }
 
-func TestPassiveAuthFail_UnsupportedDG(t *testing.T) {
+func TestPassportPassiveAuthFail_UnsupportedDG(t *testing.T) {
 	pool, err := cms.GetDefaultMasterList()
 	require.NoError(t, err)
 
@@ -90,20 +141,20 @@ func TestPassiveAuthFail_UnsupportedDG(t *testing.T) {
 		withDG("DG99", "00"),
 		withEFSOD(readBinToHex(t, "test-data/EF_SOD.bin")),
 	)
-	_, err = PassportValidatorImpl{}.Passive(req, pool)
+	_, err = DocumentValidatorImpl{}.PassivePassport(req, pool)
 	require.Errorf(t, err, "unsupported data group: DG99")
 }
 
-func TestPassiveAuthFail_BadSOD(t *testing.T) {
+func TestPassportPassiveAuthFail_BadSOD(t *testing.T) {
 	certPool, err := cms.GetDefaultMasterList()
 	require.NoError(t, err)
 
 	req := newReq(testSessionId, testNonce, withDG("DG1", "00"), withEFSOD("00")) // bad SOD
-	_, err = PassportValidatorImpl{}.Passive(req, certPool)
+	_, err = DocumentValidatorImpl{}.PassivePassport(req, certPool)
 	require.Errorf(t, err, "failed to create SOD")
 }
 
-func TestPassiveAuthFail_BadDG(t *testing.T) {
+func TestPassportPassiveAuthFail_BadDG(t *testing.T) {
 	cscaCertPool, err := cms.GetDefaultMasterList()
 	require.NoError(t, err)
 
@@ -111,12 +162,12 @@ func TestPassiveAuthFail_BadDG(t *testing.T) {
 		withDG("DG1", "12"), // bad DG1
 		withEFSOD(readBinToHex(t, "test-data/EF_SOD.bin")),
 	)
-	_, err = PassportValidatorImpl{}.Passive(req, cscaCertPool)
+	_, err = DocumentValidatorImpl{}.PassivePassport(req, cscaCertPool)
 	require.ErrorContains(t, err, "failed to create DG1")
 
 }
 
-func TestActiveAuthFail_BadSig(t *testing.T) {
+func TestPassportActiveAuthFail_BadSig(t *testing.T) {
 	req := newReq(testSessionId, testNonce,
 		withDG("DG1", readBinToHex(t, "test-data/EF_DG1.bin")),
 		withDG("DG15", readBinToHex(t, "test-data/EF_DG15.bin")),
@@ -131,11 +182,11 @@ func TestActiveAuthFail_BadSig(t *testing.T) {
 	doc.Mf.Lds1.Dg15, err = document.NewDG15(utils.HexToBytes(req.DataGroups["DG15"]))
 	require.NoError(t, err)
 
-	_, err = PassportValidatorImpl{}.Active(req, doc)
+	_, err = DocumentValidatorImpl{}.ActivePassport(req, doc)
 	require.ErrorContains(t, err, "failed to validate active authentication signature")
 }
 
-func TestActiveAuthSkip_NoDG15(t *testing.T) {
+func TestPassportActiveAuthSkip_NoDG15(t *testing.T) {
 	req := newReq(testSessionId, testNonce,
 		withDG("DG1", readBinToHex(t, "test-data/EF_DG1.bin")),
 		withEFSOD(readBinToHex(t, "test-data/EF_SOD.bin")),
@@ -147,12 +198,12 @@ func TestActiveAuthSkip_NoDG15(t *testing.T) {
 	doc.Mf.Lds1.Dg1, err = document.NewDG1(utils.HexToBytes(req.DataGroups["DG1"]))
 	require.NoError(t, err)
 
-	skipped, err := PassportValidatorImpl{}.Active(req, doc)
+	skipped, err := DocumentValidatorImpl{}.ActivePassport(req, doc)
 	require.NoError(t, err)
 	require.False(t, skipped)
 }
 
-func TestActiveAuthSkip_NoSig(t *testing.T) {
+func TestPassportActiveAuthSkip_NoSig(t *testing.T) {
 	req := newReq(testSessionId, testNonce,
 		withDG("DG1", readBinToHex(t, "test-data/EF_DG1.bin")),
 		withDG("DG15", readBinToHex(t, "test-data/EF_DG15.bin")),
@@ -166,12 +217,12 @@ func TestActiveAuthSkip_NoSig(t *testing.T) {
 	doc.Mf.Lds1.Dg15, err = document.NewDG15(utils.HexToBytes(req.DataGroups["DG15"]))
 	require.NoError(t, err)
 
-	skipped, err := PassportValidatorImpl{}.Active(req, doc)
+	skipped, err := DocumentValidatorImpl{}.ActivePassport(req, doc)
 	require.NoError(t, err)
 	require.False(t, skipped)
 }
 
-func TestVerifyPassport_Success_RemovesSession(t *testing.T) {
+func TestPassportVerifySuccess_RemovesSession(t *testing.T) {
 	storage := NewInMemoryTokenStorage()
 	startTestServer(t, storage)
 
@@ -186,7 +237,7 @@ func TestVerifyPassport_Success_RemovesSession(t *testing.T) {
 	require.Equal(t, "", got)
 }
 
-func TestVerifyPassport_Fail_BadNonce(t *testing.T) {
+func TestPassportVerifyFail_BadNonce(t *testing.T) {
 	storage := NewInMemoryTokenStorage()
 	startTestServer(t, storage)
 
@@ -199,7 +250,7 @@ func TestVerifyPassport_Fail_BadNonce(t *testing.T) {
 	mustStatus(t, resp, http.StatusBadRequest, body)
 }
 
-func TestVerifyPassport_Fail_SessionReuse(t *testing.T) {
+func TestPassportVerifyFail_SessionReuse(t *testing.T) {
 	storage := NewInMemoryTokenStorage()
 	startTestServer(t, storage)
 

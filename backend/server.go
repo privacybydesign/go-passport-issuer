@@ -33,14 +33,14 @@ type ServerConfig struct {
 }
 
 type ServerState struct {
-	irmaServerURL           string
-	tokenStorage            TokenStorage
-	jwtCreators             AllJwtCreators
-	passportCertPool        *cms.CombinedCertPool
-	drivingLicenceCertPool  *cms.CertPool
-	passportValidator       PassportValidator
-	drivingLicenceValidator DrivingLicenceValidator
-	converter               PassportDataConverter
+	irmaServerURL          string
+	tokenStorage           TokenStorage
+	jwtCreators            AllJwtCreators
+	passportCertPool       *cms.CombinedCertPool
+	drivingLicenceCertPool *cms.CertPool
+	documentValidator      DocumentValidator
+	drivingLicenceParser   DrivingLicenceParser
+	converter              DocumentDataConverter
 }
 
 type SpaHandler struct {
@@ -201,7 +201,7 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	issuanceRequest, err := edl.ToDrivingLicenceData(*doc, activeRes)
+	issuanceRequest, err := state.converter.ToDrivingLicenceData(*doc, activeRes)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
 		return
@@ -342,12 +342,12 @@ func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Docume
 	}
 
 	var doc document.Document
-	doc, err = state.passportValidator.Passive(request, state.passportCertPool)
+	doc, err = state.documentValidator.PassivePassport(request, state.passportCertPool)
 	if err != nil {
 		return document.Document{}, false, request, fmt.Errorf("passive authentication failed: %w", err)
 	}
 
-	activeAuth, err := state.passportValidator.Active(request, doc)
+	activeAuth, err := state.documentValidator.ActivePassport(request, doc)
 	if err != nil {
 		return document.Document{}, false, request, fmt.Errorf("active authentication failed: %w", err)
 	}
@@ -359,7 +359,6 @@ func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		return doc, request, false, fmt.Errorf("decode request body: %w", err)
 	}
-
 	// Verify session/nonce
 	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
 	if err != nil {
@@ -370,17 +369,17 @@ func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.
 		return doc, request, false, fmt.Errorf("invalid session or nonce")
 	}
 
-	err = state.drivingLicenceValidator.Passive(request, state.drivingLicenceCertPool)
+	err = state.documentValidator.PassiveEDL(request, state.drivingLicenceCertPool)
 	if err != nil {
 		return doc, request, false, fmt.Errorf("passive authentication failed: %w", err)
 	}
 
-	result, err := state.drivingLicenceValidator.Active(request)
+	result, err := state.documentValidator.ActiveEDL(request)
 	if err != nil {
 		return doc, request, false, fmt.Errorf("active authentication failed: %w", err)
 	}
 
-	doc, err = edl.ParseEDLDocument(request.DataGroups, request.EFSOD)
+	doc, err = state.drivingLicenceParser.ParseEDLDocument(request.DataGroups, request.EFSOD)
 	if err != nil {
 		return doc, request, false, fmt.Errorf("failed to parse EDL document: %w", err)
 	}
@@ -401,7 +400,7 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 		return
 	}
 
-	log.Info.Printf("Received request to start passport validation")
+	log.Info.Printf("Received request to start document validation")
 
 	// Generate a session ID
 	sessionId := GenerateSessionId()

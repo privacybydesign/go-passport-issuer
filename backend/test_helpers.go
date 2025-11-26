@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"go-passport-issuer/document/edl"
 	"go-passport-issuer/models"
 	"io"
 	"net/http"
@@ -32,12 +33,13 @@ func startTestServer(t *testing.T, storage TokenStorage) *Server {
 		DrivingLicence: fakeJwtCreator{jwt: "test-jwt"},
 	}
 	testState := &ServerState{
-		irmaServerURL:     "https://irma.example",
-		tokenStorage:      storage,
-		jwtCreators:       jwtCreators,
-		passportCertPool:  &cms.CombinedCertPool{},
-		passportValidator: fakeValidator{},
-		converter:         fakeConverter{},
+		irmaServerURL:        "https://irma.example",
+		tokenStorage:         storage,
+		jwtCreators:          jwtCreators,
+		passportCertPool:     &cms.CombinedCertPool{},
+		documentValidator:    fakeValidator{},
+		drivingLicenceParser: fakeEDLParser{},
+		converter:            fakeConverter{},
 	}
 
 	srv, err := NewServer(testState, testConfig)
@@ -167,11 +169,19 @@ func (f fakeJwtCreator) CreateEDLJwt(_ models.EDLData) (string, error) {
 
 type fakeValidator struct{}
 
-func (fakeValidator) Passive(_ models.ValidationRequest, _ *cms.CombinedCertPool) (document.Document, error) {
+func (v fakeValidator) PassiveEDL(request models.ValidationRequest, pool *cms.CertPool) error {
+	return nil
+}
+
+func (v fakeValidator) ActiveEDL(request models.ValidationRequest) (bool, error) {
+	return true, nil
+}
+
+func (fakeValidator) PassivePassport(_ models.ValidationRequest, _ *cms.CombinedCertPool) (document.Document, error) {
 	return document.Document{}, nil
 }
 
-func (fakeValidator) Active(_ models.ValidationRequest, _ document.Document) (bool, error) {
+func (fakeValidator) ActivePassport(_ models.ValidationRequest, _ document.Document) (bool, error) {
 	return true, nil
 }
 
@@ -179,6 +189,15 @@ type fakeConverter struct{}
 
 func (fakeConverter) ToPassportData(_ document.Document, _ bool) (models.PassportData, error) {
 	return models.PassportData{DocumentNumber: "X"}, nil
+}
+func (fakeConverter) ToDrivingLicenceData(_ edl.EDLDocument, _ bool) (models.EDLData, error) {
+	return models.EDLData{DocumentNumber: "123"}, nil
+}
+
+type fakeEDLParser struct{}
+
+func (fakeEDLParser) ParseEDLDocument(map[string]string, string) (*edl.EDLDocument, error) {
+	return &edl.EDLDocument{}, nil
 }
 
 var testNonce, _ = GenerateNonce(8)

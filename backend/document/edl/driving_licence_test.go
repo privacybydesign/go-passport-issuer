@@ -30,6 +30,10 @@ func setupEdlVerifyTest(t *testing.T, createRequest func(string) models.Validati
 	return data, trustedCerts
 }
 
+func TestIssueEDL(t *testing.T) {
+
+}
+
 func TestPassiveAuthenticationEDLInvalidInputs(t *testing.T) {
 	_, trustedCerts := setupEdlVerifyTest(t, createTestEDLRequest, passport.TestSodHex)
 
