@@ -23,6 +23,14 @@ import (
 const ErrorInternal = "error:internal"
 const ERR_MARSHAL = "failed to marshal response message"
 const ERR_FAILED_BODY_CLOSE = "failed to close request body: %v"
+const ERR_ISSUANCE_CONVERT = "failed to convert to issuance request"
+const ERR_JWT_CREATION = "failed to create jwt"
+const ERR_TOKEN_REMOVAL = "failed to remove token from storage"
+const ERR_TOKEN_RETRIEVAL = "failed to get nonce from storage"
+const ERR_PASSIVE_FAILED = "passive authentication failed"
+const ERR_ACTIVE_FAILED = "active authentication failed"
+const ERR_INVALID_NONCE_SESSION = "invalid session or nonce"
+const ERR_PASSPORT_VERIFICATION = "failed to verify passport"
 
 type ServerConfig struct {
 	Host           string `json:"host"`
@@ -183,7 +191,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 	// Remove the sessionID from cache
 	err = state.tokenStorage.RemoveToken(request.SessionId)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token", err)
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_TOKEN_REMOVAL, err)
 	}
 }
 
@@ -203,13 +211,13 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 
 	issuanceRequest, err := state.converter.ToDrivingLicenceData(*doc, activeRes)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
 		return
 	}
 
 	jwt, err := state.jwtCreators.DrivingLicence.CreateEDLJwt(issuanceRequest)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, "failed to create JWT", "failed to create JWT", err)
+		respondWithErr(w, http.StatusInternalServerError, ERR_JWT_CREATION, ERR_JWT_CREATION, err)
 		return
 	}
 
@@ -226,7 +234,7 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 	// Remove the sessionID from the cache
 	err = state.tokenStorage.RemoveToken(request.SessionId)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token from storage", err)
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_TOKEN_REMOVAL, err)
 		return
 	}
 }
@@ -242,13 +250,13 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 
 	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify passport", err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err)
 		return
 	}
 
 	passportData, err := state.converter.ToPassportData(doc, activeAuth)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
 		return
 	}
 
@@ -272,7 +280,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 	// Remove the sessionID from the cache
 	err = state.tokenStorage.RemoveToken(request.SessionId)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token from storage", err)
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_TOKEN_REMOVAL, err)
 		return
 	}
 
@@ -289,20 +297,20 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 
 	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify passport", err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err)
 		return
 	}
 
 	var issuanceRequest models.PassportData
 	issuanceRequest, err = state.converter.ToPassportData(doc, activeAuth)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
 		return
 	}
 
 	jwt, err := state.jwtCreators.Passport.CreatePassportJwt(issuanceRequest)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, "failed to create JWT", "failed to create JWT", err)
+		respondWithErr(w, http.StatusInternalServerError, ERR_JWT_CREATION, ERR_JWT_CREATION, err)
 		return
 	}
 
@@ -319,7 +327,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	// Remove the sessionID from the cache
 	err = state.tokenStorage.RemoveToken(request.SessionId)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token from storage", err)
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_TOKEN_REMOVAL, err)
 		return
 	}
 
@@ -334,22 +342,22 @@ func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Docume
 	// Check if the sessionId and nonce are in the cache
 	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
 	if err != nil {
-		return document.Document{}, false, request, fmt.Errorf("failed to get nonce from storage: %w", err)
+		return document.Document{}, false, request, fmt.Errorf("%s: %w", ERR_TOKEN_RETRIEVAL, err)
 	}
 
 	if nonce == "" || nonce != request.Nonce {
-		return document.Document{}, false, request, fmt.Errorf("invalid session or nonce")
+		return document.Document{}, false, request, fmt.Errorf(ERR_INVALID_NONCE_SESSION)
 	}
 
 	var doc document.Document
 	doc, err = state.documentValidator.PassivePassport(request, state.passportCertPool)
 	if err != nil {
-		return document.Document{}, false, request, fmt.Errorf("passive authentication failed: %w", err)
+		return document.Document{}, false, request, fmt.Errorf("%s: %w", ERR_PASSIVE_FAILED, err)
 	}
 
 	activeAuth, err := state.documentValidator.ActivePassport(request, doc)
 	if err != nil {
-		return document.Document{}, false, request, fmt.Errorf("active authentication failed: %w", err)
+		return document.Document{}, false, request, fmt.Errorf("%s: %w", ERR_ACTIVE_FAILED, err)
 	}
 
 	return doc, activeAuth, request, nil
@@ -366,17 +374,17 @@ func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.
 	}
 
 	if nonce == "" || nonce != request.Nonce {
-		return doc, request, false, fmt.Errorf("invalid session or nonce")
+		return doc, request, false, fmt.Errorf(ERR_INVALID_NONCE_SESSION)
 	}
 
 	err = state.documentValidator.PassiveEDL(request, state.drivingLicenceCertPool)
 	if err != nil {
-		return doc, request, false, fmt.Errorf("passive authentication failed: %w", err)
+		return doc, request, false, fmt.Errorf("%s: %w", ERR_PASSIVE_FAILED, err)
 	}
 
 	result, err := state.documentValidator.ActiveEDL(request)
 	if err != nil {
-		return doc, request, false, fmt.Errorf("active authentication failed: %w", err)
+		return doc, request, false, fmt.Errorf("%s: %w", ERR_ACTIVE_FAILED, err)
 	}
 
 	doc, err = state.drivingLicenceParser.ParseEDLDocument(request.DataGroups, request.EFSOD)

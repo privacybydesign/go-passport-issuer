@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 	log "go-passport-issuer/logging"
-	redis "go-passport-issuer/redis"
+	"go-passport-issuer/redis"
 	"os"
 
 	"github.com/gmrtd/gmrtd/cms"
