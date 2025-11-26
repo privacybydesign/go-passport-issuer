@@ -77,7 +77,6 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 			return fmt.Errorf("%s hash mismatch", dgName)
 		}
 	}
-	log.Info.Printf("passive auth succeeded")
 
 	_, err = doc.Mf.Lds1.Sod.SD.Verify(*certPool)
 	if err != nil {

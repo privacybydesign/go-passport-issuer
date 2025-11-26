@@ -104,6 +104,7 @@ func main() {
 		drivingLicenceCertPool: &drivingLicenceCertPool,
 		documentValidator:      DocumentValidatorImpl{},
 		converter:              IssuanceRequestConverterImpl{},
+		drivingLicenceParser:   DrivingLicenceParserImpl{},
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)
