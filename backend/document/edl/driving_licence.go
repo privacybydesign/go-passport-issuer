@@ -1,18 +1,19 @@
-package document
+package edl
 
 import (
 	"bytes"
 	"fmt"
+	mrtdDoc "go-passport-issuer/document"
 	log "go-passport-issuer/logging"
 	"go-passport-issuer/models"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gmrtd/gmrtd/activeauth"
 	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/cryptoutils"
 	"github.com/gmrtd/gmrtd/document"
-	"github.com/gmrtd/gmrtd/tlv"
 	"github.com/gmrtd/gmrtd/utils"
 )
 
@@ -100,7 +101,7 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err er
 	dg13Bytes := utils.HexToBytes(dg13Hex)
 
 	// Parse DG13 to extract the SubjectPublicKeyInfo
-	pubKeyBytes, err := extractDG13PublicKeyInfo(dg13Bytes)
+	pubKeyBytes, err := ExtractDG13PublicKeyInfo(dg13Bytes)
 	if err != nil {
 		return false, fmt.Errorf("failed to extract public key from DG13: %w", err)
 	}
@@ -116,8 +117,8 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err er
 	aaSigBytes := utils.HexToBytes(data.ActiveAuthSignature)
 	nonceBytes := utils.HexToBytes(data.Nonce)
 
-	activeauth := activeauth.NewActiveAuth(nil, &doc)
-	err = activeauth.ValidateActiveAuthSignature(aaSigBytes, nonceBytes)
+	activeAuth := activeauth.NewActiveAuth(nil, &doc)
+	err = activeAuth.ValidateActiveAuthSignature(aaSigBytes, nonceBytes)
 	if err != nil {
 		return false, fmt.Errorf("failed to validate active authentication signature: %w", err)
 	}
@@ -125,13 +126,34 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err er
 	return true, nil
 }
 
-func extractDG13PublicKeyInfo(dg13Bytes []byte) ([]byte, error) {
-	// Unwrap outer 0x6F tag
-	nodes, err := tlv.Decode(dg13Bytes)
+func ToDrivingLicenceData(doc DrivingLicenceDocument, activeAuth bool) (request models.EDLData, err error) {
+	pngs, err := doc.Dg6.ConvertToPNG()
 	if err != nil {
-		return nil, err
+		return models.EDLData{}, fmt.Errorf("failed to convert DG6 image to PNG: %w", err)
 	}
 
-	// value of tag 0x6F is the SubjectPublicKeyInfo
-	return nodes.GetNode(0x6F).GetValue(), nil
+	var dob = doc.Dg1.DateOfBirth
+	request = models.EDLData{
+		DocumentNumber:       doc.Dg1.DocumentNumber,
+		FirstName:            doc.Dg1.HolderFirstName,
+		LastName:             doc.Dg1.HolderSurname,
+		IssuingMemberState:   doc.Dg1.IssuingMemberState,
+		IssuingAuthority:     doc.Dg1.IssuingAuthority,
+		DateOfBirth:          doc.Dg1.DateOfBirth,
+		YearOfBirth:          dob.Format("2006"),
+		PlaceOfBirth:         doc.Dg1.PlaceOfBirth,
+		DateOfExpiry:         doc.Dg1.DateOfExpiry,
+		Over12:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-12, 0, 0))),
+		Over16:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-16, 0, 0))),
+		Over18:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-18, 0, 0))),
+		Over21:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-21, 0, 0))),
+		Over65:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-65, 0, 0))),
+		ActiveAuthentication: mrtdDoc.BoolToYesNo(activeAuth),
+	}
+
+	if len(pngs) > 0 {
+		request.Photo = pngs[0]
+	}
+
+	return request, nil
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"go-passport-issuer/document/edl"
 	log "go-passport-issuer/logging"
 	"go-passport-issuer/models"
 	"net/http"
@@ -22,6 +23,14 @@ import (
 const ErrorInternal = "error:internal"
 const ERR_MARSHAL = "failed to marshal response message"
 const ERR_FAILED_BODY_CLOSE = "failed to close request body: %v"
+const ERR_ISSUANCE_CONVERT = "failed to convert to issuance request"
+const ERR_JWT_CREATION = "failed to create jwt"
+const ERR_TOKEN_REMOVAL = "failed to remove token from storage"
+const ERR_TOKEN_RETRIEVAL = "failed to get nonce from storage"
+const ERR_PASSIVE_FAILED = "passive authentication failed"
+const ERR_ACTIVE_FAILED = "active authentication failed"
+const ERR_INVALID_NONCE_SESSION = "invalid session or nonce"
+const ERR_PASSPORT_VERIFICATION = "failed to verify passport"
 
 type ServerConfig struct {
 	Host           string `json:"host"`
@@ -32,14 +41,14 @@ type ServerConfig struct {
 }
 
 type ServerState struct {
-	irmaServerURL           string
-	tokenStorage            TokenStorage
-	jwtCreator              JwtCreator
-	passportCertPool        *cms.CombinedCertPool
-	drivingLicenceCertPool  *cms.CertPool
-	passportValidator       PassportValidator
-	drivingLicenceValidator DrivingLicenceValidator
-	converter               PassportDataConverter
+	irmaServerURL          string
+	tokenStorage           TokenStorage
+	jwtCreators            AllJwtCreators
+	passportCertPool       *cms.CombinedCertPool
+	drivingLicenceCertPool *cms.CertPool
+	documentValidator      DocumentValidator
+	drivingLicenceParser   DrivingLicenceParser
+	converter              DocumentDataConverter
 }
 
 type SpaHandler struct {
@@ -106,7 +115,7 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/api/start-validation", func(w http.ResponseWriter, r *http.Request) {
 		handleStartValidatePassport(state, w, r)
 	})
-	router.HandleFunc("/api/verify-and-issue", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/api/issue-passport", func(w http.ResponseWriter, r *http.Request) {
 		handleIssuePassport(state, w, r)
 	})
 	router.HandleFunc("/api/verify-passport", func(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +123,9 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	})
 	router.HandleFunc("/api/verify-driving-licence", func(w http.ResponseWriter, r *http.Request) {
 		handleVerifyDrivingLicence(state, w, r)
+	})
+	router.HandleFunc("/api/issue-driving-licence", func(w http.ResponseWriter, r *http.Request) {
+		handleIssueEDL(state, w, r)
 	})
 	router.HandleFunc("/.well-known/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
@@ -137,7 +149,7 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	}, nil
 }
 
-type PassportIssuanceResponse struct {
+type IssuanceResponse struct {
 	Jwt           string `json:"jwt"`
 	IrmaServerURL string `json:"irma_server_url"`
 }
@@ -157,18 +169,18 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 
 	log.Info.Printf("Received request to verify driving license")
 
-	request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
+	doc, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving license", err)
 		return
 	}
 
-	// TODO: check document expiry once we can parse DG1 on the server side
+	isExpired := doc.Dg1.DateOfExpiry.Before(time.Now())
 
 	response := VerificationResponse{
 		AuthenticContent: true,
 		AuthenticChip:    activeRes,
-		IsExpired:        false,
+		IsExpired:        isExpired,
 	}
 
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
@@ -176,12 +188,51 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 		return
 	}
 
-	// Remove the sessionID from cache
-	err = state.tokenStorage.RemoveToken(request.SessionId)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token", err)
-	}
+	removeSessionToken(w, state.tokenStorage, request.SessionId)
+
 }
+
+func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) {
+	defer closeRequestBody(r)
+
+	if !requirePOST(w, r) {
+		return
+	}
+
+	log.Info.Printf("Received request to verify and issue driving licence")
+	doc, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
+
+	if err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving licence", err)
+		return
+	}
+
+	issuanceRequest, err := state.converter.ToDrivingLicenceData(*doc, activeRes)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
+		return
+	}
+
+	jwt, err := state.jwtCreators.DrivingLicence.CreateEDLJwt(issuanceRequest)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ERR_JWT_CREATION, ERR_JWT_CREATION, err)
+		return
+	}
+
+	response := IssuanceResponse{
+		Jwt:           jwt,
+		IrmaServerURL: state.irmaServerURL,
+	}
+
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
+		return
+	}
+
+	removeSessionToken(w, state.tokenStorage, request.SessionId)
+
+}
+
 func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer closeRequestBody(r)
 
@@ -193,13 +244,13 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 
 	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify passport", err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err)
 		return
 	}
 
 	passportData, err := state.converter.ToPassportData(doc, activeAuth)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
 		return
 	}
 
@@ -207,25 +258,18 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 	isExpired := passportData.DateOfExpiry.Before(time.Now())
 
 	// set up the response
-	verificationResponse := VerificationResponse{
-		true,
-		activeAuth,
-		isExpired,
+	response := VerificationResponse{
+		AuthenticContent: true,
+		AuthenticChip:    activeAuth,
+		IsExpired:        isExpired,
 	}
-
-	response := verificationResponse
 
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
 
-	// Remove the sessionID from the cache
-	err = state.tokenStorage.RemoveToken(request.SessionId)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token from storage", err)
-		return
-	}
+	removeSessionToken(w, state.tokenStorage, request.SessionId)
 
 }
 
@@ -240,24 +284,24 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 
 	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify passport", err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err)
 		return
 	}
 
-	var issuanceRequest models.PassportData
-	issuanceRequest, err = state.converter.ToPassportData(doc, activeAuth)
+	issuanceRequest, err := state.converter.ToPassportData(doc, activeAuth)
+
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to convert to issuance request", err)
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
 		return
 	}
 
-	jwt, err := state.jwtCreator.CreateJwt(issuanceRequest)
+	jwt, err := state.jwtCreators.Passport.CreatePassportJwt(issuanceRequest)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, "failed to create JWT", "failed to create JWT", err)
+		respondWithErr(w, http.StatusInternalServerError, ERR_JWT_CREATION, ERR_JWT_CREATION, err)
 		return
 	}
 
-	response := PassportIssuanceResponse{
+	response := IssuanceResponse{
 		Jwt:           jwt,
 		IrmaServerURL: state.irmaServerURL,
 	}
@@ -267,74 +311,94 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Remove the sessionID from the cache
-	err = state.tokenStorage.RemoveToken(request.SessionId)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to remove token from storage", err)
-		return
-	}
+	removeSessionToken(w, state.tokenStorage, request.SessionId)
 
 }
 
 func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.ValidationRequest, error) {
-	var request models.ValidationRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		return document.Document{}, false, request, fmt.Errorf("decode request body: %w", err)
-	}
 
-	// Check if the sessionId and nonce are in the cache
-	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+	request, err := decodeValidationRequest(r)
 	if err != nil {
-		return document.Document{}, false, request, fmt.Errorf("failed to get nonce from storage: %w", err)
+		return document.Document{}, false, request, err
 	}
 
-	if nonce == "" || nonce != request.Nonce {
-		return document.Document{}, false, request, fmt.Errorf("invalid session or nonce")
+	if err := validateSession(state.tokenStorage, request.SessionId, request.Nonce); err != nil {
+		return document.Document{}, false, request, err
 	}
 
 	var doc document.Document
-	doc, err = state.passportValidator.Passive(request, state.passportCertPool)
+	doc, err = state.documentValidator.PassivePassport(request, state.passportCertPool)
 	if err != nil {
-		return document.Document{}, false, request, fmt.Errorf("passive authentication failed: %w", err)
+		return document.Document{}, false, request, fmt.Errorf("%s: %w", ERR_PASSIVE_FAILED, err)
 	}
 
-	activeAuth, err := state.passportValidator.Active(request, doc)
+	activeAuth, err := state.documentValidator.ActivePassport(request, doc)
 	if err != nil {
-		return document.Document{}, false, request, fmt.Errorf("active authentication failed: %w", err)
+		return document.Document{}, false, request, fmt.Errorf("%s: %w", ERR_ACTIVE_FAILED, err)
 	}
 
 	return doc, activeAuth, request, nil
 }
 
-func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (request models.ValidationRequest, activeRes bool, err error) {
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		return request, false, fmt.Errorf("decode request body: %w", err)
-	}
+func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.DrivingLicenceDocument, request models.ValidationRequest, activeRes bool, err error) {
 
-	// Verify session/nonce
-	nonce, err := state.tokenStorage.RetrieveToken(request.SessionId)
+	request, err = decodeValidationRequest(r)
 	if err != nil {
-		return request, false, fmt.Errorf("failed to get nonce from storage: %w", err)
+		return doc, request, false, err
 	}
 
-	if nonce == "" || nonce != request.Nonce {
-		return request, false, fmt.Errorf("invalid session or nonce")
+	if err := validateSession(state.tokenStorage, request.SessionId, request.Nonce); err != nil {
+		return doc, request, false, err
 	}
 
-	err = state.drivingLicenceValidator.Passive(request, state.drivingLicenceCertPool)
+	err = state.documentValidator.PassiveEDL(request, state.drivingLicenceCertPool)
 	if err != nil {
-		return request, false, fmt.Errorf("passive authentication failed: %w", err)
+		return doc, request, false, fmt.Errorf("%s: %w", ERR_PASSIVE_FAILED, err)
 	}
 
-	result, err := state.drivingLicenceValidator.Active(request)
+	result, err := state.documentValidator.ActiveEDL(request)
 	if err != nil {
-		return request, false, fmt.Errorf("active authentication failed: %w", err)
+		return doc, request, false, fmt.Errorf("%s: %w", ERR_ACTIVE_FAILED, err)
 	}
 
-	return request, result, nil
+	doc, err = state.drivingLicenceParser.ParseEDLDocument(request.DataGroups, request.EFSOD)
+	if err != nil {
+		return doc, request, false, fmt.Errorf("failed to parse EDL document: %w", err)
+	}
+	return doc, request, result, nil
 }
 
 // -----------------------------------------------------------------------------------
+
+// validateSession validates session and nonce
+func validateSession(storage TokenStorage, sessionId, nonce string) error {
+	storedNonce, err := storage.RetrieveToken(sessionId)
+	if err != nil {
+		return fmt.Errorf("%s: %w", ERR_TOKEN_RETRIEVAL, err)
+	}
+
+	if storedNonce == "" || storedNonce != nonce {
+		return fmt.Errorf("%s", ERR_INVALID_NONCE_SESSION)
+	}
+
+	return nil
+}
+
+// removeSessionToken removes token and logs error if failed
+func removeSessionToken(w http.ResponseWriter, storage TokenStorage, sessionId string) {
+	if err := storage.RemoveToken(sessionId); err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_TOKEN_REMOVAL, err)
+	}
+}
+
+// decodeValidationRequest decodes the request body
+func decodeValidationRequest(r *http.Request) (models.ValidationRequest, error) {
+	var request models.ValidationRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		return request, fmt.Errorf("decode request body: %w", err)
+	}
+	return request, nil
+}
 
 type ValidatePassportResponse struct {
 	SessionId string `json:"session_id"`
@@ -348,7 +412,7 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 		return
 	}
 
-	log.Info.Printf("Received request to start passport validation")
+	log.Info.Printf("Received request to start document validation")
 
 	// Generate a session ID
 	sessionId := GenerateSessionId()
@@ -407,7 +471,7 @@ func GenerateSessionId() string {
 	return fmt.Sprintf("%x", sessionId)
 }
 
-// Generates a random nonce
+// GenerateNonce Generates a random nonce
 func GenerateNonce(i int) (string, error) {
 	nonce := make([]byte, i)
 	if _, err := rand.Read(nonce); err != nil {

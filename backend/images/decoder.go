@@ -82,8 +82,6 @@ func berLenLen(l int) int {
 
 // Constants & types
 const (
-	FID = 0x0102
-	SFI = 0x02
 	TAG = 0x75
 
 	BIOMETRIC_INFORMATION_GROUP_TEMPLATE_TAG = 0x7F61
@@ -111,6 +109,10 @@ type EfParseError struct{ msg string }
 
 func (e EfParseError) Error() string { return e.msg }
 
+type ImageContainer struct {
+	ImageData     []byte
+	ImageDataType *int
+}
 type EfDG2 struct {
 	VersionNumber        int
 	LengthOfRecord       int
@@ -132,8 +134,7 @@ type EfDG2 struct {
 	DeviceType           int
 	Quality              int
 
-	ImageData     []byte
-	imageDataType *int // 0 = JPEG, 1 = JPEG2000
+	ImageContainer
 }
 
 func NewEfDG2FromBytes(data []byte) (*EfDG2, error) {
@@ -144,11 +145,11 @@ func NewEfDG2FromBytes(data []byte) (*EfDG2, error) {
 	return dg2, nil
 }
 
-func (e *EfDG2) ImageType() (ImageType, bool) {
-	if e.imageDataType == nil {
+func (ic *ImageContainer) ImageType() (ImageType, bool) {
+	if ic.ImageDataType == nil {
 		return 0, false
 	}
-	if *e.imageDataType == 0 {
+	if *ic.ImageDataType == 0 {
 		return ImageJPEG, true
 	}
 	return ImageJPEG2000, true
@@ -192,7 +193,7 @@ func (e *EfDG2) Parse(content []byte) error {
 	// BITs follow BICT inside BIGT
 	offset := tlvEncodedLen(bict)
 	bv := tlvValue(bigt)
-	for i := 0; i < bitCount; i++ {
+	for range bitCount {
 		if offset >= len(bv) {
 			return EfParseError{"Unexpected end of BIGT while reading BITs"}
 		}
@@ -363,7 +364,7 @@ func (e *EfDG2) readBiometricDataBlock(tlvs []tlvNode) error {
 		return err
 	}
 	offset += 1
-	e.imageDataType = &idt
+	e.ImageDataType = &idt
 
 	if e.ImageWidth, err = beInt(data, offset, 2); err != nil {
 		return err
@@ -419,17 +420,20 @@ type chunk struct {
 }
 
 func (e *EfDG2) ConvertToPNG() ([]string, error) {
-	if len(e.ImageData) == 0 {
+	return e.ImageContainer.ConvertToPNG()
+}
+func (ic *ImageContainer) ConvertToPNG() ([]string, error) {
+	if len(ic.ImageData) == 0 {
 		return nil, fmt.Errorf("data not provided")
 	}
 
-	parts := extractImagesFromDG2(e.ImageData)
+	parts := extractImagesFromDG2(ic.ImageData)
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("no embedded JPEG/JP2/J2K/JLS signatures found in DG2")
 	}
 
 	var count int
-	var images = []string{}
+	var images []string
 	for i, p := range parts {
 		img, typ, err := decodeToImage(p.data, p.ext)
 		if err != nil {
@@ -446,7 +450,7 @@ func (e *EfDG2) ConvertToPNG() ([]string, error) {
 		}
 	}
 	if count == 0 {
-		return nil, fmt.Errorf("found image-like chunks but none could be decoded—do you have JP2/J2K support installed?")
+		return nil, fmt.Errorf("found image-like chunks but none could be decoded—make sure you have JP2/J2K support installed")
 	}
 	return images, nil
 }
