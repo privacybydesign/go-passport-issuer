@@ -56,6 +56,7 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 	}
 	hashAlgo := doc.Mf.Lds1.Sod.LdsSecurityObject.HashAlgorithm.Algorithm
 
+	slog.Info("Performing passive authentication for eDL")
 	for dgName, dgHex := range data.DataGroups {
 		dgBytes := utils.HexToBytes(dgHex)
 		dgNum, err := parseDgNumber(dgName) // DgHash function requires dg number
@@ -77,13 +78,12 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 			return fmt.Errorf("%s hash mismatch", dgName)
 		}
 	}
-	slog.Info("passive auth succeeded")
 
+	slog.Info("Verifying the request SOD against the certificate chain succeeded")
 	_, err = doc.Mf.Lds1.Sod.SD.Verify(*certPool)
 	if err != nil {
 		return fmt.Errorf("SOD signature verification failed: %w", err)
 	}
-	slog.Info("verifying the request SOD against the certificate chain succeeded")
 
 	return nil
 }
