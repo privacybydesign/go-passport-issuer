@@ -434,7 +434,6 @@ func writeStaticJSON(w http.ResponseWriter, b []byte) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if _, err := w.Write(b); err != nil {
 		slog.Error("failed to write body to http response", "error", err)
-		os.Exit(1)
 	}
 }
 

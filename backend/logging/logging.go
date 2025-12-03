@@ -7,6 +7,7 @@ import (
 )
 
 var logger *slog.Logger
+var currentLevel slog.Level
 
 func init() {
 	// Default to INFO level
@@ -30,6 +31,8 @@ func InitLogger(level string) {
 		logLevel = slog.LevelInfo
 	}
 
+	currentLevel = logLevel
+
 	opts := &slog.HandlerOptions{
 		Level: logLevel,
 	}
@@ -42,4 +45,9 @@ func InitLogger(level string) {
 // GetLogger returns the global logger instance
 func GetLogger() *slog.Logger {
 	return logger
+}
+
+// GetLevel returns the current log level
+func GetLevel() slog.Level {
+	return currentLevel
 }

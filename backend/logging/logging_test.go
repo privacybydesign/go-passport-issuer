@@ -24,6 +24,7 @@ func TestInitLoggerWithDifferentLevels(t *testing.T) {
 		{"warning level", "warning", slog.LevelWarn},
 		{"error level", "error", slog.LevelError},
 		{"default for unknown", "invalid", slog.LevelInfo},
+		{"empty string defaults to info", "", slog.LevelInfo},
 		{"uppercase", "DEBUG", slog.LevelDebug},
 		{"mixed case", "InFo", slog.LevelInfo},
 	}
@@ -33,8 +34,12 @@ func TestInitLoggerWithDifferentLevels(t *testing.T) {
 			InitLogger(tt.level)
 			logger := GetLogger()
 			require.NotNil(t, logger)
-			// Note: We can't directly test the level without exposing it,
-			// but we verify the logger is created without panicking
+
+			// Verify the level is set correctly
+			actualLevel := GetLevel()
+			require.Equal(t, tt.expectedLevel, actualLevel,
+				"Expected level %v but got %v for input %q",
+				tt.expectedLevel, actualLevel, tt.level)
 		})
 	}
 }
