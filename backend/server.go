@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"go-passport-issuer/document/edl"
-	log "go-passport-issuer/logging"
 	"go-passport-issuer/models"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -108,7 +108,7 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		err := json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 		if err != nil {
-			log.Error.Fatalf("failed to write body to http response: %v", err)
+			slog.Error("failed to write body to http response", "error", err)
 		}
 	})
 
@@ -167,7 +167,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 		return
 	}
 
-	log.Info.Printf("Received request to verify driving license")
+	slog.Info("Received request to verify driving license")
 
 	doc, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
 	if err != nil {
@@ -199,7 +199,7 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	log.Info.Printf("Received request to verify and issue driving licence")
+	slog.Info("Received request to verify and issue driving licence")
 	doc, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
 
 	if err != nil {
@@ -240,7 +240,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	log.Info.Printf("Received request to do verify a passport readout")
+	slog.Info("Received request to do verify a passport readout")
 
 	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
@@ -280,7 +280,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	log.Info.Printf("Received request to verify and issue passport")
+	slog.Info("Received request to verify and issue passport")
 
 	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
@@ -412,7 +412,7 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 		return
 	}
 
-	log.Info.Printf("Received request to start document validation")
+	slog.Info("Received request to start document validation")
 
 	// Generate a session ID
 	sessionId := GenerateSessionId()
@@ -465,7 +465,7 @@ func HandleAssaRequest(w http.ResponseWriter, r *http.Request) {
 func GenerateSessionId() string {
 	sessionId := make([]byte, 16)
 	if _, err := rand.Read(sessionId); err != nil {
-		log.Error.Printf("failed to generate session ID: %v", err)
+		slog.Error("failed to generate session ID", "error", err)
 		return ""
 	}
 	return fmt.Sprintf("%x", sessionId)
@@ -475,7 +475,7 @@ func GenerateSessionId() string {
 func GenerateNonce(i int) (string, error) {
 	nonce := make([]byte, i)
 	if _, err := rand.Read(nonce); err != nil {
-		log.Error.Printf("failed to generate nonce: %v", err)
+		slog.Error("failed to generate nonce", "error", err)
 		return "", fmt.Errorf("failed to generate nonce: %w", err)
 	}
 	hexString := hex.EncodeToString(nonce)
@@ -483,11 +483,10 @@ func GenerateNonce(i int) (string, error) {
 }
 
 func respondWithErr(w http.ResponseWriter, code int, responseBody string, logMsg string, e error) {
-	m := fmt.Sprintf("%v: %v", logMsg, e)
-	log.Error.Printf("%s\n -> returning statuscode %d with message %v", m, code, responseBody)
+	slog.Error(logMsg, "error", e, "status_code", code, "response_body", responseBody)
 	w.WriteHeader(code)
 	if _, err := w.Write([]byte(responseBody)); err != nil {
-		log.Error.Printf("failed to write body to http response: %v", err)
+		slog.Error("failed to write body to http response", "error", err)
 	}
 }
 
@@ -498,13 +497,13 @@ func writeStaticJSON(w http.ResponseWriter, b []byte) {
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if _, err := w.Write(b); err != nil {
-		log.Error.Fatalf("failed to write body to http response: %v", err)
+		slog.Error("failed to write body to http response", "error", err)
 	}
 }
 
 func closeRequestBody(r *http.Request) {
 	if err := r.Body.Close(); err != nil {
-		log.Error.Printf(ERR_FAILED_BODY_CLOSE, err)
+		slog.Error("failed to close request body", "error", err)
 	}
 
 }
@@ -525,7 +524,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 	w.Header().Set("Content-Type", "application/json")
 	_, err = w.Write(payload)
 	if err != nil {
-		log.Error.Fatalf("failed to write body to http response: %v", err)
+		slog.Error("failed to write body to http response", "error", err)
 	}
 	return nil
 }

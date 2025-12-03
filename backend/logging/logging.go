@@ -1,27 +1,53 @@
 package logging
 
 import (
-	"log"
+	"log/slog"
 	"os"
+	"strings"
 )
 
-var (
-	Info  *log.Logger
-	Error *log.Logger
-)
+var logger *slog.Logger
+var currentLevel slog.Level
 
 func init() {
-	Error = log.New(os.Stderr, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
-	Info = log.New(os.Stderr, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
+	// Default to INFO level
+	InitLogger("info")
 }
 
-func InitFileLogger(fileName string) {
-	logFile, err := os.Create(fileName)
+// InitLogger initializes the global logger with the specified level
+func InitLogger(level string) {
+	var logLevel slog.Level
 
-	if err != nil {
-		log.Fatalf("failed to open error log file: %v", err)
+	switch strings.ToLower(level) {
+	case "debug":
+		logLevel = slog.LevelDebug
+	case "info":
+		logLevel = slog.LevelInfo
+	case "warn", "warning":
+		logLevel = slog.LevelWarn
+	case "error":
+		logLevel = slog.LevelError
+	default:
+		logLevel = slog.LevelInfo
 	}
 
-	Error = log.New(logFile, "ERROR: ", log.Ldate|log.Ltime|log.Lshortfile)
-	Info = log.New(logFile, "INFO: ", log.Ldate|log.Ltime|log.Lshortfile)
+	currentLevel = logLevel
+
+	opts := &slog.HandlerOptions{
+		Level: logLevel,
+	}
+
+	handler := slog.NewTextHandler(os.Stderr, opts)
+	logger = slog.New(handler)
+	slog.SetDefault(logger)
+}
+
+// GetLogger returns the global logger instance
+func GetLogger() *slog.Logger {
+	return logger
+}
+
+// GetLevel returns the current log level
+func GetLevel() slog.Level {
+	return currentLevel
 }

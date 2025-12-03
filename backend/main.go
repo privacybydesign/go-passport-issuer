@@ -5,8 +5,9 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
-	log "go-passport-issuer/logging"
+	"go-passport-issuer/logging"
 	"go-passport-issuer/redis"
+	"log/slog"
 	"os"
 
 	"github.com/gmrtd/gmrtd/cms"
@@ -23,6 +24,7 @@ type Config struct {
 	StorageType             string                    `json:"storage_type"`
 	RedisConfig             redis.RedisConfig         `json:"redis_config,omitempty"`
 	RedisSentinelConfig     redis.RedisSentinelConfig `json:"redis_sentinel_config,omitempty"`
+	LogLevel                string                    `json:"log_level"`
 }
 
 type CredentialConfig struct {
@@ -44,17 +46,25 @@ func main() {
 	flag.Parse()
 
 	if *configPath == "" {
-		log.Error.Fatal("please provide a config path using the --config flag")
+		slog.Error("please provide a config path using the --config flag")
+		os.Exit(1)
 	}
-
-	log.Info.Printf("using config: %v", *configPath)
 
 	config, err := readConfigFile(*configPath)
 	if err != nil {
-		log.Error.Fatalf("failed to read config file: %v", err)
+		slog.Error("failed to read config file", "error", err)
+		os.Exit(1)
 	}
 
-	log.Info.Printf("hosting on: %v:%v", config.ServerConfig.Host, config.ServerConfig.Port)
+	// Initialize logger with the configured level, fallback to "info" if not set
+	logLevel := config.LogLevel
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	logging.InitLogger(logLevel)
+
+	slog.Info("using config", "path", *configPath)
+	slog.Info("hosting on", "host", config.ServerConfig.Host, "port", config.ServerConfig.Port)
 
 	passportJwtCreator, err := NewIrmaJwtCreator(
 		config.JwtPrivateKeyPath,
@@ -63,7 +73,8 @@ func main() {
 		config.SdJwtBatchSize,
 	)
 	if err != nil {
-		log.Error.Fatalf("failed to instantiate passport jwt creator: %v", err)
+		slog.Error("failed to instantiate passport jwt creator", "error", err)
+		os.Exit(1)
 	}
 
 	edlJwtCreator, err := NewIrmaJwtCreator(
@@ -73,7 +84,8 @@ func main() {
 		config.SdJwtBatchSize,
 	)
 	if err != nil {
-		log.Error.Fatalf("failed to instantiate edl jwt creator: %v", err)
+		slog.Error("failed to instantiate edl jwt creator", "error", err)
+		os.Exit(1)
 	}
 
 	jwtCreators := AllJwtCreators{
@@ -83,17 +95,20 @@ func main() {
 
 	tokenStorage, err := createTokenStorage(&config)
 	if err != nil {
-		log.Error.Fatalf("failed to instantiate token storage: %v", err)
+		slog.Error("failed to instantiate token storage", "error", err)
+		os.Exit(1)
 	}
 
 	passportCertPool, err := cms.GetDefaultMasterList()
 	if err != nil {
-		log.Error.Fatalf("CscaCertPool error: %s", err)
+		slog.Error("CscaCertPool error", "error", err)
+		os.Exit(1)
 	}
 	// Load here all existing generations of driving licence certs
 	drivingLicenceCertPool, err := loadDrivingLicenceCertPool(config.DrivingLicenceCertPaths)
 	if err != nil {
-		log.Error.Fatalf("Failed to load driving license cert: %s", err)
+		slog.Error("Failed to load driving license cert", "error", err)
+		os.Exit(1)
 	}
 
 	serverState := ServerState{
@@ -109,12 +124,14 @@ func main() {
 
 	server, err := NewServer(&serverState, config.ServerConfig)
 	if err != nil {
-		log.Error.Fatalf("failed to create server: %v", err)
+		slog.Error("failed to create server", "error", err)
+		os.Exit(1)
 	}
 
 	err = server.ListenAndServe()
 	if err != nil {
-		log.Error.Fatalf("failed to listen and serve: %v", err)
+		slog.Error("failed to listen and serve", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -137,7 +154,7 @@ func readConfigFile(path string) (Config, error) {
 
 func createTokenStorage(config *Config) (TokenStorage, error) {
 	if config.StorageType == "redis" {
-		log.Info.Printf("Using redis token storage")
+		slog.Info("Using redis token storage")
 		client, err := redis.NewRedisClient(&config.RedisConfig)
 		if err != nil {
 			return nil, err
@@ -145,7 +162,7 @@ func createTokenStorage(config *Config) (TokenStorage, error) {
 		return NewRedisTokenStorage(client, config.RedisConfig.Namespace), nil
 	}
 	if config.StorageType == "redis_sentinel" {
-		log.Info.Printf("Using redis sentinal storage")
+		slog.Info("Using redis sentinal storage")
 		client, err := redis.NewRedisSentinelClient(&config.RedisSentinelConfig)
 		if err != nil {
 			return nil, err
@@ -153,7 +170,7 @@ func createTokenStorage(config *Config) (TokenStorage, error) {
 		return NewRedisTokenStorage(client, config.RedisSentinelConfig.Namespace), nil
 	}
 	if config.StorageType == "memory" {
-		log.Info.Printf("Using in memory storage")
+		slog.Info("Using in memory storage")
 		return NewInMemoryTokenStorage(), nil
 	}
 	return nil, fmt.Errorf("%v is not a valid storage type", config.StorageType)
@@ -179,7 +196,7 @@ func loadDrivingLicenceCertPool(certPaths []string) (cms.CertPool, error) {
 			return nil, fmt.Errorf("failed to add cert %s: %w", certPath, err)
 		}
 
-		log.Info.Printf("Loaded driving licence cert: %s", certPath)
+		slog.Info("Loaded driving licence cert", "path", certPath)
 	}
 
 	return certPool, nil

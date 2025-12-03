@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	mrtdDoc "go-passport-issuer/document"
-	log "go-passport-issuer/logging"
 	"go-passport-issuer/models"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -39,7 +39,7 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 		return fmt.Errorf("EF_SOD is missing in the validation request")
 	}
 
-	log.Info.Printf("Constructing EF.SOD from bytes")
+	slog.Info("Constructing EF.SOD from bytes")
 
 	var doc document.Document
 	var sodFileBytes = utils.HexToBytes(data.EFSOD)
@@ -56,6 +56,7 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 	}
 	hashAlgo := doc.Mf.Lds1.Sod.LdsSecurityObject.HashAlgorithm.Algorithm
 
+	slog.Info("Performing passive authentication for eDL")
 	for dgName, dgHex := range data.DataGroups {
 		dgBytes := utils.HexToBytes(dgHex)
 		dgNum, err := parseDgNumber(dgName) // DgHash function requires dg number
@@ -78,11 +79,11 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 		}
 	}
 
+	slog.Info("Verifying the request SOD against the certificate chain succeeded")
 	_, err = doc.Mf.Lds1.Sod.SD.Verify(*certPool)
 	if err != nil {
 		return fmt.Errorf("SOD signature verification failed: %w", err)
 	}
-	log.Info.Printf("verifying the request SOD against the certificate chain succeeded")
 
 	return nil
 }
