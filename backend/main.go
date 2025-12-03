@@ -99,7 +99,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	passportCertPool, err := cms.GetDefaultMasterList()
+	passportCertPool, err := cms.DefaultMasterList()
 	if err != nil {
 		slog.Error("CscaCertPool error", "error", err)
 		os.Exit(1)

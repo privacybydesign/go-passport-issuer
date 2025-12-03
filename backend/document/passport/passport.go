@@ -10,7 +10,7 @@ import (
 
 	mrtdDoc "go-passport-issuer/document"
 
-	"github.com/gmrtd/gmrtd/activeauth"
+	activeAuth "github.com/gmrtd/gmrtd/activeauth"
 	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/document"
 	"github.com/gmrtd/gmrtd/passiveauth"
@@ -114,9 +114,13 @@ func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.C
 	}
 	slog.Info("Starting passive authentication for passport", "issuing_state", doc.Mf.Lds1.Dg1.Mrz.IssuingState)
 
-	err = passiveauth.PassiveAuth(&doc, certPool)
+	res, err := passiveauth.PassiveAuth(&doc, certPool)
 	if err != nil {
 		return document.Document{}, fmt.Errorf("unexpected error: %s", err)
+	}
+
+	if !res.Success {
+		return document.Document{}, fmt.Errorf("passive authentication failed")
 	}
 
 	return doc, nil
@@ -133,10 +137,12 @@ func ActiveAuthentication(data models.ValidationRequest, doc document.Document) 
 	aaSigBytes := utils.HexToBytes(data.ActiveAuthSignature)
 	nonceBytes := utils.HexToBytes(data.Nonce)
 
-	activeauth := activeauth.NewActiveAuth(nil, &doc)
-	err := activeauth.ValidateActiveAuthSignature(aaSigBytes, nonceBytes)
+	res, err := activeAuth.ValidateActiveAuthSignature(doc.Mf.Lds1.Dg15, aaSigBytes, nonceBytes)
 	if err != nil {
 		return false, fmt.Errorf("failed to validate active authentication signature: %w", err)
+	}
+	if !res.Success {
+		return false, fmt.Errorf("active authentication failed")
 	}
 	return true, nil
 }

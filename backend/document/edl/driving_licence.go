@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gmrtd/gmrtd/activeauth"
+	activeAuth "github.com/gmrtd/gmrtd/activeauth"
 	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/cryptoutils"
 	"github.com/gmrtd/gmrtd/document"
@@ -109,18 +109,19 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err er
 	// NOTE: gmrtd is passport specific, so we get the public key from DG13 of eDL
 	// and create a document with DG15 of key extracted from dg13
 	// TODO: change this once gmrtd supports eDL groups as well
-	doc := document.Document{}
-	doc.Mf.Lds1.Dg15 = &document.DG15{
+	dgDg15 := &document.DG15{
 		SubjectPublicKeyInfoBytes: pubKeyBytes,
 	}
 
 	aaSigBytes := utils.HexToBytes(data.ActiveAuthSignature)
 	nonceBytes := utils.HexToBytes(data.Nonce)
 
-	activeAuth := activeauth.NewActiveAuth(nil, &doc)
-	err = activeAuth.ValidateActiveAuthSignature(aaSigBytes, nonceBytes)
+	res, err := activeAuth.ValidateActiveAuthSignature(dgDg15, aaSigBytes, nonceBytes)
 	if err != nil {
 		return false, fmt.Errorf("failed to validate active authentication signature: %w", err)
+	}
+	if !res.Success {
+		return false, fmt.Errorf("active authentication failed")
 	}
 
 	return true, nil
