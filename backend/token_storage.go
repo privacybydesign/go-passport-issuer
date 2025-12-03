@@ -29,19 +29,19 @@ func NewRedisTokenStorage(client *redis.Client, namespace string) *RedisTokenSto
 	return &RedisTokenStorage{client: client, namespace: namespace}
 }
 
-// Should be safe to use in concurreny
+// TokenStorage Should be safe to use in concurreny
 type TokenStorage interface {
-	// Store the sessionId for the given sessionId number
+	// StoreToken Store the sessionId for the given sessionId number
 	// returns an error when it somehow fails to store the value.
 	// Should not return an error when the value already exists,
 	// it should just update in that case.
 	StoreToken(sessionId string, nonce string) error
 
-	// Should retrieve the token for the given sessionId number
+	// RetrieveToken Should retrieve the token for the given sessionId number
 	// and return an error in any case where it fails to do so.
 	RetrieveToken(sessionId string) (string, error)
 
-	// Should remove the token and return an error if it fails to do so.
+	// RemoveToken Should remove the token and return an error if it fails to do so.
 	// The value not being there should also be considered an error.
 	RemoveToken(sessionId string) error
 }
@@ -52,7 +52,7 @@ func createKey(namespace, sessionId string) string {
 	return fmt.Sprintf("%s:token:%s", namespace, sessionId)
 }
 
-const Timeout time.Duration = 24 * time.Hour
+const Timeout = 24 * time.Hour
 
 func (s *RedisTokenStorage) StoreToken(sessionId string, nonce string) error {
 	ctx := context.Background()

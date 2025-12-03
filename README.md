@@ -39,17 +39,26 @@ It should look like this:
 
 ```json
 {
-    "server_config": {
-        "host": "0.0.0.0",
-        "port": 8080
+  "server_config": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "irma_server_url": "https://is.staging.yivi.app",
+  "issuer_id": "passport_issuer",
+  "jwt_private_key_path": "local-secrets/private.pem",
+  "credentials": {
+    "passport" : {
+      "full_credential": "pbdf-staging.pbdf.passport"
     },
-    "irma_server_url": "https://is.staging.yivi.app",
-    "jwt_private_key_path": "../local-secrets/passport-issuer/private.pem",
-    "issuer_id": "passport_issuer",
-    "full_credential": "pbdf-staging.pbdf.passport",
-    "storage_type": "memory",
-    "driving_licence_cert_paths": [
-      "./certificates/version/eDL.cer"
+    "driving_licence": {
+      "full_credential": "pbdf-staging.pbdf.drivinglicence"
+    }
+  },
+  "storage_type": "memory",
+  "driving_licence_cert_paths": [
+    "./certificates/v1/CSCA NL eDL-01.cer",
+    "./certificates/v2/CSCA NL eDL-02.cer",
+    "./certificates/v3/CSCA NL eDL-03.cer"
   ]
 }
 ```

@@ -1,4 +1,4 @@
-package document
+package passport
 
 import (
 	"fmt"
@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
+	mrtdDoc "go-passport-issuer/document"
 
 	"github.com/gmrtd/gmrtd/activeauth"
 	"github.com/gmrtd/gmrtd/cms"
@@ -153,13 +155,13 @@ func ToPassportData(doc document.Document, activeAuth bool) (request models.Pass
 
 	var dob, doe time.Time
 	slog.Debug("Parsing date of birth")
-	dob, err = ParseDateOfBirth(doc.Mf.Lds1.Dg1.Mrz.DateOfBirth)
+	dob, err = mrtdDoc.ParseDateOfBirth(doc.Mf.Lds1.Dg1.Mrz.DateOfBirth)
 	if err != nil {
 		return models.PassportData{}, fmt.Errorf("failed to parse date of birth: %w", err)
 	}
 
 	slog.Debug("Parsing date of expiry")
-	doe, err = ParseExpiryDate(doc.Mf.Lds1.Dg1.Mrz.DateOfExpiry)
+	doe, err = mrtdDoc.ParseExpiryDate(doc.Mf.Lds1.Dg1.Mrz.DateOfExpiry)
 	if err != nil {
 		return models.PassportData{}, fmt.Errorf("failed to parse date of expiry: %w", err)
 	}
@@ -180,18 +182,18 @@ func ToPassportData(doc document.Document, activeAuth bool) (request models.Pass
 		FirstName:            doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Secondary,
 		LastName:             doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Primary,
 		Nationality:          doc.Mf.Lds1.Dg1.Mrz.Nationality,
-		IsEuCitizen:          BoolToYesNo(IsEuCitizen(doc.Mf.Lds1.Dg1.Mrz.Nationality)),
+		IsEuCitizen:          mrtdDoc.BoolToYesNo(IsEuCitizen(doc.Mf.Lds1.Dg1.Mrz.Nationality)),
 		DateOfBirth:          dob,
 		YearOfBirth:          dob.Format("2006"),
 		DateOfExpiry:         doe,
 		Gender:               doc.Mf.Lds1.Dg1.Mrz.Sex,
 		Country:              doc.Mf.Lds1.Dg1.Mrz.IssuingState,
-		Over12:               BoolToYesNo(dob.Before(time.Now().AddDate(-12, 0, 0))),
-		Over16:               BoolToYesNo(dob.Before(time.Now().AddDate(-16, 0, 0))),
-		Over18:               BoolToYesNo(dob.Before(time.Now().AddDate(-18, 0, 0))),
-		Over21:               BoolToYesNo(dob.Before(time.Now().AddDate(-21, 0, 0))),
-		Over65:               BoolToYesNo(dob.Before(time.Now().AddDate(-65, 0, 0))),
-		ActiveAuthentication: BoolToYesNo(activeAuth),
+		Over12:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-12, 0, 0))),
+		Over16:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-16, 0, 0))),
+		Over18:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-18, 0, 0))),
+		Over21:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-21, 0, 0))),
+		Over65:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-65, 0, 0))),
+		ActiveAuthentication: mrtdDoc.BoolToYesNo(activeAuth),
 	}
 
 	if len(pngs) > 0 {
@@ -199,56 +201,4 @@ func ToPassportData(doc document.Document, activeAuth bool) (request models.Pass
 	}
 
 	return request, nil
-}
-
-func BoolToYesNo(value bool) string {
-	if value {
-		return "Yes"
-	}
-	return "No"
-}
-
-func ParseExpiryDate(dateStr string) (time.Time, error) {
-	// Parse date in yymmdd format
-	if len(dateStr) != 6 {
-		return time.Time{}, fmt.Errorf("invalid date format: %s", dateStr)
-	}
-	layout := "060102" // "06" for year, "01" for month, "02" for day
-
-	parsedDate, err := time.Parse(layout, dateStr)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("error parsing date: %w", err)
-	}
-
-	// arbitrarily determine that a date more than 30 years ago
-	// gets added 100 years
-	if parsedDate.Before(time.Now().AddDate(-30, 0, 0)) {
-		parsedDate = parsedDate.AddDate(100, 0, 0)
-	}
-
-	return parsedDate, nil
-}
-
-func ParseDateOfBirth(dateStr string) (time.Time, error) {
-	// Parse date in yymmdd format
-	if len(dateStr) != 6 {
-		return time.Time{}, fmt.Errorf("invalid date format: %s", dateStr)
-	}
-	layout := "060102" // "06" for year, "01" for month, "02" for day
-
-	parsedDate, err := time.Parse(layout, dateStr)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("error parsing date: %w", err)
-	}
-
-	// Dates are stored in passports with only two digits for the year,
-	// so when someone is born in 1950, only the 50 part is stored.
-	// The Go time parser turns this into 2050 for some reason.
-	// To combat this we determine if the (parsed) birth year is higher than the current year.
-	// If it is we'll subtract 100 years from it.
-	if parsedDate.After(time.Now()) {
-		parsedDate = parsedDate.AddDate(-100, 0, 0)
-	}
-
-	return parsedDate, nil
 }

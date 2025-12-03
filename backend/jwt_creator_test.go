@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	jwt "github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,12 +42,12 @@ func TestCreatingJwt(t *testing.T) {
 		ActiveAuthentication: "true",
 	}
 
-	jwt, err := jc.CreateJwt(testPassportIssuanceRequest)
+	createdjwt, err := jc.CreatePassportJwt(testPassportIssuanceRequest)
 	if err != nil {
 		t.Fatalf("failed to create jwt: %v", err)
 	}
 
-	if jwt == "" {
+	if createdjwt == "" {
 		t.Fatal("jwt is empty")
 	}
 }
@@ -82,7 +82,7 @@ func TestDecodeValidateJwt(t *testing.T) {
 		ActiveAuthentication: "true",
 	}
 
-	tokenString, err := jc.CreateJwt(req)
+	tokenString, err := jc.CreatePassportJwt(req)
 	require.NoError(t, err)
 	require.NotEmpty(t, tokenString)
 
@@ -175,16 +175,36 @@ func TestBatchSizeConfiguration(t *testing.T) {
 				Over65:               "false",
 				ActiveAuthentication: "true",
 			}
+			passportAttributes := map[string]string{
+				"photo":                testPassport.Photo,
+				"documentNumber":       testPassport.DocumentNumber,
+				"documentType":         testPassport.DocumentType,
+				"firstName":            testPassport.FirstName,
+				"lastName":             testPassport.LastName,
+				"nationality":          testPassport.Nationality,
+				"dateOfBirth":          testPassport.DateOfBirth.Format(DATE_FORMAT_CYMD),
+				"yearOfBirth":          testPassport.DateOfBirth.Format(DATE_FORMAT_YEAR),
+				"isEuCitizen":          testPassport.IsEuCitizen,
+				"dateOfExpiry":         testPassport.DateOfExpiry.Format(DATE_FORMAT_CYMD),
+				"gender":               testPassport.Gender,
+				"country":              testPassport.Country,
+				"over12":               testPassport.Over12,
+				"over16":               testPassport.Over16,
+				"over18":               testPassport.Over18,
+				"over21":               testPassport.Over21,
+				"over65":               testPassport.Over65,
+				"activeAuthentication": testPassport.ActiveAuthentication,
+			}
 
 			// Test that the issuanceRequest has the correct batch size
-			issuanceReq := jc.createIssuanceRequest(testPassport)
+			issuanceReq := jc.createIssuanceRequest(passportAttributes)
 			require.NotNil(t, issuanceReq)
 			require.Len(t, issuanceReq.Credentials, 1, "Should have exactly one credential request")
 			require.Equal(t, tc.batchSize, issuanceReq.Credentials[0].SdJwtBatchSize,
 				"IssuanceRequest credential should have the configured batch size")
 
 			// Create JWT and verify it can be created successfully
-			jwtString, err := jc.CreateJwt(testPassport)
+			jwtString, err := jc.CreatePassportJwt(testPassport)
 			require.NoError(t, err)
 			require.NotEmpty(t, jwtString)
 

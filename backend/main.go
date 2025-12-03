@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"go-passport-issuer/logging"
-	redis "go-passport-issuer/redis"
+	"go-passport-issuer/redis"
 	"log/slog"
 	"os"
 
@@ -14,19 +14,31 @@ import (
 )
 
 type Config struct {
-	ServerConfig ServerConfig `json:"server_config"`
+	ServerConfig            ServerConfig              `json:"server_config"`
+	IrmaServerUrl           string                    `json:"irma_server_url"`
+	IssuerId                string                    `json:"issuer_id"`
+	JwtPrivateKeyPath       string                    `json:"jwt_private_key_path"`
+	SdJwtBatchSize          uint                      `json:"sd_jwt_batch_size"`
+	DrivingLicenceCertPaths []string                  `json:"driving_licence_cert_paths"`
+	Credentials             AllCredentialConfigs      `json:"credentials"`
+	StorageType             string                    `json:"storage_type"`
+	RedisConfig             redis.RedisConfig         `json:"redis_config,omitempty"`
+	RedisSentinelConfig     redis.RedisSentinelConfig `json:"redis_sentinel_config,omitempty"`
+	LogLevel                string                    `json:"log_level"`
+}
 
-	JwtPrivateKeyPath       string   `json:"jwt_private_key_path"`
-	IrmaServerUrl           string   `json:"irma_server_url"`
-	IssuerId                string   `json:"issuer_id"`
-	FullCredential          string   `json:"full_credential"`
-	SdJwtBatchSize          uint     `json:"sd_jwt_batch_size"`
-	DrivingLicenceCertPaths []string `json:"driving_licence_cert_paths"`
-	LogLevel                string   `json:"log_level"`
+type CredentialConfig struct {
+	FullCredential string `json:"full_credential"`
+}
 
-	StorageType         string                    `json:"storage_type"`
-	RedisConfig         redis.RedisConfig         `json:"redis_config,omitempty"`
-	RedisSentinelConfig redis.RedisSentinelConfig `json:"redis_sentinel_config,omitempty"`
+type AllCredentialConfigs struct {
+	Passport       CredentialConfig `json:"passport"`
+	DrivingLicence CredentialConfig `json:"driving_licence"`
+}
+
+type AllJwtCreators struct {
+	Passport       JwtCreator
+	DrivingLicence JwtCreator
 }
 
 func main() {
@@ -54,15 +66,31 @@ func main() {
 	slog.Info("using config", "path", *configPath)
 	slog.Info("hosting on", "host", config.ServerConfig.Host, "port", config.ServerConfig.Port)
 
-	jwtCreator, err := NewIrmaJwtCreator(
+	passportJwtCreator, err := NewIrmaJwtCreator(
 		config.JwtPrivateKeyPath,
 		config.IssuerId,
-		config.FullCredential,
+		config.Credentials.Passport.FullCredential,
 		config.SdJwtBatchSize,
 	)
 	if err != nil {
-		slog.Error("failed to instantiate jwt creator", "error", err)
+		slog.Error("failed to instantiate passport jwt creator", "error", err)
 		os.Exit(1)
+	}
+
+	edlJwtCreator, err := NewIrmaJwtCreator(
+		config.JwtPrivateKeyPath,
+		config.IssuerId,
+		config.Credentials.DrivingLicence.FullCredential,
+		config.SdJwtBatchSize,
+	)
+	if err != nil {
+		slog.Error("failed to instantiate edl jwt creator", "error", err)
+		os.Exit(1)
+	}
+
+	jwtCreators := AllJwtCreators{
+		Passport:       passportJwtCreator,
+		DrivingLicence: edlJwtCreator,
 	}
 
 	tokenStorage, err := createTokenStorage(&config)
@@ -84,14 +112,14 @@ func main() {
 	}
 
 	serverState := ServerState{
-		irmaServerURL:           config.IrmaServerUrl,
-		jwtCreator:              jwtCreator,
-		tokenStorage:            tokenStorage,
-		passportCertPool:        passportCertPool,
-		drivingLicenceCertPool:  &drivingLicenceCertPool,
-		passportValidator:       PassportValidatorImpl{},
-		drivingLicenceValidator: DrivingLicenceValidatorImpl{},
-		converter:               IssuanceRequestConverterImpl{},
+		irmaServerURL:          config.IrmaServerUrl,
+		jwtCreators:            jwtCreators,
+		tokenStorage:           tokenStorage,
+		passportCertPool:       passportCertPool,
+		drivingLicenceCertPool: &drivingLicenceCertPool,
+		documentValidator:      DocumentValidatorImpl{},
+		converter:              IssuanceRequestConverterImpl{},
+		drivingLicenceParser:   DrivingLicenceParserImpl{},
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)
