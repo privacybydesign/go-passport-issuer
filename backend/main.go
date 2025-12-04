@@ -82,7 +82,7 @@ func main() {
 	idCardJwtCreator, err := NewIrmaJwtCreator(
 		config.JwtPrivateKeyPath,
 		config.IssuerId,
-		config.Credentials.IdentityCard.FullCredential,
+		config.Credentials.IdCard.FullCredential,
 		config.SdJwtBatchSize,
 	)
 	if err != nil {
