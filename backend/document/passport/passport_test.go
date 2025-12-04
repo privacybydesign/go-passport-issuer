@@ -172,6 +172,33 @@ func TestActiveAuthentication_InvalidSignature(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to validate active authentication signature")
 }
 
+func TestActiveAuthentication_ValidationHashMismatch(t *testing.T) {
+	// Test with DG15 present and properly formatted signature structure, but validation fails due to hash mismatch
+	// This tests the case where the signature can be decrypted but the hash doesn't match the nonce
+	// Note: In practice, ValidateActiveAuthSignature returns an error (not just Success=false) when validation fails
+	var dg15Hex = "6F81A130819E300D06092A864886F70D010101050003818C00308188028180CF9A8BA6EAD230E592AA6B5DA04558CC005A5291B295418575D68D637F41AF105813293D1D43F3685F014FFF3007730E6A15B7801558C6911F1084B7B8553BEE577F84EA7B8BF346128DA380D57E500FAF5AB70971DD9B25F387343E0B6CFA1316B3F58F6B9D3E93A72DD6BE3C7A79D960CE8CBAF8726F5E4FBF289287941FD70203010001"
+	dg15Bytes := utils.HexToBytes(dg15Hex)
+	dg15, err := document.NewDG15(dg15Bytes)
+	require.NoError(t, err)
+
+	doc := document.Document{}
+	doc.Mf.Lds1.Dg15 = dg15
+
+	// Create a properly sized signature (128 bytes = 256 hex chars) that will parse but fail hash validation
+	invalidSignature := "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"
+
+	data := models.ValidationRequest{
+		Nonce:               "AABBCCDD",
+		ActiveAuthSignature: invalidSignature,
+	}
+
+	result, err := ActiveAuthentication(data, doc)
+	require.Error(t, err)
+	require.False(t, result)
+	// The error is from ValidateActiveAuthSignature, which returns an error on validation failure
+	require.Contains(t, err.Error(), "failed to validate active authentication signature")
+}
+
 func TestPassiveAuthenticationIgnoresInvalidOptionalDataGroups(t *testing.T) {
 	invalidDataGroupHex := "00"
 
