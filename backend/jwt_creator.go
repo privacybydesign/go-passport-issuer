@@ -13,6 +13,7 @@ import (
 type JwtCreator interface {
 	CreatePassportJwt(passport models.PassportData) (jwt string, err error)
 	CreateEDLJwt(edl models.EDLData) (jwt string, err error)
+	CreateIdCardJwt(data models.PassportData) (jwt string, err error)
 }
 
 func NewIrmaJwtCreator(privateKeyPath string,
@@ -81,6 +82,31 @@ func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (st
 		"over21":               passport.Over21,
 		"over65":               passport.Over65,
 		"activeAuthentication": passport.ActiveAuthentication,
+	}
+
+	return jc.createJwt(attributes)
+}
+
+func (jc *DefaultJwtCreator) CreateIdCardJwt(idCard models.PassportData) (string, error) {
+	attributes := map[string]string{
+		"photo":                idCard.Photo,
+		"documentNumber":       idCard.DocumentNumber,
+		"documentType":         idCard.DocumentType,
+		"firstName":            idCard.FirstName,
+		"lastName":             idCard.LastName,
+		"nationality":          idCard.Nationality,
+		"dateOfBirth":          idCard.DateOfBirth.Format(DATE_FORMAT_CYMD),
+		"yearOfBirth":          idCard.DateOfBirth.Format(DATE_FORMAT_YEAR),
+		"isEuCitizen":          idCard.IsEuCitizen,
+		"dateOfExpiry":         idCard.DateOfExpiry.Format(DATE_FORMAT_CYMD),
+		"gender":               idCard.Gender,
+		"country":              idCard.Country,
+		"over12":               idCard.Over12,
+		"over16":               idCard.Over16,
+		"over18":               idCard.Over18,
+		"over21":               idCard.Over21,
+		"over65":               idCard.Over65,
+		"activeAuthentication": idCard.ActiveAuthentication,
 	}
 
 	return jc.createJwt(attributes)

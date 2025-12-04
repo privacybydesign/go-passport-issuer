@@ -118,6 +118,9 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/api/issue-passport", func(w http.ResponseWriter, r *http.Request) {
 		handleIssuePassport(state, w, r)
 	})
+	router.HandleFunc("/api/issue-id-card", func(w http.ResponseWriter, r *http.Request) {
+		handleIssueIdCard(state, w, r)
+	})
 	router.HandleFunc("/api/verify-passport", func(w http.ResponseWriter, r *http.Request) {
 		handleVerifyPassport(state, w, r)
 	})
@@ -273,6 +276,47 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 
 }
 
+func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Request) {
+	defer closeRequestBody(r)
+
+	if !requirePOST(w, r) {
+		return
+	}
+
+	slog.Info("Received request to verify and issue passport")
+
+	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
+	if err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err)
+		return
+	}
+
+	issuanceRequest, err := state.converter.ToPassportData(doc, activeAuth)
+
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
+		return
+	}
+
+	jwt, err := state.jwtCreators.IdCard.CreateIdCardJwt(issuanceRequest)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ERR_JWT_CREATION, ERR_JWT_CREATION, err)
+		return
+	}
+
+	response := IssuanceResponse{
+		Jwt:           jwt,
+		IrmaServerURL: state.irmaServerURL,
+	}
+
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
+		return
+	}
+
+	removeSessionToken(w, state.tokenStorage, request.SessionId)
+}
+
 func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer closeRequestBody(r)
 
@@ -312,7 +356,6 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	}
 
 	removeSessionToken(w, state.tokenStorage, request.SessionId)
-
 }
 
 func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.ValidationRequest, error) {
