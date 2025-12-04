@@ -75,6 +75,26 @@ func TestActiveAuthenticationEDLInvalidSignature(t *testing.T) {
 	require.Contains(t, err.Error(), "failed to validate active authentication signature")
 }
 
+func TestActiveAuthenticationEDL_ValidationHashMismatch(t *testing.T) {
+	// Test with DG13 present and properly formatted signature structure, but validation fails due to hash mismatch
+	// This tests the case where the signature can be decrypted but the hash doesn't match the nonce
+	// Note: In practice, ValidateActiveAuthSignature returns an error (not just Success=false) when validation fails
+	// Create a properly sized signature (128 bytes = 256 hex chars) that will parse but fail hash validation
+	invalidSignature := "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"
+
+	data := models.ValidationRequest{
+		Nonce:               "AABBCCDD",
+		ActiveAuthSignature: invalidSignature,
+		DataGroups:          map[string]string{"DG13": dg13Hex},
+	}
+
+	result, err := edl.ActiveAuthenticationEDL(data)
+	require.Error(t, err)
+	require.False(t, result)
+	// The error is from ValidateActiveAuthSignature, which returns an error on validation failure
+	require.Contains(t, err.Error(), "failed to validate active authentication signature")
+}
+
 func TestPassiveAuthenticationEDLWithRealSOD(t *testing.T) {
 	data, trustedCerts := setupEdlVerifyTest(t, createTestEDLRequest, passport.TestSodHex)
 

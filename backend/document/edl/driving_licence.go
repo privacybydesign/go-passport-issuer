@@ -120,6 +120,8 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err er
 	if err != nil {
 		return false, fmt.Errorf("failed to validate active authentication signature: %w", err)
 	}
+	// Defensive check: In the current gmrtd implementation, if err is nil, then res.Success is always true.
+	// However, we keep this check for safety and future compatibility.
 	if !res.Success {
 		return false, fmt.Errorf("active authentication failed")
 	}
