@@ -53,6 +53,9 @@ It should look like this:
     "driving_licence": {
       "full_credential": "pbdf-staging.pbdf.drivinglicence"
     }
+    "id_card": {
+      "full_credential": "pbdf-staging.pbdf.idcard"
+    }
   },
   "storage_type": "memory",
   "driving_licence_cert_paths": [

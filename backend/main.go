@@ -22,8 +22,8 @@ type Config struct {
 	DrivingLicenceCertPaths []string                  `json:"driving_licence_cert_paths"`
 	Credentials             AllCredentialConfigs      `json:"credentials"`
 	StorageType             string                    `json:"storage_type"`
-	RedisConfig             redis.RedisConfig         `json:"redis_config,omitempty"`
-	RedisSentinelConfig     redis.RedisSentinelConfig `json:"redis_sentinel_config,omitempty"`
+	RedisConfig             redis.RedisConfig         `json:"redis_config"`
+	RedisSentinelConfig     redis.RedisSentinelConfig `json:"redis_sentinel_config"`
 	LogLevel                string                    `json:"log_level"`
 }
 
@@ -34,11 +34,13 @@ type CredentialConfig struct {
 type AllCredentialConfigs struct {
 	Passport       CredentialConfig `json:"passport"`
 	DrivingLicence CredentialConfig `json:"driving_licence"`
+	IdCard         CredentialConfig `json:"id_card"`
 }
 
 type AllJwtCreators struct {
 	Passport       JwtCreator
 	DrivingLicence JwtCreator
+	IdCard         JwtCreator
 }
 
 func main() {
@@ -77,6 +79,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	idCardJwtCreator, err := NewIrmaJwtCreator(
+		config.JwtPrivateKeyPath,
+		config.IssuerId,
+		config.Credentials.IdCard.FullCredential,
+		config.SdJwtBatchSize,
+	)
+	if err != nil {
+		slog.Error("failed to instantiate id-card jwt creator", "error", err)
+		os.Exit(1)
+	}
+
 	edlJwtCreator, err := NewIrmaJwtCreator(
 		config.JwtPrivateKeyPath,
 		config.IssuerId,
@@ -91,6 +104,7 @@ func main() {
 	jwtCreators := AllJwtCreators{
 		Passport:       passportJwtCreator,
 		DrivingLicence: edlJwtCreator,
+		IdCard:         idCardJwtCreator,
 	}
 
 	tokenStorage, err := createTokenStorage(&config)

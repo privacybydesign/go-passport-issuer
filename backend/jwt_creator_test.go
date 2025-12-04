@@ -13,7 +13,6 @@ import (
 )
 
 func TestCreatingJwt(t *testing.T) {
-
 	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
 	require.NoError(t, err)
 
