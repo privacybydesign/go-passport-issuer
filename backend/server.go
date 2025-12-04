@@ -283,7 +283,7 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	slog.Info("Received request to verify and issue passport")
+	slog.Info("Received request to verify and issue id card")
 
 	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {

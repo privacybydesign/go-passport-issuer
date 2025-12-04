@@ -22,8 +22,8 @@ type Config struct {
 	DrivingLicenceCertPaths []string                  `json:"driving_licence_cert_paths"`
 	Credentials             AllCredentialConfigs      `json:"credentials"`
 	StorageType             string                    `json:"storage_type"`
-	RedisConfig             redis.RedisConfig         `json:"redis_config,omitempty"`
-	RedisSentinelConfig     redis.RedisSentinelConfig `json:"redis_sentinel_config,omitempty"`
+	RedisConfig             redis.RedisConfig         `json:"redis_config"`
+	RedisSentinelConfig     redis.RedisSentinelConfig `json:"redis_sentinel_config"`
 	LogLevel                string                    `json:"log_level"`
 }
 
@@ -34,7 +34,7 @@ type CredentialConfig struct {
 type AllCredentialConfigs struct {
 	Passport       CredentialConfig `json:"passport"`
 	DrivingLicence CredentialConfig `json:"driving_licence"`
-	IdentityCard   CredentialConfig `json:"identity_card"`
+	IdCard         CredentialConfig `json:"id_card"`
 }
 
 type AllJwtCreators struct {
