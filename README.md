@@ -122,13 +122,23 @@ docker-compose up --build
 
 ## Face Verification with Liveness Detection
 
-The Go Passport Issuer integrates with Regula Forensics Face SDK to provide face verification and liveness detection capabilities. This feature is optional and can be enabled by configuring the Regula Face API service.
+The Go Passport Issuer integrates with Regula Forensics Face SDK to provide optional face verification during document verification and issuance. The system automatically compares the photo from the document chip (DG2 for passports/ID cards, DG6 for driver's licenses) with a user-provided selfie.
 
 ### Features
 
-- **Liveness Detection**: Verify that a real person is present using active or passive liveness checks
-- **Face Matching**: Compare two face images and get a similarity score
-- **Face Detection**: Detect faces in images with quality assessment and attribute extraction
+- **Integrated Face Matching**: Automatically compare document photo with selfie during verification/issuance
+- **Optional Verification**: Face matching is only performed when a selfie is provided
+- **Liveness Support**: Use Regula's liveness detection in your frontend before sending the selfie
+- **Threshold-Based Matching**: Configurable similarity threshold (default 0.75) to determine if faces match
+
+### How It Works
+
+1. User scans document (passport, ID card, or driver's license) via NFC
+2. User optionally provides a selfie (after liveness check in frontend)
+3. Backend extracts photo from document chip
+4. Backend compares document photo with selfie using Regula Face SDK
+5. Result includes face match score in verification response
+6. For issuance endpoints, face verification can block credential issuance if faces don't match
 
 ### Setup
 
@@ -172,85 +182,52 @@ For local development without Docker, use:
 }
 ```
 
-### API Endpoints
+### Usage with Existing Endpoints
 
-#### Check Liveness
+Face verification is integrated into existing verification and issuance endpoints. Simply add the `selfie_image` field to your requests:
+
+#### Passport/ID Card/Driver's License Verification
 ```bash
-POST /api/face/liveness
+POST /api/verify-passport  # or /api/verify-driving-licence
 Content-Type: application/json
 
 {
-  "transaction_id": "your-transaction-id"
+  "session_id": "session-123",
+  "nonce": "nonce-value",
+  "data_groups": { ... },
+  "ef_sod": "...",
+  "selfie_image": "base64-encoded-selfie"  // Optional: include for face verification
 }
 ```
 
-Response:
+Response with face verification:
 ```json
 {
-  "transaction_id": "your-transaction-id",
-  "liveness": 0,
-  "status": 1,
-  "similarity": 0.95,
-  "tag": "optional-tag"
+  "authentic_content": true,
+  "authentic_chip": true,
+  "is_expired": false,
+  "face_match": {
+    "matched": true,
+    "similarity": 0.87
+  }
 }
 ```
 
-#### Match Faces
+#### Passport/ID Card/Driver's License Issuance
 ```bash
-POST /api/face/match
+POST /api/issue-passport  # or /api/issue-id-card, /api/issue-driving-licence
 Content-Type: application/json
 
 {
-  "image1": "base64-encoded-image-1",
-  "image2": "base64-encoded-image-2"
+  "session_id": "session-123",
+  "nonce": "nonce-value",
+  "data_groups": { ... },
+  "ef_sod": "...",
+  "selfie_image": "base64-encoded-selfie"  // Optional: if provided and doesn't match, issuance fails
 }
 ```
 
-Response:
-```json
-{
-  "similarity": 0.87,
-  "matched": true,
-  "detected_faces": [
-    {
-      "quality": 0.92,
-      "crop": "base64-encoded-cropped-face",
-      "attributes": {
-        "age": 30,
-        "gender": "male",
-        "glasses": false
-      }
-    }
-  ]
-}
-```
-
-#### Detect Faces
-```bash
-POST /api/face/detect
-Content-Type: application/json
-
-{
-  "image": "base64-encoded-image"
-}
-```
-
-Response:
-```json
-{
-  "detected_faces": [
-    {
-      "quality": 0.88,
-      "crop": "base64-encoded-cropped-face",
-      "attributes": {
-        "age": 25,
-        "gender": "female",
-        "glasses": true
-      }
-    }
-  ]
-}
-```
+**Note**: For issuance endpoints, if `selfie_image` is provided and the face doesn't match (similarity < 0.75), the request will be rejected with status 400.
 
 ### Docker Deployment
 
