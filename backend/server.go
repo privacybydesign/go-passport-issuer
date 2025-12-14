@@ -147,15 +147,6 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/api/issue-driving-licence", func(w http.ResponseWriter, r *http.Request) {
 		handleIssueEDL(state, w, r)
 	})
-	router.HandleFunc("/api/face/liveness", func(w http.ResponseWriter, r *http.Request) {
-		handleCheckLiveness(state, w, r)
-	})
-	router.HandleFunc("/api/face/match", func(w http.ResponseWriter, r *http.Request) {
-		handleMatchFaces(state, w, r)
-	})
-	router.HandleFunc("/api/face/detect", func(w http.ResponseWriter, r *http.Request) {
-		handleDetectFaces(state, w, r)
-	})
 	router.HandleFunc("/.well-known/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/.well-known/assetlinks.json", HandleAssetLinksRequest).Methods(http.MethodGet)
@@ -198,6 +189,16 @@ type VerificationResponse struct {
 	AuthenticChip bool `json:"authentic_chip" example:"true"`
 	// True if the document has expired
 	IsExpired bool `json:"is_expired" example:"false"`
+	// Optional face verification result
+	FaceMatch *FaceMatchResult `json:"face_match,omitempty"`
+}
+
+// FaceMatchResult contains the result of comparing the document photo with a selfie
+type FaceMatchResult struct {
+	// True if the document photo and selfie match above the similarity threshold
+	Matched bool `json:"matched" example:"true"`
+	// Similarity score between the document photo and selfie
+	Similarity float64 `json:"similarity" example:"0.92"`
 }
 
 // HealthResponse contains the health status of the service
@@ -250,10 +251,25 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 
 	isExpired := doc.Dg1.DateOfExpiry.Before(time.Now())
 
+	// Optional face matching
+	var faceMatch *FaceMatchResult
+	if request.SelfieImage != "" && doc.Dg6 != nil {
+		slog.Info("Performing face verification for driving license")
+		// Extract photo from DG6
+		pngs, err := doc.Dg6.ConvertToPNG()
+		if err == nil && len(pngs) > 0 {
+			faceMatch, err = performFaceMatch(state, pngs[0], request.SelfieImage)
+			if err != nil {
+				slog.Warn("Face matching failed", "error", err)
+			}
+		}
+	}
+
 	response := VerificationResponse{
 		AuthenticContent: true,
 		AuthenticChip:    activeRes,
 		IsExpired:        isExpired,
+		FaceMatch:        faceMatch,
 	}
 
 	// Invalidate the one-time session before writing the response so the token
@@ -299,6 +315,18 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
 		return
+	}
+
+	// Optional face matching before issuance
+	if request.SelfieImage != "" && issuanceRequest.Photo != "" {
+		slog.Info("Performing face verification before driving license issuance")
+		faceMatch, err := performFaceMatch(state, issuanceRequest.Photo, request.SelfieImage)
+		if err != nil {
+			slog.Warn("Face matching failed during driving license issuance", "error", err)
+		} else if faceMatch != nil && !faceMatch.Matched {
+			respondWithErr(w, http.StatusBadRequest, "face verification failed", "face does not match document photo", fmt.Errorf("similarity: %f", faceMatch.Similarity))
+			return
+		}
 	}
 
 	jwt, err := state.jwtCreators.DrivingLicence.CreateEDLJwt(issuanceRequest)
@@ -360,11 +388,23 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 	// check expired
 	isExpired := passportData.DateOfExpiry.Before(time.Now())
 
+	// Optional face matching
+	var faceMatch *FaceMatchResult
+	if request.SelfieImage != "" && passportData.Photo != "" {
+		slog.Info("Performing face verification")
+		faceMatch, err = performFaceMatch(state, passportData.Photo, request.SelfieImage)
+		if err != nil {
+			slog.Warn("Face matching failed", "error", err)
+			// Don't fail the entire verification if face matching fails
+		}
+	}
+
 	// set up the response
 	response := VerificationResponse{
 		AuthenticContent: true,
 		AuthenticChip:    activeAuth,
 		IsExpired:        isExpired,
+		FaceMatch:        faceMatch,
 	}
 
 	// Invalidate the one-time session before writing the response so the token
@@ -411,6 +451,18 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
 		return
+	}
+
+	// Optional face matching before issuance
+	if request.SelfieImage != "" && issuanceRequest.Photo != "" {
+		slog.Info("Performing face verification before ID card issuance")
+		faceMatch, err := performFaceMatch(state, issuanceRequest.Photo, request.SelfieImage)
+		if err != nil {
+			slog.Warn("Face matching failed during ID card issuance", "error", err)
+		} else if faceMatch != nil && !faceMatch.Matched {
+			respondWithErr(w, http.StatusBadRequest, "face verification failed", "face does not match document photo", fmt.Errorf("similarity: %f", faceMatch.Similarity))
+			return
+		}
 	}
 
 	jwt, err := state.jwtCreators.IdCard.CreateIdCardJwt(issuanceRequest)
@@ -467,6 +519,18 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
 		return
+	}
+
+	// Optional face matching before issuance
+	if request.SelfieImage != "" && issuanceRequest.Photo != "" {
+		slog.Info("Performing face verification before passport issuance")
+		faceMatch, err := performFaceMatch(state, issuanceRequest.Photo, request.SelfieImage)
+		if err != nil {
+			slog.Warn("Face matching failed during passport issuance", "error", err)
+		} else if faceMatch != nil && !faceMatch.Matched {
+			respondWithErr(w, http.StatusBadRequest, "face verification failed", "face does not match document photo", fmt.Errorf("similarity: %f", faceMatch.Similarity))
+			return
+		}
 	}
 
 	jwt, err := state.jwtCreators.Passport.CreatePassportJwt(issuanceRequest)
@@ -736,115 +800,30 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 	return nil
 }
 
-// Face verification handlers
+// Face verification helpers
 
-func handleCheckLiveness(state *ServerState, w http.ResponseWriter, r *http.Request) {
-	defer closeRequestBody(r)
-
-	if !requirePOST(w, r) {
-		return
-	}
-
+// performFaceMatch extracts the document photo and compares it with the provided selfie
+func performFaceMatch(state *ServerState, documentPhotoBase64, selfieBase64 string) (*FaceMatchResult, error) {
 	if state.faceVerificationClient == nil {
-		respondWithErr(w, http.StatusServiceUnavailable, "face verification not available", "face verification service not configured", nil)
-		return
+		return nil, fmt.Errorf("face verification client not configured")
 	}
 
-	slog.Info("Received request to check liveness")
-
-	var request models.LivenessCheckRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to decode liveness request", err)
-		return
+	if selfieBase64 == "" {
+		return nil, nil // No selfie provided, skip face matching
 	}
 
-	if request.TransactionId == "" {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "transaction_id is required", nil)
-		return
+	if documentPhotoBase64 == "" {
+		return nil, fmt.Errorf("document photo not available")
 	}
 
-	response, err := state.faceVerificationClient.CheckLiveness(request.TransactionId)
+	response, err := state.faceVerificationClient.MatchFaces(documentPhotoBase64, selfieBase64)
 	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, "liveness check failed", "failed to check liveness", err)
-		return
+		return nil, fmt.Errorf("face matching failed: %w", err)
 	}
 
-	if err := writeJSON(w, http.StatusOK, response); err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
-		return
-	}
+	return &FaceMatchResult{
+		Matched:    response.Matched,
+		Similarity: response.Similarity,
+	}, nil
 }
 
-func handleMatchFaces(state *ServerState, w http.ResponseWriter, r *http.Request) {
-	defer closeRequestBody(r)
-
-	if !requirePOST(w, r) {
-		return
-	}
-
-	if state.faceVerificationClient == nil {
-		respondWithErr(w, http.StatusServiceUnavailable, "face verification not available", "face verification service not configured", nil)
-		return
-	}
-
-	slog.Info("Received request to match faces")
-
-	var request models.FaceMatchRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to decode face match request", err)
-		return
-	}
-
-	if request.Image1 == "" || request.Image2 == "" {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "both image1 and image2 are required", nil)
-		return
-	}
-
-	response, err := state.faceVerificationClient.MatchFaces(request.Image1, request.Image2)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, "face matching failed", "failed to match faces", err)
-		return
-	}
-
-	if err := writeJSON(w, http.StatusOK, response); err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
-		return
-	}
-}
-
-func handleDetectFaces(state *ServerState, w http.ResponseWriter, r *http.Request) {
-	defer closeRequestBody(r)
-
-	if !requirePOST(w, r) {
-		return
-	}
-
-	if state.faceVerificationClient == nil {
-		respondWithErr(w, http.StatusServiceUnavailable, "face verification not available", "face verification service not configured", nil)
-		return
-	}
-
-	slog.Info("Received request to detect faces")
-
-	var request models.FaceDetectRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to decode face detect request", err)
-		return
-	}
-
-	if request.Image == "" {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "image is required", nil)
-		return
-	}
-
-	response, err := state.faceVerificationClient.DetectFaces(request.Image)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, "face detection failed", "failed to detect faces", err)
-		return
-	}
-
-	if err := writeJSON(w, http.StatusOK, response); err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
-		return
-	}
-}

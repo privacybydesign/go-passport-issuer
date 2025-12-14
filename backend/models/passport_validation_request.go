@@ -12,4 +12,6 @@ type ValidationRequest struct {
 	EFSOD string `json:"ef_sod" example:"778201ab..."`
 	// Hex-encoded active authentication signature (optional)
 	ActiveAuthSignature string `json:"aa_signature,omitempty" example:"304502..."`
+	// Base64 encoded selfie for face verification (optional)
+	SelfieImage string `json:"selfie_image,omitempty"`
 }
