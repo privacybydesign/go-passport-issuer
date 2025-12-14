@@ -7,13 +7,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"go-passport-issuer/document/edl"
-	"go-passport-issuer/models"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
+
+	"go-passport-issuer/document/edl"
+	"go-passport-issuer/models"
 
 	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/document"
@@ -49,6 +50,7 @@ type ServerState struct {
 	documentValidator      DocumentValidator
 	drivingLicenceParser   DrivingLicenceParser
 	converter              DocumentDataConverter
+	faceVerificationClient FaceVerificationClient
 }
 
 type SpaHandler struct {
@@ -129,6 +131,15 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	})
 	router.HandleFunc("/api/issue-driving-licence", func(w http.ResponseWriter, r *http.Request) {
 		handleIssueEDL(state, w, r)
+	})
+	router.HandleFunc("/api/face/liveness", func(w http.ResponseWriter, r *http.Request) {
+		handleCheckLiveness(state, w, r)
+	})
+	router.HandleFunc("/api/face/match", func(w http.ResponseWriter, r *http.Request) {
+		handleMatchFaces(state, w, r)
+	})
+	router.HandleFunc("/api/face/detect", func(w http.ResponseWriter, r *http.Request) {
+		handleDetectFaces(state, w, r)
 	})
 	router.HandleFunc("/.well-known/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
@@ -565,9 +576,123 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	_, err = w.Write(payload)
 	if err != nil {
 		slog.Error("failed to write body to http response", "error", err)
 	}
 	return nil
+}
+
+// Face verification handlers
+
+func handleCheckLiveness(state *ServerState, w http.ResponseWriter, r *http.Request) {
+	defer closeRequestBody(r)
+
+	if !requirePOST(w, r) {
+		return
+	}
+
+	if state.faceVerificationClient == nil {
+		respondWithErr(w, http.StatusServiceUnavailable, "face verification not available", "face verification service not configured", nil)
+		return
+	}
+
+	slog.Info("Received request to check liveness")
+
+	var request models.LivenessCheckRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to decode liveness request", err)
+		return
+	}
+
+	if request.TransactionId == "" {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "transaction_id is required", nil)
+		return
+	}
+
+	response, err := state.faceVerificationClient.CheckLiveness(request.TransactionId)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, "liveness check failed", "failed to check liveness", err)
+		return
+	}
+
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
+		return
+	}
+}
+
+func handleMatchFaces(state *ServerState, w http.ResponseWriter, r *http.Request) {
+	defer closeRequestBody(r)
+
+	if !requirePOST(w, r) {
+		return
+	}
+
+	if state.faceVerificationClient == nil {
+		respondWithErr(w, http.StatusServiceUnavailable, "face verification not available", "face verification service not configured", nil)
+		return
+	}
+
+	slog.Info("Received request to match faces")
+
+	var request models.FaceMatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to decode face match request", err)
+		return
+	}
+
+	if request.Image1 == "" || request.Image2 == "" {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "both image1 and image2 are required", nil)
+		return
+	}
+
+	response, err := state.faceVerificationClient.MatchFaces(request.Image1, request.Image2)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, "face matching failed", "failed to match faces", err)
+		return
+	}
+
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
+		return
+	}
+}
+
+func handleDetectFaces(state *ServerState, w http.ResponseWriter, r *http.Request) {
+	defer closeRequestBody(r)
+
+	if !requirePOST(w, r) {
+		return
+	}
+
+	if state.faceVerificationClient == nil {
+		respondWithErr(w, http.StatusServiceUnavailable, "face verification not available", "face verification service not configured", nil)
+		return
+	}
+
+	slog.Info("Received request to detect faces")
+
+	var request models.FaceDetectRequest
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to decode face detect request", err)
+		return
+	}
+
+	if request.Image == "" {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "image is required", nil)
+		return
+	}
+
+	response, err := state.faceVerificationClient.DetectFaces(request.Image)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, "face detection failed", "failed to detect faces", err)
+		return
+	}
+
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
+		return
+	}
 }

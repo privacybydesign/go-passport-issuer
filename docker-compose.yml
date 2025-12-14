@@ -13,7 +13,9 @@ services:
     restart: unless-stopped
     networks:
       - app_network
-    depends_on: [redis]
+    depends_on:
+      - redis
+      - regula-face-api
 
   redis:
     image: 'bitnami/redis:latest'
@@ -23,6 +25,24 @@ services:
       - REDIS_PORT_NUMBER=6379
     networks:
       - app_network
+
+  regula-face-api:
+    image: regulaforensics/face-api:latest
+    container_name: regula-face-api
+    ports:
+      - "41101:41101"
+    expose:
+      - 41101
+    volumes:
+      # Mount your Regula license file here
+      # Uncomment and adjust the path to your license file
+      # - ./local-secrets/regula.license:/app/extBin/unix/regula.license
+    environment:
+      # Alternatively, you can provide the license as a base64-encoded environment variable
+      # - REGULA_LICENSE=<BASE64_ENCODED_LICENSE>
+    networks:
+      - app_network
+    restart: unless-stopped
 
 networks:
   app_network:

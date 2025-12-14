@@ -52,7 +52,7 @@ It should look like this:
     },
     "driving_licence": {
       "full_credential": "pbdf-staging.pbdf.drivinglicence"
-    }
+    },
     "id_card": {
       "full_credential": "pbdf-staging.pbdf.idcard"
     }
@@ -62,7 +62,8 @@ It should look like this:
     "./certificates/v1/CSCA NL eDL-01.cer",
     "./certificates/v2/CSCA NL eDL-02.cer",
     "./certificates/v3/CSCA NL eDL-03.cer"
-  ]
+  ],
+  "regula_face_api_url": "http://regula-face-api:41101"
 }
 ```
 The `jwt_private_key_path` should point to a valid RSA private key in PEM format, which is used to sign JWT tokens for the IRMA server.
@@ -119,6 +120,154 @@ To run both the backend and frontend using Docker Compose, ensure you have Docke
 docker-compose up --build
 ```
 
+## Face Verification with Liveness Detection
+
+The Go Passport Issuer integrates with Regula Forensics Face SDK to provide face verification and liveness detection capabilities. This feature is optional and can be enabled by configuring the Regula Face API service.
+
+### Features
+
+- **Liveness Detection**: Verify that a real person is present using active or passive liveness checks
+- **Face Matching**: Compare two face images and get a similarity score
+- **Face Detection**: Detect faces in images with quality assessment and attribute extraction
+
+### Setup
+
+#### 1. Obtain a Regula License
+
+To use the face verification features, you need a valid Regula Forensics license. Contact [Regula Forensics](https://regulaforensics.com/) to obtain a license file.
+
+#### 2. Configure the License
+
+Place your license file in the `local-secrets` directory:
+
+```bash
+# Save your license file
+cp /path/to/regula.license ./local-secrets/regula.license
+```
+
+Or use a Base64-encoded license as an environment variable in `docker-compose.yml`:
+
+```yaml
+regula-face-api:
+  environment:
+    - REGULA_LICENSE=<YOUR_BASE64_ENCODED_LICENSE>
+```
+
+#### 3. Enable in Configuration
+
+Add the `regula_face_api_url` to your `config.json`:
+
+```json
+{
+  ...
+  "regula_face_api_url": "http://regula-face-api:41101"
+}
+```
+
+For local development without Docker, use:
+```json
+{
+  ...
+  "regula_face_api_url": "http://localhost:41101"
+}
+```
+
+### API Endpoints
+
+#### Check Liveness
+```bash
+POST /api/face/liveness
+Content-Type: application/json
+
+{
+  "transaction_id": "your-transaction-id"
+}
+```
+
+Response:
+```json
+{
+  "transaction_id": "your-transaction-id",
+  "liveness": 0,
+  "status": 1,
+  "similarity": 0.95,
+  "tag": "optional-tag"
+}
+```
+
+#### Match Faces
+```bash
+POST /api/face/match
+Content-Type: application/json
+
+{
+  "image1": "base64-encoded-image-1",
+  "image2": "base64-encoded-image-2"
+}
+```
+
+Response:
+```json
+{
+  "similarity": 0.87,
+  "matched": true,
+  "detected_faces": [
+    {
+      "quality": 0.92,
+      "crop": "base64-encoded-cropped-face",
+      "attributes": {
+        "age": 30,
+        "gender": "male",
+        "glasses": false
+      }
+    }
+  ]
+}
+```
+
+#### Detect Faces
+```bash
+POST /api/face/detect
+Content-Type: application/json
+
+{
+  "image": "base64-encoded-image"
+}
+```
+
+Response:
+```json
+{
+  "detected_faces": [
+    {
+      "quality": 0.88,
+      "crop": "base64-encoded-cropped-face",
+      "attributes": {
+        "age": 25,
+        "gender": "female",
+        "glasses": true
+      }
+    }
+  ]
+}
+```
+
+### Docker Deployment
+
+The `docker-compose.yml` includes the Regula Face API service. Update the volume mount to point to your license file:
+
+```yaml
+regula-face-api:
+  volumes:
+    - ./local-secrets/regula.license:/app/extBin/unix/regula.license
+```
+
+Then start all services:
+
+```bash
+docker-compose up --build
+```
+
 ### Troubleshooting
 
 **Issue**: `invalid flag in pkg-config --cflags: -Xpreprocessor` error on macOS
@@ -136,4 +285,11 @@ export CGO_CFLAGS_ALLOW="-Xpreprocessor"
 ```bash
 brew list imagemagick@6
 pkg-config --cflags --libs MagickWand
+```
+
+**Issue**: Face verification endpoints return "face verification not available"
+
+**Solution**: Ensure the `regula_face_api_url` is configured in your `config.json` and the Regula Face API service is running. Check the service health:
+```bash
+curl http://localhost:41101/api/healthz
 ```
