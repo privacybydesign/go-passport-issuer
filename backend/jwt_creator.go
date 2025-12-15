@@ -67,7 +67,7 @@ func isValidPassportDocumentType(docType string) error {
 	if docType == "P" || docType == "PP" {
 		return nil
 	}
-	return fmt.Errorf("Document with type %s cannot be issued as a passport", docType)
+	return fmt.Errorf("document with type %s cannot be issued as a passport", docType)
 }
 
 func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (string, error) {
@@ -100,7 +100,7 @@ func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (st
 
 func isValidIdCardDocumentType(docType string) error {
 	if docType != "I" {
-		return fmt.Errorf("Document with type %s cannot be issued as an ID-card", docType)
+		return fmt.Errorf("document with type %s cannot be issued as an ID-card", docType)
 	}
 	return nil
 }
