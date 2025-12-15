@@ -13,17 +13,10 @@ import (
 )
 
 func TestCreatingJwt(t *testing.T) {
-	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
-	require.NoError(t, err)
-
-	b, err := os.ReadFile("./test-data/testpasfoto.jpg")
-	require.NoError(t, err)
-	photoBase64 := base64.StdEncoding.EncodeToString(b)
-
-	var testPassportIssuanceRequest = models.PassportData{
-		Photo:                photoBase64,
+	testPassportIssuanceRequest := models.PassportData{
+		Photo:                loadImage(t),
 		DocumentNumber:       "X1234567",
-		DocumentType:         "Passport",
+		DocumentType:         "P",
 		FirstName:            "Alice",
 		LastName:             "Johnson",
 		Nationality:          "NLD",
@@ -40,15 +33,103 @@ func TestCreatingJwt(t *testing.T) {
 		Over65:               "false",
 		ActiveAuthentication: "true",
 	}
+	requireValidPassport(t, testPassportIssuanceRequest)
+}
 
-	createdjwt, err := jc.CreatePassportJwt(testPassportIssuanceRequest)
-	if err != nil {
-		t.Fatalf("failed to create jwt: %v", err)
+func TestIdCardWithDocType_I_IsValid(t *testing.T) {
+	testPassportIssuanceRequest := models.PassportData{
+		Photo:                loadImage(t),
+		DocumentNumber:       "X1234567",
+		DocumentType:         "I",
+		FirstName:            "Alice",
+		LastName:             "Johnson",
+		Nationality:          "NLD",
+		IsEuCitizen:          "true",
+		DateOfBirth:          time.Date(1990, time.June, 15, 0, 0, 0, 0, time.UTC),
+		YearOfBirth:          "1990",
+		DateOfExpiry:         time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
+		Gender:               "F",
+		Country:              "Netherlands",
+		Over12:               "true",
+		Over16:               "true",
+		Over18:               "true",
+		Over21:               "true",
+		Over65:               "false",
+		ActiveAuthentication: "true",
 	}
+	requireValidIdCard(t, testPassportIssuanceRequest)
+}
 
-	if createdjwt == "" {
-		t.Fatal("jwt is empty")
+func TestPassportWithDocType_PP_IsValid(t *testing.T) {
+	testPassportIssuanceRequest := models.PassportData{
+		Photo:                loadImage(t),
+		DocumentNumber:       "X1234567",
+		DocumentType:         "PP",
+		FirstName:            "Alice",
+		LastName:             "Johnson",
+		Nationality:          "NLD",
+		IsEuCitizen:          "true",
+		DateOfBirth:          time.Date(1990, time.June, 15, 0, 0, 0, 0, time.UTC),
+		YearOfBirth:          "1990",
+		DateOfExpiry:         time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
+		Gender:               "F",
+		Country:              "Netherlands",
+		Over12:               "true",
+		Over16:               "true",
+		Over18:               "true",
+		Over21:               "true",
+		Over65:               "false",
+		ActiveAuthentication: "true",
 	}
+	requireValidPassport(t, testPassportIssuanceRequest)
+}
+
+func TestPassportDocumentTypeIsRefusedAsIdCard(t *testing.T) {
+	testPassportIssuanceRequest := models.PassportData{
+		Photo:                loadImage(t),
+		DocumentNumber:       "X1234567",
+		DocumentType:         "P",
+		FirstName:            "Alice",
+		LastName:             "Johnson",
+		Nationality:          "NLD",
+		IsEuCitizen:          "true",
+		DateOfBirth:          time.Date(1990, time.June, 15, 0, 0, 0, 0, time.UTC),
+		YearOfBirth:          "1990",
+		DateOfExpiry:         time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
+		Gender:               "F",
+		Country:              "Netherlands",
+		Over12:               "true",
+		Over16:               "true",
+		Over18:               "true",
+		Over21:               "true",
+		Over65:               "false",
+		ActiveAuthentication: "true",
+	}
+	requireInvalidIdCard(t, testPassportIssuanceRequest)
+}
+
+func TestIdCardDocumentTypeIsRefusedAsPassport(t *testing.T) {
+	testPassportIssuanceRequest := models.PassportData{
+		Photo:                loadImage(t),
+		DocumentNumber:       "X1234567",
+		DocumentType:         "I",
+		FirstName:            "Alice",
+		LastName:             "Johnson",
+		Nationality:          "NLD",
+		IsEuCitizen:          "true",
+		DateOfBirth:          time.Date(1990, time.June, 15, 0, 0, 0, 0, time.UTC),
+		YearOfBirth:          "1990",
+		DateOfExpiry:         time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
+		Gender:               "F",
+		Country:              "Netherlands",
+		Over12:               "true",
+		Over16:               "true",
+		Over18:               "true",
+		Over21:               "true",
+		Over65:               "false",
+		ActiveAuthentication: "true",
+	}
+	requireInvalidPassport(t, testPassportIssuanceRequest)
 }
 
 func TestDecodeValidateJwt(t *testing.T) {
@@ -56,14 +137,10 @@ func TestDecodeValidateJwt(t *testing.T) {
 	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
 	require.NoError(t, err)
 
-	b, err := os.ReadFile("./test-data/testpasfoto.jpg")
-	require.NoError(t, err)
-	photoBase64 := base64.StdEncoding.EncodeToString(b)
-
 	req := models.PassportData{
-		Photo:                photoBase64,
+		Photo:                loadImage(t),
 		DocumentNumber:       "X1234567",
-		DocumentType:         "Passport",
+		DocumentType:         "P",
 		FirstName:            "Alice",
 		LastName:             "Johnson",
 		Nationality:          "NLD",
@@ -103,7 +180,6 @@ func TestDecodeValidateJwt(t *testing.T) {
 		}
 	}
 	require.Equal(t, true, ok)
-
 }
 
 func TestBatchSizeConfiguration(t *testing.T) {
@@ -150,14 +226,10 @@ func TestBatchSizeConfiguration(t *testing.T) {
 				"JWT creator should store the configured batch size")
 
 			// Create a test passport
-			b, err := os.ReadFile("./test-data/testpasfoto.jpg")
-			require.NoError(t, err)
-			photoBase64 := base64.StdEncoding.EncodeToString(b)
-
 			testPassport := models.PassportData{
-				Photo:                photoBase64,
+				Photo:                loadImage(t),
 				DocumentNumber:       "TEST123",
-				DocumentType:         "Passport",
+				DocumentType:         "P",
 				FirstName:            "Test",
 				LastName:             "User",
 				Nationality:          "NLD",
@@ -216,7 +288,7 @@ func TestBatchSizeConfiguration(t *testing.T) {
 	}
 }
 
-func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
+func jwtKeyFunc(token *jwt.Token) (any, error) {
 	pubBytes, err := os.ReadFile("./test-secrets/pub.pem")
 	if err != nil {
 		return nil, err
@@ -252,4 +324,41 @@ func TestNewIrmaJwtCreator_ErrorCases(t *testing.T) {
 		_, err = NewIrmaJwtCreator(tmpFile.Name(), "issuer", "credential", 25)
 		require.Error(t, err)
 	})
+}
+
+func loadImage(t *testing.T) string {
+	b, err := os.ReadFile("./test-data/testpasfoto.jpg")
+	require.NoError(t, err)
+	photoBase64 := base64.StdEncoding.EncodeToString(b)
+	return photoBase64
+}
+
+func requireValidIdCard(t *testing.T, data models.PassportData) {
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.idcard", 25)
+	require.NoError(t, err)
+	jwt, err := jc.CreateIdCardJwt(data)
+	require.NoError(t, err)
+	require.NotEmpty(t, jwt)
+}
+
+func requireInvalidIdCard(t *testing.T, data models.PassportData) {
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.idcard", 25)
+	require.NoError(t, err)
+	_, err = jc.CreateIdCardJwt(data)
+	require.Error(t, err)
+}
+
+func requireValidPassport(t *testing.T, data models.PassportData) {
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
+	require.NoError(t, err)
+	jwt, err := jc.CreatePassportJwt(data)
+	require.NoError(t, err)
+	require.NotEmpty(t, jwt)
+}
+
+func requireInvalidPassport(t *testing.T, data models.PassportData) {
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
+	require.NoError(t, err)
+	_, err = jc.CreatePassportJwt(data)
+	require.Error(t, err)
 }
