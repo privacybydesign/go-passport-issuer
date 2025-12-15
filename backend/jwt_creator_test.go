@@ -342,7 +342,7 @@ func loadImage(t *testing.T) string {
 }
 
 func requireValidIdCard(t *testing.T, data models.PassportData) {
-	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.idcard", 25)
 	require.NoError(t, err)
 	jwt, err := jc.CreateIdCardJwt(data)
 	require.NoError(t, err)
@@ -350,7 +350,7 @@ func requireValidIdCard(t *testing.T, data models.PassportData) {
 }
 
 func requireInvalidIdCard(t *testing.T, data models.PassportData) {
-	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.idcard", 25)
 	require.NoError(t, err)
 	_, err = jc.CreateIdCardJwt(data)
 	require.Error(t, err)
