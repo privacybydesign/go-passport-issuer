@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rsa"
+	"fmt"
 	"go-passport-issuer/models"
 	"os"
 	"time"
@@ -62,7 +63,17 @@ func (jc *DefaultJwtCreator) createJwt(attributes map[string]string) (string, er
 const DATE_FORMAT_CYMD = "2006-01-02"
 const DATE_FORMAT_YEAR = "2006"
 
+func isValidPassportDocumentType(docType string) error {
+	if docType == "P" || docType == "PP" {
+		return nil
+	}
+	return fmt.Errorf("Document with type %s cannot be issued as a passport", docType)
+}
+
 func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (string, error) {
+	if err := isValidPassportDocumentType(passport.DocumentType); err != nil {
+		return "", err
+	}
 	attributes := map[string]string{
 		"photo":                passport.Photo,
 		"documentNumber":       passport.DocumentNumber,
@@ -87,7 +98,18 @@ func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (st
 	return jc.createJwt(attributes)
 }
 
+func isValidIdCardDocumentType(docType string) error {
+	if docType != "I" {
+		return fmt.Errorf("Document with type %s cannot be issued as an ID-card", docType)
+	}
+	return nil
+}
+
 func (jc *DefaultJwtCreator) CreateIdCardJwt(idCard models.PassportData) (string, error) {
+	if err := isValidIdCardDocumentType(idCard.DocumentType); err != nil {
+		return "", err
+	}
+
 	attributes := map[string]string{
 		"photo":                idCard.Photo,
 		"documentNumber":       idCard.DocumentNumber,
