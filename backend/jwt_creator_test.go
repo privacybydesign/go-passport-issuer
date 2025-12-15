@@ -137,12 +137,8 @@ func TestDecodeValidateJwt(t *testing.T) {
 	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
 	require.NoError(t, err)
 
-	b, err := os.ReadFile("./test-data/testpasfoto.jpg")
-	require.NoError(t, err)
-	photoBase64 := base64.StdEncoding.EncodeToString(b)
-
 	req := models.PassportData{
-		Photo:                photoBase64,
+		Photo:                loadImage(t),
 		DocumentNumber:       "X1234567",
 		DocumentType:         "P",
 		FirstName:            "Alice",
@@ -230,12 +226,8 @@ func TestBatchSizeConfiguration(t *testing.T) {
 				"JWT creator should store the configured batch size")
 
 			// Create a test passport
-			b, err := os.ReadFile("./test-data/testpasfoto.jpg")
-			require.NoError(t, err)
-			photoBase64 := base64.StdEncoding.EncodeToString(b)
-
 			testPassport := models.PassportData{
-				Photo:                photoBase64,
+				Photo:                loadImage(t),
 				DocumentNumber:       "TEST123",
 				DocumentType:         "P",
 				FirstName:            "Test",
