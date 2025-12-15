@@ -35,15 +35,48 @@ services:
       - 41101
     volumes:
       # Mount your Regula license file here
-      # Uncomment and adjust the path to your license file
-      # - ./local-secrets/regula.license:/app/extBin/unix/regula.license
-    environment:
-      # Alternatively, you can provide the license as a base64-encoded environment variable
-      # - REGULA_LICENSE=<BASE64_ENCODED_LICENSE>
+      - ./local-secrets/regula.license:/app/extBin/unix/regula.license
+      # Mount configuration file
+      - ./local-secrets/facesdk-config.yml:/app/config.yml
     networks:
       - app_network
+    depends_on:
+      - db-postgres
+    restart: unless-stopped
+
+  db-postgres:
+    image: postgres:17
+    container_name: regula-postgres
+    environment:
+      POSTGRES_DB: regula_db
+      POSTGRES_USER: regula
+      POSTGRES_PASSWORD: Regulapasswd#1
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'True'
+    ports:
+      - "5051:80"
+    networks:
+      - app_network
+    depends_on:
+      - db-postgres
     restart: unless-stopped
 
 networks:
   app_network:
     driver: bridge
+
+volumes:
+  postgres_data:
