@@ -120,7 +120,7 @@ func TestIssueDocumentSuccess(t *testing.T) {
 }
 
 func TestPassportPassiveAuthFailNoDataGroups(t *testing.T) {
-	pool, err := cms.GetDefaultMasterList()
+	pool, err := cms.DefaultMasterList()
 	require.NoError(t, err)
 
 	req := newReq(testSessionId, "n")
@@ -129,7 +129,7 @@ func TestPassportPassiveAuthFailNoDataGroups(t *testing.T) {
 }
 
 func TestPassportPassiveAuthFailNoEFSOD(t *testing.T) {
-	pool, err := cms.GetDefaultMasterList()
+	pool, err := cms.DefaultMasterList()
 	require.NoError(t, err)
 
 	req := newReq(testSessionId, "n", withDG("DG1", "00"))
@@ -139,7 +139,7 @@ func TestPassportPassiveAuthFailNoEFSOD(t *testing.T) {
 }
 
 func TestPassportPassiveAuthFailUnsupportedDG(t *testing.T) {
-	pool, err := cms.GetDefaultMasterList()
+	pool, err := cms.DefaultMasterList()
 	require.NoError(t, err)
 
 	req := newReq(testSessionId, "n",
@@ -151,7 +151,7 @@ func TestPassportPassiveAuthFailUnsupportedDG(t *testing.T) {
 }
 
 func TestPassportPassiveAuthFailBadSOD(t *testing.T) {
-	certPool, err := cms.GetDefaultMasterList()
+	certPool, err := cms.DefaultMasterList()
 	require.NoError(t, err)
 
 	req := newReq(testSessionId, testNonce, withDG("DG1", "00"), withEFSOD("00")) // bad SOD
@@ -160,7 +160,7 @@ func TestPassportPassiveAuthFailBadSOD(t *testing.T) {
 }
 
 func TestPassportPassiveAuthFailBadDG(t *testing.T) {
-	cscaCertPool, err := cms.GetDefaultMasterList()
+	cscaCertPool, err := cms.DefaultMasterList()
 	require.NoError(t, err)
 
 	req := newReq(testSessionId, testNonce,
