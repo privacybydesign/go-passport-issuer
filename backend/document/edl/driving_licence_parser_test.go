@@ -41,6 +41,33 @@ const (
 				87 0e 423b140720173b140720273b3b3b
 		`
 
+	// Surname:				Bassie
+	// First name:			Daniël
+	// Birth day:			17.12.1996
+	// Birth place:			Meppel
+	// Date of issue:		12.07.2017
+	// Date of expiry:		12.07.2027
+	// Issuing place:		Gemeente Meppel
+	// Document number:		1234567890
+	DG_1_DIACRITICS_TEST = `
+		61 818f
+			5f01 0d 65342d444c3030203030303031
+			5f02 55
+				5f03 03 4e4c44
+				5f04 06 426173736965
+				5f05 06 44616e69eb6c
+				5f06 04 17121996
+				5f07 06 4d657070656c
+				5f0a 04 12072017
+				5f0b 04 12072027
+				5f0c 0f 47656d65656e7465204d657070656c
+				5f0e 0a 31323334353637383930
+			7f63 24
+				02 01 02
+				87 0f 414d3b140720173b140720273b3b3b
+				87 0e 423b140720173b140720273b3b3b
+		`
+
 	DG_5_TEST = `
 		67 820637
 			89 01 03
@@ -139,6 +166,23 @@ func TestParseEdlDg6(t *testing.T) {
 	require.Equal(t, dg6Bytes, result.RawData)
 }
 
+func TestParseEdlDg1WithDiacritics(t *testing.T) {
+	dg1Bytes := decodeTestCase(t, DG_1_DIACRITICS_TEST)
+
+	result, err := edl.ParseEDLDG1(dg1Bytes)
+	require.NoError(t, err)
+
+	require.Equal(t, result.HolderSurname, "Bassie")
+	require.Equal(t, result.HolderFirstName, "Daniël")
+	require.Equal(t, result.PlaceOfBirth, "Meppel")
+	require.Equal(t, result.IssuingAuthority, "Gemeente Meppel")
+	require.Equal(t, result.DocumentNumber, "1234567890")
+	require.Equal(t, result.DateOfBirth, time.Date(1996, time.December, 17, 0, 0, 0, 0, time.UTC))
+	require.Equal(t, result.DateOfIssue, time.Date(2017, time.July, 12, 0, 0, 0, 0, time.UTC))
+	require.Equal(t, result.DateOfExpiry, time.Date(2027, time.July, 12, 0, 0, 0, 0, time.UTC))
+
+	require.Equal(t, dg1Bytes, result.RawData)
+}
 func TestParseEdlDg1(t *testing.T) {
 	dg1Bytes := decodeTestCase(t, DG_1_TEST)
 

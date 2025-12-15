@@ -11,6 +11,7 @@ import (
 	"github.com/gmrtd/gmrtd/document"
 	"github.com/gmrtd/gmrtd/tlv"
 	"github.com/gmrtd/gmrtd/utils"
+	"golang.org/x/text/encoding/charmap"
 )
 
 // TLV tag constants for DG1
@@ -185,6 +186,14 @@ func ParseEDLDG6(dg6Bytes []byte) (*DG6, error) {
 	}, nil
 }
 
+func decodeLatin1(bytes []byte) (string, error) {
+	result, err := charmap.ISO8859_1.NewDecoder().Bytes(bytes)
+	if err != nil {
+		return "", err
+	}
+	return string(result), nil
+}
+
 func ParseEDLDG1(dg1Bytes []byte) (*DG1, error) {
 	if len(dg1Bytes) == 0 {
 		return nil, fmt.Errorf("DG1 is empty")
@@ -219,22 +228,40 @@ func ParseEDLDG1(dg1Bytes []byte) (*DG1, error) {
 
 	// Extract each field
 	if node := personalDataTLV.GetNode(ISSUING_MEMBER_STATE); node.IsValidNode() {
-		dg1.IssuingMemberState = string(node.GetValue())
+		dg1.IssuingMemberState, err = decodeLatin1(node.GetValue())
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode issuing member state: %w", err)
+		}
 	}
 	if node := personalDataTLV.GetNode(HOLDER_SURNAME); node.IsValidNode() {
-		dg1.HolderSurname = string(node.GetValue())
+		dg1.HolderSurname, err = decodeLatin1(node.GetValue())
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode holder surname: %w", err)
+		}
 	}
 	if node := personalDataTLV.GetNode(HOLDER_OTHER_NAME); node.IsValidNode() {
-		dg1.HolderFirstName = string(node.GetValue())
+		dg1.HolderFirstName, err = decodeLatin1(node.GetValue())
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode holder first name: %w", err)
+		}
 	}
 	if node := personalDataTLV.GetNode(PLACE_OF_BIRTH); node.IsValidNode() {
-		dg1.PlaceOfBirth = string(node.GetValue())
+		dg1.PlaceOfBirth, err = decodeLatin1(node.GetValue())
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode place of birth: %w", err)
+		}
 	}
 	if node := personalDataTLV.GetNode(ISSUING_AUTHORITY); node.IsValidNode() {
-		dg1.IssuingAuthority = string(node.GetValue())
+		dg1.IssuingAuthority, err = decodeLatin1(node.GetValue())
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode issuing authority: %w", err)
+		}
 	}
 	if node := personalDataTLV.GetNode(DOCUMENT_NUMBER); node.IsValidNode() {
-		dg1.DocumentNumber = string(node.GetValue())
+		dg1.DocumentNumber, err = decodeLatin1(node.GetValue())
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode document number: %w", err)
+		}
 	}
 
 	// Parse BCD-encoded dates
