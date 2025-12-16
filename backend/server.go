@@ -115,16 +115,16 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/api/start-validation", func(w http.ResponseWriter, r *http.Request) {
 		handleStartValidatePassport(state, w, r)
 	})
+	// Verify and issue is here for backwards comptability. this endpoint can be removed in future versions.
+	// Date: 16-12-2025, to be removed after January 2026
+	router.HandleFunc("/api/verify-and-issue", func(w http.ResponseWriter, r *http.Request) {
+		handleIssuePassport(state, w, r)
+	})
 	router.HandleFunc("/api/issue-passport", func(w http.ResponseWriter, r *http.Request) {
 		handleIssuePassport(state, w, r)
 	})
 	router.HandleFunc("/api/issue-id-card", func(w http.ResponseWriter, r *http.Request) {
 		handleIssueIdCard(state, w, r)
-	})
-	// Verify and issue is here for backwards comptability. this endpoint can be removed in future versions.
-	// Date: 16-12-2025, to be removed after January 2026
-	router.HandleFunc("/api/verify-and-issue", func(w http.ResponseWriter, r *http.Request) {
-		handleVerifyPassport(state, w, r)
 	})
 	router.HandleFunc("/api/verify-passport", func(w http.ResponseWriter, r *http.Request) {
 		handleVerifyPassport(state, w, r)
