@@ -95,27 +95,27 @@ func ParseEDLDG6(dg6Bytes []byte) (*DG6, error) {
 		return nil, fmt.Errorf("failed to decode DG6 TLV: %w", err)
 	}
 
-	outerNode := nodes.GetNode(0x75)
+	outerNode := nodes.NodeByTag(0x75)
 	if !outerNode.IsValidNode() {
 		return nil, fmt.Errorf("DG6 outer tag (0x75) not found")
 	}
 
-	biometricGroupNode := outerNode.GetNode(0x7F61)
+	biometricGroupNode := outerNode.NodeByTag(0x7F61)
 	if !biometricGroupNode.IsValidNode() {
 		return nil, fmt.Errorf("biometric group tag (0x7F61) not found")
 	}
 
-	biometricInfoNode := biometricGroupNode.GetNode(0x7F60)
+	biometricInfoNode := biometricGroupNode.NodeByTag(0x7F60)
 	if !biometricInfoNode.IsValidNode() {
 		return nil, fmt.Errorf("biometric info template (0x7F60) not found")
 	}
 
-	bdbNode := biometricInfoNode.GetNode(0x5F2E)
+	bdbNode := biometricInfoNode.NodeByTag(0x5F2E)
 	if !bdbNode.IsValidNode() {
 		return nil, fmt.Errorf("BDB tag (0x5F2E) not found")
 	}
 
-	facialData := bdbNode.GetValue()
+	facialData := bdbNode.Value()
 
 	// Check for "FAC\0" header
 	if len(facialData) < 4 || !bytes.Equal(facialData[:4], []byte{0x46, 0x41, 0x43, 0x00}) {
@@ -206,18 +206,18 @@ func ParseEDLDG1(dg1Bytes []byte) (*DG1, error) {
 	}
 
 	// Navigate to 0x61 -> 0x5F02
-	rootNode := nodes.GetNode(DG1_OUTER_TAG)
+	rootNode := nodes.NodeByTag(DG1_OUTER_TAG)
 	if !rootNode.IsValidNode() {
 		return nil, fmt.Errorf("DG1 outer tag (0x61) not found")
 	}
 
-	mainNode := rootNode.GetNode(DG1_MAIN_TAG)
+	mainNode := rootNode.NodeByTag(DG1_MAIN_TAG)
 	if !mainNode.IsValidNode() {
 		return nil, fmt.Errorf("DG1 main container (0x5F02) not found")
 	}
 
 	// Decode the VALUE of 0x5F02 as it contains nested TLVs
-	personalDataTLV, err := tlv.Decode(mainNode.GetValue())
+	personalDataTLV, err := tlv.Decode(mainNode.Value())
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode personal details TLV: %w", err)
 	}
@@ -227,65 +227,65 @@ func ParseEDLDG1(dg1Bytes []byte) (*DG1, error) {
 	}
 
 	// Extract each field
-	if node := personalDataTLV.GetNode(ISSUING_MEMBER_STATE); node.IsValidNode() {
-		dg1.IssuingMemberState, err = decodeLatin1(node.GetValue())
+	if node := personalDataTLV.NodeByTag(ISSUING_MEMBER_STATE); node.IsValidNode() {
+		dg1.IssuingMemberState, err = decodeLatin1(node.Value())
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode issuing member state: %w", err)
 		}
 	}
-	if node := personalDataTLV.GetNode(HOLDER_SURNAME); node.IsValidNode() {
-		dg1.HolderSurname, err = decodeLatin1(node.GetValue())
+	if node := personalDataTLV.NodeByTag(HOLDER_SURNAME); node.IsValidNode() {
+		dg1.HolderSurname, err = decodeLatin1(node.Value())
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode holder surname: %w", err)
 		}
 	}
-	if node := personalDataTLV.GetNode(HOLDER_OTHER_NAME); node.IsValidNode() {
-		dg1.HolderFirstName, err = decodeLatin1(node.GetValue())
+	if node := personalDataTLV.NodeByTag(HOLDER_OTHER_NAME); node.IsValidNode() {
+		dg1.HolderFirstName, err = decodeLatin1(node.Value())
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode holder first name: %w", err)
 		}
 	}
-	if node := personalDataTLV.GetNode(PLACE_OF_BIRTH); node.IsValidNode() {
-		dg1.PlaceOfBirth, err = decodeLatin1(node.GetValue())
+	if node := personalDataTLV.NodeByTag(PLACE_OF_BIRTH); node.IsValidNode() {
+		dg1.PlaceOfBirth, err = decodeLatin1(node.Value())
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode place of birth: %w", err)
 		}
 	}
-	if node := personalDataTLV.GetNode(ISSUING_AUTHORITY); node.IsValidNode() {
-		dg1.IssuingAuthority, err = decodeLatin1(node.GetValue())
+	if node := personalDataTLV.NodeByTag(ISSUING_AUTHORITY); node.IsValidNode() {
+		dg1.IssuingAuthority, err = decodeLatin1(node.Value())
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode issuing authority: %w", err)
 		}
 	}
-	if node := personalDataTLV.GetNode(DOCUMENT_NUMBER); node.IsValidNode() {
-		dg1.DocumentNumber, err = decodeLatin1(node.GetValue())
+	if node := personalDataTLV.NodeByTag(DOCUMENT_NUMBER); node.IsValidNode() {
+		dg1.DocumentNumber, err = decodeLatin1(node.Value())
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode document number: %w", err)
 		}
 	}
 
 	// Parse BCD-encoded dates
-	if node := personalDataTLV.GetNode(DATE_OF_BIRTH); node.IsValidNode() {
-		dg1.DateOfBirth, err = parseBCDDate(node.GetValue())
+	if node := personalDataTLV.NodeByTag(DATE_OF_BIRTH); node.IsValidNode() {
+		dg1.DateOfBirth, err = parseBCDDate(node.Value())
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse date of birth: %w", err)
 		}
 	}
-	if node := personalDataTLV.GetNode(DATE_OF_ISSUE); node.IsValidNode() {
-		dg1.DateOfIssue, err = parseBCDDate(node.GetValue())
+	if node := personalDataTLV.NodeByTag(DATE_OF_ISSUE); node.IsValidNode() {
+		dg1.DateOfIssue, err = parseBCDDate(node.Value())
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse date of issue: %w", err)
 		}
 	}
-	if node := personalDataTLV.GetNode(DATE_OF_EXPIRY); node.IsValidNode() {
-		dg1.DateOfExpiry, err = parseBCDDate(node.GetValue())
+	if node := personalDataTLV.NodeByTag(DATE_OF_EXPIRY); node.IsValidNode() {
+		dg1.DateOfExpiry, err = parseBCDDate(node.Value())
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse date of expiry: %w", err)
 		}
 	}
 
 	// Parse categories (0x7F63) - directly under 0x61
-	secondaryNode := rootNode.GetNode(DG1_SECONDARY_TAG)
+	secondaryNode := rootNode.NodeByTag(DG1_SECONDARY_TAG)
 
 	if !secondaryNode.IsValidNode() {
 		dg1.Categories = []DrivingLicenseCategory{}
@@ -296,12 +296,12 @@ func ParseEDLDG1(dg1Bytes []byte) (*DG1, error) {
 
 	// Get all 0x87 category tags
 	for i := 1; ; i++ {
-		categoryNode := secondaryNode.GetNodeByOccur(CATEGORY_TAG, i)
+		categoryNode := secondaryNode.NodeByTagOccur(CATEGORY_TAG, i)
 		if !categoryNode.IsValidNode() {
 			break
 		}
 
-		categoryData := categoryNode.GetValue()
+		categoryData := categoryNode.Value()
 
 		// Find semicolons
 		firstSemicolon := -1
@@ -346,17 +346,17 @@ func ParseEDLDG5(dg5Bytes []byte) (*DG5, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse DG5 TLV: %w", err)
 	}
-	root := nodes.GetNode(0x67)
+	root := nodes.NodeByTag(0x67)
 	if !root.IsValidNode() {
 		return nil, fmt.Errorf("tag 0x67 not found in DG5")
 	}
 
-	imageTypeNode := root.GetNode(0x89)
+	imageTypeNode := root.NodeByTag(0x89)
 	if !imageTypeNode.IsValidNode() {
 		return nil, fmt.Errorf("tag 0x89 not found in DG5")
 	}
 
-	imageType := int(imageTypeNode.GetValue()[0])
+	imageType := int(imageTypeNode.Value()[0])
 	switch imageType {
 	case 0x03:
 		imageType = 0x00
@@ -366,12 +366,12 @@ func ParseEDLDG5(dg5Bytes []byte) (*DG5, error) {
 		return nil, fmt.Errorf("invalid image type (%v) in DG5", imageType)
 	}
 
-	imageNode := root.GetNode(0x5f43)
+	imageNode := root.NodeByTag(0x5f43)
 	if !imageNode.IsValidNode() {
 		return nil, fmt.Errorf("tag 0x5f43 not found in DG5")
 	}
 
-	imageData := imageNode.GetValue()
+	imageData := imageNode.Value()
 
 	return &DG5{
 		RawData: dg5Bytes,
@@ -391,7 +391,7 @@ func ExtractDG13PublicKeyInfo(dg13Bytes []byte) ([]byte, error) {
 	}
 
 	// value of tag 0x6F is the SubjectPublicKeyInfo
-	return nodes.GetNode(0x6F).GetValue(), nil
+	return nodes.NodeByTag(0x6F).Value(), nil
 }
 
 // parseBCDDate converts BCD-encoded bytes to time.Time
