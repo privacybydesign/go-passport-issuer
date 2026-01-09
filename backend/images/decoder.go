@@ -25,20 +25,20 @@ type tlvNode = gtlv.TlvNode
 // Decodes a byte array and returns the first node.
 func decodeOne(b []byte) (tlvNode, error) {
 	nodes, err := gtlv.Decode(b)
-	if nodes == nil || len(nodes.Nodes) == 0 {
+	if nodes == nil || len(nodes.Nodes()) == 0 {
 		return nil, errors.New("no TLV nodes found")
 	}
-	return nodes.Nodes[0], err
+	return nodes.Nodes()[0], err
 }
 
 // Gets the int representation of the TLV tag.
 func tlvTag(n tlvNode) int {
-	return int(n.GetTag())
+	return int(n.Tag())
 }
 
 // Gets the value of a tlv node.
 func tlvValue(n tlvNode) []byte {
-	return n.GetValue()
+	return n.Value()
 }
 
 // Gets the length of the encoded content.

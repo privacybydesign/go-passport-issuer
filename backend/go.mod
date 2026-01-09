@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.6
 
 require (
-	github.com/gmrtd/gmrtd v0.13.0
+	github.com/gmrtd/gmrtd v0.15.2
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/privacybydesign/irmago v0.19.0
@@ -15,7 +15,7 @@ require (
 require (
 	github.com/aead/cmac v0.0.0-20160719120800-7af84192f0b1 // indirect
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
-	github.com/osanderson/brainpool v0.0.0-20240902133831-007b606d9412 // indirect
+	github.com/osanderson/brainpool v1.0.0 // indirect
 	github.com/valyala/fastjson v1.6.4 // indirect
 	gopkg.in/gographics/imagick.v2 v2.6.0 // indirect
 )
@@ -85,10 +85,10 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/image v0.31.0
-	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/term v0.37.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/text v0.31.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/driver/mysql v1.5.2 // indirect
 	gorm.io/driver/postgres v1.5.3 // indirect
