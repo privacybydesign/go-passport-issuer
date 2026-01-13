@@ -1,6 +1,8 @@
 package images
 
 import (
+	"image"
+	"image/png"
 	"testing"
 
 	"github.com/gmrtd/gmrtd/document"
@@ -102,4 +104,222 @@ func TestDecodeImage_InvalidData(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error with invalid image data, got nil")
 	}
+	expectedMsg := "unsupported or invalid image format"
+	if err.Error() != expectedMsg {
+		t.Errorf("Expected error '%s', got '%s'", expectedMsg, err.Error())
+	}
+}
+
+func TestDecodeImage_CorruptedJPEG(t *testing.T) {
+	// JPEG signature but corrupted data
+	corruptedJPEG := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0xFF, 0xFF}
+	_, err := decodeImage(corruptedJPEG)
+	if err == nil {
+		t.Error("Expected error with corrupted JPEG data, got nil")
+	}
+}
+
+func TestDecodeImage_CorruptedJPEG2000(t *testing.T) {
+	// JP2 signature but incomplete/corrupted data
+	corruptedJP2 := []byte{0x00, 0x00, 0x00, 0x0C, 'j', 'P', ' ', ' ', 0x0D, 0x0A, 0x87, 0x0A, 0x00, 0x00}
+	_, err := decodeImage(corruptedJP2)
+	if err == nil {
+		t.Error("Expected error with corrupted JP2 data, got nil")
+	}
+}
+
+func TestConvertImageToPNGBase64_ZeroSizeImage(t *testing.T) {
+	// Test with zero-size image - should fail with PNG encoder error
+	img := image.NewRGBA(image.Rect(0, 0, 0, 0))
+	_, err := convertImageToPNGBase64(img, 400, 400, 256, png.BestCompression)
+	// PNG encoder should reject invalid zero-size images
+	if err == nil {
+		t.Error("Expected error with zero-size image, got nil")
+	}
+	t.Logf("PNG encoder correctly rejected zero-size image: %v", err)
+}
+
+func TestConvertImageToPNGBase64_InvalidCompressionLevel(t *testing.T) {
+	// Parse the test DG2
+	dg2DataBytes := utils.HexToBytes(dg2Data)
+	dg2, err := document.NewDG2(dg2DataBytes)
+	if err != nil {
+		t.Fatalf("Failed to parse DG2: %v", err)
+	}
+
+	// Decode the first image
+	img, err := decodeImage(dg2.Images[0].Image)
+	if err != nil {
+		t.Fatalf("Failed to decode image: %v", err)
+	}
+
+	// Test with invalid compression level (should still work, PNG encoder handles it)
+	// Note: png.CompressionLevel accepts -3 to 9, so this tests boundary behavior
+	_, err = convertImageToPNGBase64(img, 400, 400, 256, png.CompressionLevel(100))
+	// PNG encoder will clamp invalid values, so this should succeed
+	if err != nil {
+		t.Logf("PNG encoder handled invalid compression level: %v", err)
+	}
+}
+
+func TestResizeToFit_OnlyMaxW(t *testing.T) {
+	// Create a test image
+	src := image.NewRGBA(image.Rect(0, 0, 800, 600))
+
+	// Resize with only maxW
+	resized := resizeToFit(src, 400, 0)
+
+	bounds := resized.Bounds()
+	t.Logf("Original: 800x600, Resized with maxW=400: %dx%d", bounds.Dx(), bounds.Dy())
+
+	// Should maintain aspect ratio: 800x600 -> 400x300
+	expectedW := 400
+	expectedH := 300
+	if bounds.Dx() != expectedW || bounds.Dy() != expectedH {
+		t.Errorf("Expected dimensions %dx%d, got %dx%d", expectedW, expectedH, bounds.Dx(), bounds.Dy())
+	}
+}
+
+func TestResizeToFit_OnlyMaxH(t *testing.T) {
+	// Create a test image
+	src := image.NewRGBA(image.Rect(0, 0, 800, 600))
+
+	// Resize with only maxH
+	resized := resizeToFit(src, 0, 300)
+
+	bounds := resized.Bounds()
+	t.Logf("Original: 800x600, Resized with maxH=300: %dx%d", bounds.Dx(), bounds.Dy())
+
+	// Should maintain aspect ratio: 800x600 -> 400x300
+	expectedW := 400
+	expectedH := 300
+	if bounds.Dx() != expectedW || bounds.Dy() != expectedH {
+		t.Errorf("Expected dimensions %dx%d, got %dx%d", expectedW, expectedH, bounds.Dx(), bounds.Dy())
+	}
+}
+
+func TestResizeToFit_NeitherMaxWNorMaxH(t *testing.T) {
+	// Create a test image
+	src := image.NewRGBA(image.Rect(0, 0, 800, 600))
+
+	// Resize with neither maxW nor maxH (should return original)
+	resized := resizeToFit(src, 0, 0)
+
+	if resized != src {
+		t.Error("Expected resizeToFit to return original image when both max dimensions are 0")
+	}
+
+	bounds := resized.Bounds()
+	t.Logf("Original: 800x600, Resized with maxW=0, maxH=0: %dx%d (unchanged)", bounds.Dx(), bounds.Dy())
+
+	if bounds.Dx() != 800 || bounds.Dy() != 600 {
+		t.Errorf("Expected original dimensions 800x600, got %dx%d", bounds.Dx(), bounds.Dy())
+	}
+}
+
+func TestResizeToFit_BothMaxWAndMaxH(t *testing.T) {
+	// Create a test image
+	src := image.NewRGBA(image.Rect(0, 0, 800, 600))
+
+	// Resize with both maxW and maxH
+	resized := resizeToFit(src, 400, 400)
+
+	bounds := resized.Bounds()
+	t.Logf("Original: 800x600, Resized with maxW=400, maxH=400: %dx%d", bounds.Dx(), bounds.Dy())
+
+	// Should maintain aspect ratio and fit within 400x400: 800x600 -> 400x300
+	if bounds.Dx() > 400 || bounds.Dy() > 400 {
+		t.Errorf("Image exceeds maximum bounds: got %dx%d", bounds.Dx(), bounds.Dy())
+	}
+
+	// Check aspect ratio is maintained (with some tolerance for rounding)
+	originalRatio := float64(800) / float64(600)
+	newRatio := float64(bounds.Dx()) / float64(bounds.Dy())
+	ratioDiff := originalRatio - newRatio
+	if ratioDiff < -0.01 || ratioDiff > 0.01 {
+		t.Errorf("Aspect ratio not maintained: original=%.2f, new=%.2f", originalRatio, newRatio)
+	}
+}
+
+func TestResizeToFit_AlreadySmallEnough(t *testing.T) {
+	// Create a small test image
+	src := image.NewRGBA(image.Rect(0, 0, 200, 150))
+
+	// Try to resize to larger dimensions
+	resized := resizeToFit(src, 400, 400)
+
+	// Should return original since it's already small enough
+	if resized != src {
+		t.Error("Expected resizeToFit to return original image when already smaller than max dimensions")
+	}
+
+	bounds := resized.Bounds()
+	if bounds.Dx() != 200 || bounds.Dy() != 150 {
+		t.Errorf("Expected original dimensions 200x150, got %dx%d", bounds.Dx(), bounds.Dy())
+	}
+}
+
+func TestResizeToFit_TallImage(t *testing.T) {
+	// Create a tall test image (portrait orientation)
+	src := image.NewRGBA(image.Rect(0, 0, 300, 800))
+
+	// Resize with square bounds
+	resized := resizeToFit(src, 400, 400)
+
+	bounds := resized.Bounds()
+	t.Logf("Original: 300x800, Resized with maxW=400, maxH=400: %dx%d", bounds.Dx(), bounds.Dy())
+
+	// Should maintain aspect ratio: 300x800 -> 150x400
+	expectedW := 150
+	expectedH := 400
+	if bounds.Dx() != expectedW || bounds.Dy() != expectedH {
+		t.Errorf("Expected dimensions %dx%d, got %dx%d", expectedW, expectedH, bounds.Dx(), bounds.Dy())
+	}
+}
+
+func TestConvertDG2ImagesToPNG_EmptyImageData(t *testing.T) {
+	// Create a DG2 with an image that has empty data
+	dg2 := &document.DG2{
+		Images: []document.DG2Image{
+			{Image: []byte{}},
+		},
+	}
+
+	_, err := ConvertDG2ImagesToPNG(dg2)
+	if err == nil {
+		t.Error("Expected error with empty image data, got nil")
+	}
+	expectedMsg := "image 0 has no data"
+	if err.Error() != expectedMsg {
+		t.Errorf("Expected error '%s', got '%s'", expectedMsg, err.Error())
+	}
+}
+
+func TestConvertDG2ImagesToPNG_MultipleImages(t *testing.T) {
+	// Parse the test DG2
+	dg2DataBytes := utils.HexToBytes(dg2Data)
+	dg2, err := document.NewDG2(dg2DataBytes)
+	if err != nil {
+		t.Fatalf("Failed to parse DG2: %v", err)
+	}
+
+	// Duplicate the image to test multiple images
+	firstImage := dg2.Images[0]
+	dg2.Images = append(dg2.Images, firstImage)
+
+	pngs, err := ConvertDG2ImagesToPNG(dg2)
+	if err != nil {
+		t.Fatalf("Failed to convert multiple images: %v", err)
+	}
+
+	if len(pngs) != 2 {
+		t.Errorf("Expected 2 images, got %d", len(pngs))
+	}
+
+	// Both should be identical since we duplicated
+	if pngs[0] != pngs[1] {
+		t.Error("Expected identical PNG outputs for duplicated images")
+	}
+
+	t.Logf("Successfully converted %d images", len(pngs))
 }
