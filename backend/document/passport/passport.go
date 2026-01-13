@@ -174,14 +174,10 @@ func ToPassportData(doc document.Document, activeAuth bool) (request models.Pass
 		return models.PassportData{}, fmt.Errorf("failed to parse date of expiry: %w", err)
 	}
 
-	slog.Debug("Converting EF DG2 images to PNG")
-	efDG2, err := images.NewEfDG2FromBytes(doc.Mf.Lds1.Dg2.RawData)
+	slog.Debug("Converting DG2 images to PNG")
+	pngs, err := images.ConvertDG2ImagesToPNG(doc.Mf.Lds1.Dg2)
 	if err != nil {
-		return models.PassportData{}, fmt.Errorf("failed to create EfDG2: %w", err)
-	}
-	pngs, err := efDG2.ConvertToPNG()
-	if err != nil {
-		return models.PassportData{}, fmt.Errorf("failed to convert EF DG2 images to PNG: %w", err)
+		return models.PassportData{}, fmt.Errorf("failed to convert DG2 images to PNG: %w", err)
 	}
 
 	request = models.PassportData{
