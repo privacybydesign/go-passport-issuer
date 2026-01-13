@@ -12,7 +12,6 @@ import (
 	"image/jpeg"
 	"image/png"
 	"math"
-	"os"
 	"sort"
 
 	gtlv "github.com/gmrtd/gmrtd/tlv"
@@ -434,20 +433,20 @@ func (ic *ImageContainer) ConvertToPNG() ([]string, error) {
 
 	var count int
 	var images []string
-	for i, p := range parts {
-		img, typ, err := decodeToImage(p.data, p.ext)
+	for _, p := range parts {
+		img, _, err := decodeToImage(p.data, p.ext)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "skip image %d (%s): %v\n", i+1, typ, err)
+			// Skip images that fail to decode - this is expected when signature detection finds false positives
 			continue
 		}
 		count++
 
-		if base64Str, err := PNGBase64Options(img, 400, 400, 256, png.BestCompression); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to encode image %d (%s): %v\n", i+1, typ, err)
-		} else {
-			fmt.Printf("Image %d (%s) encoded successfully. \n", i+1, typ)
-			images = append(images, base64Str)
+		base64Str, err := PNGBase64Options(img, 400, 400, 256, png.BestCompression)
+		if err != nil {
+			// Skip images that fail to encode
+			continue
 		}
+		images = append(images, base64Str)
 	}
 	if count == 0 {
 		return nil, fmt.Errorf("found image-like chunks but none could be decoded—make sure you have JP2/J2K support installed")

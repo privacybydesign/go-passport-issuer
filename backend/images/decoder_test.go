@@ -1,6 +1,9 @@
 package images
 
 import (
+	"bytes"
+	"io"
+	"os"
 	"testing"
 
 	"github.com/gmrtd/gmrtd/utils"
@@ -38,5 +41,145 @@ func TestDecoding(t *testing.T) {
 	var base64Len = len(image)
 	if base64Len != 53172 {
 		t.Errorf("Base64 string is not 365896 characters long, got %d", base64Len)
+	}
+}
+
+// TestConvertToPNG_NoLogging verifies that ConvertToPNG doesn't write to stderr or stdout
+func TestConvertToPNG_NoLogging(t *testing.T) {
+	// Capture stderr and stdout
+	oldStderr := os.Stderr
+	oldStdout := os.Stdout
+	rStderr, wStderr, _ := os.Pipe()
+	rStdout, wStdout, _ := os.Pipe()
+	os.Stderr = wStderr
+	os.Stdout = wStdout
+
+	defer func() {
+		os.Stderr = oldStderr
+		os.Stdout = oldStdout
+	}()
+
+	// Convert hex string to byte slice
+	dg2DataBytes := utils.HexToBytes(dg2Data)
+	dg2, err := NewEfDG2FromBytes(dg2DataBytes)
+	if err != nil {
+		t.Fatalf("Failed to decode DG2 data: %v", err)
+	}
+
+	// Run ConvertToPNG
+	_, err = dg2.ConvertToPNG()
+	if err != nil {
+		t.Errorf("Conversion failed: %v", err)
+	}
+
+	// Close write ends and capture output
+	wStderr.Close()
+	wStdout.Close()
+
+	var bufStderr bytes.Buffer
+	var bufStdout bytes.Buffer
+	io.Copy(&bufStderr, rStderr)
+	io.Copy(&bufStdout, rStdout)
+
+	// Verify no output to stderr or stdout
+	if bufStderr.Len() > 0 {
+		t.Errorf("Expected no stderr output, but got: %s", bufStderr.String())
+	}
+	if bufStdout.Len() > 0 {
+		t.Errorf("Expected no stdout output, but got: %s", bufStdout.String())
+	}
+}
+
+// TestConvertToPNG_WithEmptyData tests handling of empty image data
+func TestConvertToPNG_WithEmptyData(t *testing.T) {
+	ic := &ImageContainer{
+		ImageData: []byte{},
+	}
+
+	_, err := ic.ConvertToPNG()
+	if err == nil {
+		t.Error("Expected error with empty image data, but got nil")
+	}
+	expectedErrMsg := "data not provided"
+	if err.Error() != expectedErrMsg {
+		t.Errorf("Expected error message '%s', got '%s'", expectedErrMsg, err.Error())
+	}
+}
+
+// TestConvertToPNG_WithInvalidData tests handling of invalid/malformed image data
+func TestConvertToPNG_WithInvalidData(t *testing.T) {
+	// Create image data with no valid JPEG/JP2/J2K signatures
+	ic := &ImageContainer{
+		ImageData: []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05},
+	}
+
+	_, err := ic.ConvertToPNG()
+	if err == nil {
+		t.Error("Expected error with invalid image data, but got nil")
+	}
+	// Should fail because no valid image signatures are found
+	expectedErrMsg := "no embedded JPEG/JP2/J2K/JLS signatures found in DG2"
+	if err.Error() != expectedErrMsg {
+		t.Errorf("Expected error message '%s', got '%s'", expectedErrMsg, err.Error())
+	}
+}
+
+// TestConvertToPNG_WithFalsePositiveSignatures tests handling of false positive signatures
+func TestConvertToPNG_WithFalsePositiveSignatures(t *testing.T) {
+	// Create data with JPEG signature but invalid JPEG data
+	// This should trigger the "skip images that fail to decode" path
+	invalidJPEG := []byte{0xFF, 0xD8, 0xFF, 0x00, 0x00, 0x00} // JPEG SOI followed by invalid data
+	ic := &ImageContainer{
+		ImageData: invalidJPEG,
+	}
+
+	// Capture stderr to ensure no logging occurs
+	oldStderr := os.Stderr
+	rStderr, wStderr, _ := os.Pipe()
+	os.Stderr = wStderr
+
+	defer func() {
+		os.Stderr = oldStderr
+	}()
+
+	_, err := ic.ConvertToPNG()
+
+	wStderr.Close()
+	var bufStderr bytes.Buffer
+	io.Copy(&bufStderr, rStderr)
+
+	// Should fail because the JPEG signature is invalid
+	if err == nil {
+		t.Error("Expected error with invalid JPEG data, but got nil")
+	}
+
+	// Verify no stderr output (the fix removes error logging)
+	if bufStderr.Len() > 0 {
+		t.Errorf("Expected no stderr output for decoding errors, but got: %s", bufStderr.String())
+	}
+}
+
+// TestExtractImagesFromDG2 tests the image extraction logic
+func TestExtractImagesFromDG2(t *testing.T) {
+	// Test with data containing a JPEG signature
+	jpegData := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0xFF, 0xD9}
+	extracted := extractImagesFromDG2(jpegData)
+
+	if len(extracted) != 1 {
+		t.Errorf("Expected 1 extracted image, got %d", len(extracted))
+	}
+	if len(extracted) > 0 && extracted[0].ext != "jpg" {
+		t.Errorf("Expected extension 'jpg', got '%s'", extracted[0].ext)
+	}
+}
+
+// TestExtractImagesFromDG2_NoSignatures tests extraction with no valid signatures
+func TestExtractImagesFromDG2_NoSignatures(t *testing.T) {
+	// Test with data containing no valid signatures
+	invalidData := []byte{0x00, 0x01, 0x02, 0x03}
+	extracted := extractImagesFromDG2(invalidData)
+
+	if len(extracted) != 0 {
+		t.Errorf("Expected 0 extracted images, got %d", len(extracted))
 	}
 }
