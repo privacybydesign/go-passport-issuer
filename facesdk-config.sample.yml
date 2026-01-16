@@ -1,0 +1,50 @@
+# Regula Face SDK Configuration Sample
+# Copy this file to local-secrets/facesdk-config.yml and adjust as needed
+
+sdk:
+  compare:
+    limitPerImageTypes: 2
+  logging:
+    level: "INFO"
+
+service:
+  webServer:
+    port: 41101
+    workers: 1
+    timeout: 30
+
+    demoApp:
+      enabled: true
+
+    cors:
+      origins: "*"
+      headers: "Content-Type"
+      methods: "POST,PUT,GET,DELETE,PATCH,HEAD"
+
+    logging:
+      level: "INFO"
+      formatter: "text"
+
+      access:
+        console: true
+
+      app:
+        console: true
+
+  database:
+    # PostgreSQL connection string for liveness metadata storage
+    connectionString: "postgresql://regula:Regulapasswd#1@db-postgres:5432/regula_db"
+
+  storage:
+    type: "fs"
+
+  detectMatch:
+    enabled: true
+
+  liveness:
+    enabled: true
+    ecdhSchema: "default"
+    hideMetadata: false
+    sessions:
+      location:
+        folder: "faceapi-sessions"
