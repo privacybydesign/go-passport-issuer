@@ -158,6 +158,45 @@ func IsEuCitizen(nationality string) bool {
 	return false
 }
 
+// extractNames extracts first and last name from the document.
+// It prefers DG11 data (which preserves diacritics) over DG1 MRZ data.
+// Falls back to DG1 if DG11 is not available or has empty name fields.
+func extractNames(doc document.Document) (firstName, lastName string) {
+	// Try DG11 first - it contains UTF-8 names with proper diacritics
+	if doc.Mf.Lds1.Dg11 != nil && doc.Mf.Lds1.Dg11.Details.NameOfHolder != nil {
+		dg11Name := doc.Mf.Lds1.Dg11.Details.NameOfHolder
+		if dg11Name.Primary != "" || dg11Name.Secondary != "" {
+			slog.Debug("Using DG11 for name extraction", "primary", dg11Name.Primary, "secondary", dg11Name.Secondary)
+			return dg11Name.Secondary, dg11Name.Primary
+		}
+	}
+
+	// Fallback to DG1 MRZ data
+	slog.Debug("Falling back to DG1 for name extraction")
+	return doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Secondary, doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Primary
+}
+
+// normalizeSex normalizes the sex/gender value from MRZ.
+// ICAO 9303 defines: M (male), F (female), < (unspecified).
+// Some countries use X for non-binary/unspecified.
+// Returns the normalized value or empty string for unspecified/unknown.
+func normalizeSex(sex string) string {
+	switch strings.ToUpper(sex) {
+	case "M":
+		return "M"
+	case "F":
+		return "F"
+	case "X", "<":
+		// X is used by some countries for non-binary/unspecified
+		// < is the ICAO filler character for unspecified
+		return "X"
+	default:
+		// Unknown or empty value
+		slog.Debug("Unknown sex value, returning X", "original", sex)
+		return "X"
+	}
+}
+
 func ToPassportData(doc document.Document, activeAuth bool) (request models.PassportData, err error) {
 	slog.Debug("Converting document to passport issuance request")
 
@@ -180,17 +219,23 @@ func ToPassportData(doc document.Document, activeAuth bool) (request models.Pass
 		return models.PassportData{}, fmt.Errorf("failed to convert DG2 images to PNG: %w", err)
 	}
 
+	// Extract names from DG11 if available, otherwise fallback to DG1
+	firstName, lastName := extractNames(doc)
+
+	// Normalize sex value to handle non-binary (X) and unspecified (<)
+	gender := normalizeSex(doc.Mf.Lds1.Dg1.Mrz.Sex)
+
 	request = models.PassportData{
 		DocumentNumber:       doc.Mf.Lds1.Dg1.Mrz.DocumentNumber,
 		DocumentType:         doc.Mf.Lds1.Dg1.Mrz.DocumentCode,
-		FirstName:            doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Secondary,
-		LastName:             doc.Mf.Lds1.Dg1.Mrz.NameOfHolder.Primary,
+		FirstName:            firstName,
+		LastName:             lastName,
 		Nationality:          doc.Mf.Lds1.Dg1.Mrz.Nationality,
 		IsEuCitizen:          mrtdDoc.BoolToYesNo(IsEuCitizen(doc.Mf.Lds1.Dg1.Mrz.Nationality)),
 		DateOfBirth:          dob,
 		YearOfBirth:          dob.Format("2006"),
 		DateOfExpiry:         doe,
-		Gender:               doc.Mf.Lds1.Dg1.Mrz.Sex,
+		Gender:               gender,
 		Country:              doc.Mf.Lds1.Dg1.Mrz.IssuingState,
 		Over12:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-12, 0, 0))),
 		Over16:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-16, 0, 0))),
