@@ -183,6 +183,52 @@ func TestParseEdlDg1WithDiacritics(t *testing.T) {
 
 	require.Equal(t, dg1Bytes, result.RawData)
 }
+func TestParseEdlDg1_MalformedCategoryNonFatal(t *testing.T) {
+	// This test verifies that a category with a 0x3B byte inside BCD data
+	// (which previously caused a fatal parse error) is now gracefully skipped.
+	// Category "C" has 0x3B inside BCD issue date (at nibble position), making it invalid BCD.
+	// Category "AM" is valid and should still be parsed.
+	//
+	// Layout: 0x87 tag for category "C" with corrupted BCD:
+	//   43 = "C"
+	//   3b = semicolon
+	//   14 07 3b 17 = issue BCD (contains 0x3B — invalid BCD nibble)
+	//   3b = semicolon
+	//   14 07 20 27 = expiry BCD
+	//
+	// With fixed offsets, issue BCD = [14 07 3b 17] which fails isValidBCD, so category is skipped.
+	const DG_1_MALFORMED_CATEGORY = `
+		61 8190
+			5f01 0d 65342d444c3030203030303031
+			5f02 55
+				5f03 03 4e4c44
+				5f04 06 426173736965
+				5f05 06 426172726965
+				5f06 04 17121996
+				5f07 06 4d657070656c
+				5f0a 04 12072017
+				5f0b 04 12072027
+				5f0c 0f 47656d65656e7465204d657070656c
+				5f0e 0a 31323334353637383930
+			7f63 25
+				02 01 02
+				87 0f 414d3b140720173b140720273b3b3b
+				87 0f 433b14073b173b140720273b3b3b3b
+		`
+
+	dg1Bytes := decodeTestCase(t, DG_1_MALFORMED_CATEGORY)
+
+	result, err := edl.ParseEDLDG1(dg1Bytes)
+	require.NoError(t, err, "ParseEDLDG1 should not return a fatal error for malformed category data")
+	require.NotNil(t, result)
+
+	// The valid category "AM" should be parsed
+	require.Len(t, result.Categories, 1, "Only the valid category should be parsed")
+	require.Equal(t, "AM", result.Categories[0].Category)
+	require.Equal(t, time.Date(2017, time.July, 14, 0, 0, 0, 0, time.UTC), result.Categories[0].DateOfIssue)
+	require.Equal(t, time.Date(2027, time.July, 14, 0, 0, 0, 0, time.UTC), result.Categories[0].DateOfExpiry)
+}
+
 func TestParseEdlDg1(t *testing.T) {
 	dg1Bytes := decodeTestCase(t, DG_1_TEST)
 
