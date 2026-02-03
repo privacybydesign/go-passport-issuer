@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go-passport-issuer/models"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
@@ -64,7 +65,7 @@ const DATE_FORMAT_CYMD = "2006-01-02"
 const DATE_FORMAT_YEAR = "2006"
 
 func isValidPassportDocumentType(docType string) error {
-	if docType == "P" || docType == "PP" {
+	if strings.HasPrefix(docType, "P") {
 		return nil
 	}
 	return fmt.Errorf("document with type %s cannot be issued as a passport", docType)
@@ -99,7 +100,7 @@ func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (st
 }
 
 func isValidIdCardDocumentType(docType string) error {
-	if docType != "I" {
+	if !strings.HasPrefix(docType, "I") {
 		return fmt.Errorf("document with type %s cannot be issued as an ID-card", docType)
 	}
 	return nil
