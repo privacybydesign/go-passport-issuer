@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"go-passport-issuer/images"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -268,19 +269,19 @@ func ParseEDLDG1(dg1Bytes []byte) (*DG1, error) {
 	if node := personalDataTLV.NodeByTag(DATE_OF_BIRTH); node.IsValidNode() {
 		dg1.DateOfBirth, err = parseBCDDate(node.Value())
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse date of birth: %w", err)
+			return nil, fmt.Errorf("failed to parse top-level date of birth (tag 0x5F06): %w", err)
 		}
 	}
 	if node := personalDataTLV.NodeByTag(DATE_OF_ISSUE); node.IsValidNode() {
 		dg1.DateOfIssue, err = parseBCDDate(node.Value())
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse date of issue: %w", err)
+			return nil, fmt.Errorf("failed to parse top-level date of issue (tag 0x5F0A): %w", err)
 		}
 	}
 	if node := personalDataTLV.NodeByTag(DATE_OF_EXPIRY); node.IsValidNode() {
 		dg1.DateOfExpiry, err = parseBCDDate(node.Value())
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse date of expiry: %w", err)
+			return nil, fmt.Errorf("failed to parse top-level date of expiry (tag 0x5F0B): %w", err)
 		}
 	}
 
@@ -292,9 +293,12 @@ func ParseEDLDG1(dg1Bytes []byte) (*DG1, error) {
 		return dg1, nil
 	}
 
-	const semicolonHex = 0x3b // utf8 for a semicolon
+	const semicolonByte = 0x3B
 
 	// Get all 0x87 category tags
+	// Per ISO 18013-2:2008, category data is:
+	//   <name><0x3B><4B issue BCD><0x3B><4B expiry BCD>[<0x3B><restrictions>...]
+	// We find only the first semicolon and use fixed offsets for the two BCD dates.
 	for i := 1; ; i++ {
 		categoryNode := secondaryNode.NodeByTagOccur(CATEGORY_TAG, i)
 		if !categoryNode.IsValidNode() {
@@ -303,40 +307,48 @@ func ParseEDLDG1(dg1Bytes []byte) (*DG1, error) {
 
 		categoryData := categoryNode.Value()
 
-		// Find semicolons
+		// Find the first semicolon (separates category name from BCD dates)
 		firstSemicolon := -1
-		secondSemicolon := -1
 		for j, b := range categoryData {
-			if b == semicolonHex {
-				if firstSemicolon == -1 {
-					firstSemicolon = j
-				} else {
-					secondSemicolon = j
-					break
-				}
+			if b == semicolonByte {
+				firstSemicolon = j
+				break
 			}
 		}
 
-		if firstSemicolon != -1 && secondSemicolon != -1 && len(categoryData) >= secondSemicolon+5 {
-			categoryName := string(categoryData[0:firstSemicolon])
-			issueDateBCD := categoryData[firstSemicolon+1 : firstSemicolon+5]
-			expiryDateBCD := categoryData[secondSemicolon+1 : secondSemicolon+5]
-
-			issueDate, err := parseBCDDate(issueDateBCD)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse date of issue: %w", err)
-			}
-			expiryDate, err := parseBCDDate(expiryDateBCD)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse date of expiry: %w", err)
-			}
-
-			dg1.Categories = append(dg1.Categories, DrivingLicenseCategory{
-				Category:     categoryName,
-				DateOfIssue:  issueDate,
-				DateOfExpiry: expiryDate,
-			})
+		// Need at least: firstSemicolon + 1 (separator) + 4 (issue BCD) + 1 (separator) + 4 (expiry BCD) = 10 bytes after name
+		if firstSemicolon == -1 || len(categoryData) < firstSemicolon+10 {
+			slog.Warn("skipping category: insufficient data after first semicolon",
+				"index", i,
+				"dataLen", len(categoryData),
+				"firstSemicolon", firstSemicolon)
+			continue
 		}
+
+		categoryName := string(categoryData[0:firstSemicolon])
+		issueDateBCD := categoryData[firstSemicolon+1 : firstSemicolon+5]
+		expiryDateBCD := categoryData[firstSemicolon+6 : firstSemicolon+10]
+
+		issueDate, err := parseBCDDate(issueDateBCD)
+		if err != nil {
+			slog.Warn("skipping category: failed to parse issue date",
+				"category", categoryName,
+				"error", err)
+			continue
+		}
+		expiryDate, err := parseBCDDate(expiryDateBCD)
+		if err != nil {
+			slog.Warn("skipping category: failed to parse expiry date",
+				"category", categoryName,
+				"error", err)
+			continue
+		}
+
+		dg1.Categories = append(dg1.Categories, DrivingLicenseCategory{
+			Category:     categoryName,
+			DateOfIssue:  issueDate,
+			DateOfExpiry: expiryDate,
+		})
 	}
 	return dg1, nil
 }
@@ -394,11 +406,27 @@ func ExtractDG13PublicKeyInfo(dg13Bytes []byte) ([]byte, error) {
 	return nodes.NodeByTag(0x6F).Value(), nil
 }
 
+// isValidBCD checks that every nibble in the given byte slice is a valid BCD digit (0-9).
+func isValidBCD(data []byte) bool {
+	for _, b := range data {
+		highNibble := (b >> 4) & 0x0F
+		lowNibble := b & 0x0F
+		if highNibble > 9 || lowNibble > 9 {
+			return false
+		}
+	}
+	return true
+}
+
 // parseBCDDate converts BCD-encoded bytes to time.Time
 // Format: DDMMYYYY in BCD (4 bytes)
 func parseBCDDate(bcd []byte) (time.Time, error) {
 	if len(bcd) != 4 {
 		return time.Time{}, fmt.Errorf("invalid BCD date length: %d", len(bcd))
+	}
+
+	if !isValidBCD(bcd) {
+		return time.Time{}, fmt.Errorf("invalid BCD data: contains non-decimal nibble in %x", bcd)
 	}
 
 	// Convert BCD to string: each byte becomes 2 digits
