@@ -124,7 +124,7 @@ func TestPassportPassiveAuthFailNoDataGroups(t *testing.T) {
 	require.NoError(t, err)
 
 	req := newReq(testSessionId, "n")
-	_, err = DocumentValidatorImpl{}.PassivePassport(req, pool)
+	_, err = DocumentValidatorImpl{}.PassivePassport(req, pool, DocumentTypePassport)
 	require.Errorf(t, err, "no data groups found in passport data")
 }
 
@@ -134,7 +134,7 @@ func TestPassportPassiveAuthFailNoEFSOD(t *testing.T) {
 
 	req := newReq(testSessionId, "n", withDG("DG1", "00"))
 	req.EFSOD = "" // simulate missing
-	_, err = DocumentValidatorImpl{}.PassivePassport(req, pool)
+	_, err = DocumentValidatorImpl{}.PassivePassport(req, pool, DocumentTypePassport)
 	require.Errorf(t, err, "EF_SOD is missing in passport data")
 }
 
@@ -146,7 +146,7 @@ func TestPassportPassiveAuthFailUnsupportedDG(t *testing.T) {
 		withDG("DG99", "00"),
 		withEFSOD(readBinToHex(t, "test-data/EF_SOD.bin")),
 	)
-	_, err = DocumentValidatorImpl{}.PassivePassport(req, pool)
+	_, err = DocumentValidatorImpl{}.PassivePassport(req, pool, DocumentTypePassport)
 	require.Errorf(t, err, "unsupported data group: DG99")
 }
 
@@ -155,7 +155,7 @@ func TestPassportPassiveAuthFailBadSOD(t *testing.T) {
 	require.NoError(t, err)
 
 	req := newReq(testSessionId, testNonce, withDG("DG1", "00"), withEFSOD("00")) // bad SOD
-	_, err = DocumentValidatorImpl{}.PassivePassport(req, certPool)
+	_, err = DocumentValidatorImpl{}.PassivePassport(req, certPool, DocumentTypePassport)
 	require.Errorf(t, err, "failed to create SOD")
 }
 
@@ -167,7 +167,7 @@ func TestPassportPassiveAuthFailBadDG(t *testing.T) {
 		withDG("DG1", "12"), // bad DG1
 		withEFSOD(readBinToHex(t, "test-data/EF_SOD.bin")),
 	)
-	_, err = DocumentValidatorImpl{}.PassivePassport(req, cscaCertPool)
+	_, err = DocumentValidatorImpl{}.PassivePassport(req, cscaCertPool, DocumentTypePassport)
 	require.ErrorContains(t, err, "failed to create DG1")
 
 }
@@ -187,7 +187,7 @@ func TestPassportActiveAuthFailBadSig(t *testing.T) {
 	doc.Mf.Lds1.Dg15, err = document.NewDG15(utils.HexToBytes(req.DataGroups["DG15"]))
 	require.NoError(t, err)
 
-	_, err = DocumentValidatorImpl{}.ActivePassport(req, doc)
+	_, err = DocumentValidatorImpl{}.ActivePassport(req, doc, DocumentTypePassport)
 	require.ErrorContains(t, err, "failed to validate active authentication signature")
 }
 
@@ -203,7 +203,7 @@ func TestPassportActiveAuthSkipNoDG15(t *testing.T) {
 	doc.Mf.Lds1.Dg1, err = document.NewDG1(utils.HexToBytes(req.DataGroups["DG1"]))
 	require.NoError(t, err)
 
-	skipped, err := DocumentValidatorImpl{}.ActivePassport(req, doc)
+	skipped, err := DocumentValidatorImpl{}.ActivePassport(req, doc, DocumentTypePassport)
 	require.NoError(t, err)
 	require.False(t, skipped)
 }
@@ -222,7 +222,7 @@ func TestPassportActiveAuthSkipNoSig(t *testing.T) {
 	doc.Mf.Lds1.Dg15, err = document.NewDG15(utils.HexToBytes(req.DataGroups["DG15"]))
 	require.NoError(t, err)
 
-	skipped, err := DocumentValidatorImpl{}.ActivePassport(req, doc)
+	skipped, err := DocumentValidatorImpl{}.ActivePassport(req, doc, DocumentTypePassport)
 	require.NoError(t, err)
 	require.False(t, skipped)
 }

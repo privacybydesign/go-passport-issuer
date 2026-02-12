@@ -88,8 +88,8 @@ func parsePassportDGs(doc *document.Document, dataGroups map[string]string) erro
 	return nil
 }
 
-func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.CertPool) (doc document.Document, err error) {
-	slog.Info("Starting passive authentication for passports")
+func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.CertPool, documentType string) (doc document.Document, err error) {
+	slog.Info("Starting passive authentication", "document_type", documentType)
 
 	if len(data.DataGroups) == 0 {
 		return document.Document{}, fmt.Errorf("no data groups found")
@@ -99,7 +99,7 @@ func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.C
 		return document.Document{}, fmt.Errorf("EF_SOD is missing in the validation request")
 	}
 
-	slog.Info("Constructing document from data groups")
+	slog.Info("Constructing document from data groups", "document_type", documentType)
 
 	var sodFileBytes = utils.HexToBytes(data.EFSOD)
 	doc.Mf.Lds1.Sod, err = document.NewSOD(sodFileBytes)
@@ -110,9 +110,9 @@ func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.C
 	// Type-specific: DG parsing
 	err = parsePassportDGs(&doc, data.DataGroups)
 	if err != nil {
-		return document.Document{}, fmt.Errorf("failed to parse passport DGs: %w", err)
+		return document.Document{}, fmt.Errorf("failed to parse data groups: %w", err)
 	}
-	slog.Info("Starting passive authentication for passport", "issuing_state", doc.Mf.Lds1.Dg1.Mrz.IssuingState)
+	slog.Info("Performing passive authentication", "document_type", documentType, "issuing_state", doc.Mf.Lds1.Dg1.Mrz.IssuingState)
 
 	res, err := passiveauth.PassiveAuth(&doc, certPool)
 	if err != nil {
@@ -127,12 +127,12 @@ func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.C
 
 }
 
-func ActiveAuthentication(data models.ValidationRequest, doc document.Document) (bool, error) {
+func ActiveAuthentication(data models.ValidationRequest, doc document.Document, documentType string) (bool, error) {
 	if data.Nonce == "" || data.ActiveAuthSignature == "" || doc.Mf.Lds1.Dg15 == nil {
 		return false, nil
 	}
 
-	slog.Info("Starting active authentication signature validation")
+	slog.Info("Starting active authentication signature validation", "document_type", documentType)
 
 	aaSigBytes := utils.HexToBytes(data.ActiveAuthSignature)
 	nonceBytes := utils.HexToBytes(data.Nonce)

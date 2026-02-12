@@ -12,8 +12,8 @@ import (
 // abstract interfaces for easier testing
 
 type DocumentValidator interface {
-	PassivePassport(models.ValidationRequest, *cms.CombinedCertPool) (document.Document, error)
-	ActivePassport(models.ValidationRequest, document.Document) (bool, error)
+	PassivePassport(models.ValidationRequest, *cms.CombinedCertPool, string) (document.Document, error)
+	ActivePassport(models.ValidationRequest, document.Document, string) (bool, error)
 	PassiveEDL(models.ValidationRequest, *cms.CertPool) error
 	ActiveEDL(models.ValidationRequest) (bool, error)
 }
@@ -37,12 +37,12 @@ type DocumentDataConverter interface {
 
 type DocumentValidatorImpl struct{}
 
-func (DocumentValidatorImpl) PassivePassport(req models.ValidationRequest, pool *cms.CombinedCertPool) (document.Document, error) {
-	return passport.PassiveAuthenticationPassport(req, pool)
+func (DocumentValidatorImpl) PassivePassport(req models.ValidationRequest, pool *cms.CombinedCertPool, documentType string) (document.Document, error) {
+	return passport.PassiveAuthenticationPassport(req, pool, documentType)
 }
 
-func (DocumentValidatorImpl) ActivePassport(req models.ValidationRequest, doc document.Document) (bool, error) {
-	return passport.ActiveAuthentication(req, doc)
+func (DocumentValidatorImpl) ActivePassport(req models.ValidationRequest, doc document.Document, documentType string) (bool, error) {
+	return passport.ActiveAuthentication(req, doc, documentType)
 }
 
 func (DocumentValidatorImpl) PassiveEDL(req models.ValidationRequest, pool *cms.CertPool) error {

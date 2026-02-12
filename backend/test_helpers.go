@@ -182,11 +182,11 @@ func (v fakeValidator) ActiveEDL(request models.ValidationRequest) (bool, error)
 	return true, nil
 }
 
-func (fakeValidator) PassivePassport(_ models.ValidationRequest, _ *cms.CombinedCertPool) (document.Document, error) {
+func (fakeValidator) PassivePassport(_ models.ValidationRequest, _ *cms.CombinedCertPool, _ string) (document.Document, error) {
 	return document.Document{}, nil
 }
 
-func (fakeValidator) ActivePassport(_ models.ValidationRequest, _ document.Document) (bool, error) {
+func (fakeValidator) ActivePassport(_ models.ValidationRequest, _ document.Document, _ string) (bool, error) {
 	return true, nil
 }
 

@@ -32,6 +32,10 @@ const ERR_ACTIVE_FAILED = "active authentication failed"
 const ERR_INVALID_NONCE_SESSION = "invalid session or nonce"
 const ERR_PASSPORT_VERIFICATION = "failed to verify passport"
 
+// Document type constants for logging
+const DocumentTypePassport = "passport"
+const DocumentTypeIdCard = "id-card"
+
 type ServerConfig struct {
 	Host           string `json:"host"`
 	Port           int    `json:"port"`
@@ -248,9 +252,9 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	slog.Info("Received request to do verify a passport readout")
+	slog.Info("Received request to verify a passport readout")
 
-	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
+	doc, activeAuth, request, err := VerifyPassportRequest(r, state, DocumentTypePassport)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err)
 		return
@@ -290,7 +294,7 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 
 	slog.Info("Received request to verify and issue id card")
 
-	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
+	doc, activeAuth, request, err := VerifyPassportRequest(r, state, DocumentTypeIdCard)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err)
 		return
@@ -331,7 +335,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 
 	slog.Info("Received request to verify and issue passport")
 
-	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
+	doc, activeAuth, request, err := VerifyPassportRequest(r, state, DocumentTypePassport)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err)
 		return
@@ -363,7 +367,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	removeSessionToken(w, state.tokenStorage, request.SessionId)
 }
 
-func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.ValidationRequest, error) {
+func VerifyPassportRequest(r *http.Request, state *ServerState, documentType string) (document.Document, bool, models.ValidationRequest, error) {
 
 	request, err := decodeValidationRequest(r)
 	if err != nil {
@@ -375,12 +379,12 @@ func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Docume
 	}
 
 	var doc document.Document
-	doc, err = state.documentValidator.PassivePassport(request, state.passportCertPool)
+	doc, err = state.documentValidator.PassivePassport(request, state.passportCertPool, documentType)
 	if err != nil {
 		return document.Document{}, false, request, fmt.Errorf("%s: %w", ERR_PASSIVE_FAILED, err)
 	}
 
-	activeAuth, err := state.documentValidator.ActivePassport(request, doc)
+	activeAuth, err := state.documentValidator.ActivePassport(request, doc, documentType)
 	if err != nil {
 		return document.Document{}, false, request, fmt.Errorf("%s: %w", ERR_ACTIVE_FAILED, err)
 	}
