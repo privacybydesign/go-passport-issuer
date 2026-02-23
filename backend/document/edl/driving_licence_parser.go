@@ -299,6 +299,8 @@ func ParseEDLDG1(dg1Bytes []byte) (*DG1, error) {
 	// Per ISO 18013-2:2008, category data is:
 	//   <name><0x3B><4B issue BCD><0x3B><4B expiry BCD>[<0x3B><restrictions>...]
 	// We find only the first semicolon and use fixed offsets for the two BCD dates.
+	// Note: Some licenses (e.g., converted foreign licenses) may have an empty issue date,
+	// represented by two consecutive semicolons: <name><0x3B><0x3B><4B expiry BCD>
 	for i := 1; ; i++ {
 		categoryNode := secondaryNode.NodeByTagOccur(CATEGORY_TAG, i)
 		if !categoryNode.IsValidNode() {
@@ -316,32 +318,65 @@ func ParseEDLDG1(dg1Bytes []byte) (*DG1, error) {
 			}
 		}
 
-		// Need at least: firstSemicolon + 1 (separator) + 4 (issue BCD) + 1 (separator) + 4 (expiry BCD) = 10 bytes after name
-		if firstSemicolon == -1 || len(categoryData) < firstSemicolon+10 {
-			slog.Warn("skipping category: insufficient data after first semicolon",
+		if firstSemicolon == -1 {
+			slog.Warn("skipping category: no semicolon found",
 				"index", i,
-				"dataLen", len(categoryData),
-				"firstSemicolon", firstSemicolon)
+				"dataLen", len(categoryData))
 			continue
 		}
 
 		categoryName := string(categoryData[0:firstSemicolon])
-		issueDateBCD := categoryData[firstSemicolon+1 : firstSemicolon+5]
-		expiryDateBCD := categoryData[firstSemicolon+6 : firstSemicolon+10]
 
-		issueDate, err := parseBCDDate(issueDateBCD)
-		if err != nil {
-			slog.Warn("skipping category: failed to parse issue date",
-				"category", categoryName,
-				"error", err)
-			continue
-		}
-		expiryDate, err := parseBCDDate(expiryDateBCD)
-		if err != nil {
-			slog.Warn("skipping category: failed to parse expiry date",
-				"category", categoryName,
-				"error", err)
-			continue
+		var issueDate time.Time
+		var expiryDate time.Time
+		var err error
+
+		// Check if issue date is empty (indicated by consecutive semicolons)
+		if len(categoryData) > firstSemicolon+1 && categoryData[firstSemicolon+1] == semicolonByte {
+			// Empty issue date: <name><0x3B><0x3B><4B expiry BCD>
+			// Need at least: firstSemicolon + 1 (first sep) + 1 (second sep) + 4 (expiry BCD) = 6 bytes after name
+			if len(categoryData) < firstSemicolon+6 {
+				slog.Warn("skipping category: insufficient data for expiry date after empty issue date",
+					"category", categoryName,
+					"dataLen", len(categoryData))
+				continue
+			}
+			expiryDateBCD := categoryData[firstSemicolon+2 : firstSemicolon+6]
+			expiryDate, err = parseBCDDate(expiryDateBCD)
+			if err != nil {
+				slog.Warn("skipping category: failed to parse expiry date",
+					"category", categoryName,
+					"error", err)
+				continue
+			}
+			// issueDate remains zero value
+		} else {
+			// Standard format: <name><0x3B><4B issue BCD><0x3B><4B expiry BCD>
+			// Need at least: firstSemicolon + 1 (sep) + 4 (issue BCD) + 1 (sep) + 4 (expiry BCD) = 10 bytes after name
+			if len(categoryData) < firstSemicolon+10 {
+				slog.Warn("skipping category: insufficient data after first semicolon",
+					"category", categoryName,
+					"dataLen", len(categoryData),
+					"firstSemicolon", firstSemicolon)
+				continue
+			}
+			issueDateBCD := categoryData[firstSemicolon+1 : firstSemicolon+5]
+			expiryDateBCD := categoryData[firstSemicolon+6 : firstSemicolon+10]
+
+			issueDate, err = parseBCDDate(issueDateBCD)
+			if err != nil {
+				slog.Warn("skipping category: failed to parse issue date",
+					"category", categoryName,
+					"error", err)
+				continue
+			}
+			expiryDate, err = parseBCDDate(expiryDateBCD)
+			if err != nil {
+				slog.Warn("skipping category: failed to parse expiry date",
+					"category", categoryName,
+					"error", err)
+				continue
+			}
 		}
 
 		dg1.Categories = append(dg1.Categories, DrivingLicenseCategory{

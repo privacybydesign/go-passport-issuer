@@ -246,3 +246,61 @@ func TestParseEdlDg1(t *testing.T) {
 
 	require.Equal(t, dg1Bytes, result.RawData)
 }
+
+func TestParseEdlDg1_EmptyIssueDate(t *testing.T) {
+	// This test verifies that categories with empty issue dates (two consecutive semicolons)
+	// are handled correctly. This occurs with some converted foreign licenses where the
+	// issue date field is empty.
+	//
+	// Layout for category with empty issue date:
+	//   42 = "B"
+	//   3b = semicolon (end of category name)
+	//   3b = semicolon (empty issue date marker)
+	//   14 07 20 27 = expiry BCD (14.07.2027)
+	//   3b 3b 3b = trailing separators/restrictions
+	//
+	// Layout for normal category:
+	//   41 4d = "AM"
+	//   3b = semicolon
+	//   14 07 20 17 = issue BCD (14.07.2017)
+	//   3b = semicolon
+	//   14 07 20 27 = expiry BCD (14.07.2027)
+	//   3b 3b 3b = trailing separators/restrictions
+	const DG_1_EMPTY_ISSUE_DATE = `
+		61 818b
+			5f01 0d 65342d444c3030203030303031
+			5f02 55
+				5f03 03 4e4c44
+				5f04 06 426173736965
+				5f05 06 426172726965
+				5f06 04 17121996
+				5f07 06 4d657070656c
+				5f0a 04 12072017
+				5f0b 04 12072027
+				5f0c 0f 47656d65656e7465204d657070656c
+				5f0e 0a 31323334353637383930
+			7f63 20
+				02 01 02
+				87 0f 414d3b140720173b140720273b3b3b
+				87 0a 423b3b140720273b3b3b
+		`
+
+	dg1Bytes := decodeTestCase(t, DG_1_EMPTY_ISSUE_DATE)
+
+	result, err := edl.ParseEDLDG1(dg1Bytes)
+	require.NoError(t, err, "ParseEDLDG1 should not return a fatal error for empty issue date")
+	require.NotNil(t, result)
+
+	// Both categories should be parsed
+	require.Len(t, result.Categories, 2, "Both categories should be parsed")
+
+	// First category "AM" has normal issue and expiry dates
+	require.Equal(t, "AM", result.Categories[0].Category)
+	require.Equal(t, time.Date(2017, time.July, 14, 0, 0, 0, 0, time.UTC), result.Categories[0].DateOfIssue)
+	require.Equal(t, time.Date(2027, time.July, 14, 0, 0, 0, 0, time.UTC), result.Categories[0].DateOfExpiry)
+
+	// Second category "B" has empty issue date (zero time) and valid expiry date
+	require.Equal(t, "B", result.Categories[1].Category)
+	require.True(t, result.Categories[1].DateOfIssue.IsZero(), "Issue date should be zero for empty issue date")
+	require.Equal(t, time.Date(2027, time.July, 14, 0, 0, 0, 0, time.UTC), result.Categories[1].DateOfExpiry)
+}
