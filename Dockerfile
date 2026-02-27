@@ -25,13 +25,14 @@ RUN go build -o server
 FROM debian:bookworm-slim
 
 # Runtime deps: ImageMagick 6 Wand lib + OpenJPEG (JP2) + certs
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Upgrade all packages to get latest security patches
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ca-certificates imagemagick libmagickwand-6.q16-6 libopenjp2-7 \
   && rm -rf /var/lib/apt/lists/*
 
-# Copy artifacts
+# Copy artifacts (only built output, not node_modules)
 COPY --from=backend-build /app/backend/server /app/backend/server
-COPY --from=frontend-build /app/frontend /app/frontend
+COPY --from=frontend-build /app/frontend/build /app/frontend/build
 
 WORKDIR /app/backend
 EXPOSE 8080
