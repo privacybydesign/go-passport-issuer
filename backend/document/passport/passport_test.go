@@ -7,6 +7,7 @@ import (
 
 	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/document"
+	"github.com/gmrtd/gmrtd/mrz"
 	"github.com/gmrtd/gmrtd/utils"
 	"github.com/stretchr/testify/require"
 )
@@ -280,5 +281,255 @@ func TestPassiveAuthenticationMandatoryDataGroups(t *testing.T) {
 
 		_, err := PassiveAuthenticationPassport(data, trustedCerts)
 		requireErrorContains(t, err, "DG2 is mandatory but was not provided")
+	})
+}
+
+func TestNormalizeSex(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		// Standard male/female values
+		{"male uppercase", "M", "M"},
+		{"male lowercase", "m", "M"},
+		{"female uppercase", "F", "F"},
+		{"female lowercase", "f", "F"},
+
+		// Non-binary/unspecified values
+		{"X uppercase (non-binary)", "X", "X"},
+		{"x lowercase (non-binary)", "x", "X"},
+		{"< filler character (ICAO unspecified)", "<", "X"},
+
+		// Unknown/edge cases - should return X
+		{"empty string", "", "X"},
+		{"unknown value", "U", "X"},
+		{"random character", "?", "X"},
+		{"multiple characters", "MF", "X"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := normalizeSex(tt.input)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestExtractNames(t *testing.T) {
+	// Create a base document with DG1 data
+	createBaseDoc := func() document.Document {
+		dg1Bytes := utils.HexToBytes(TestDg1Hex)
+		dg1, err := document.NewDG1(dg1Bytes)
+		require.NoError(t, err)
+
+		doc := document.Document{}
+		doc.Mf.Lds1.Dg1 = dg1
+		return doc
+	}
+
+	t.Run("fallback to DG1 when DG11 is nil", func(t *testing.T) {
+		doc := createBaseDoc()
+		doc.Mf.Lds1.Dg11 = nil
+
+		firstName, lastName := extractNames(doc)
+
+		// DG1 contains MRZ names (from test data: SANDERSON<<OSCAR<CHARLES<EDWARD)
+		require.Equal(t, "OSCAR CHARLES EDWARD", firstName)
+		require.Equal(t, "SANDERSON", lastName)
+	})
+
+	t.Run("fallback to DG1 when DG11 NameOfHolder is nil", func(t *testing.T) {
+		doc := createBaseDoc()
+		doc.Mf.Lds1.Dg11 = &document.DG11{
+			Details: document.PersonDetails{
+				NameOfHolder: nil,
+			},
+		}
+
+		firstName, lastName := extractNames(doc)
+
+		require.Equal(t, "OSCAR CHARLES EDWARD", firstName)
+		require.Equal(t, "SANDERSON", lastName)
+	})
+
+	t.Run("fallback to DG1 when DG11 names are empty", func(t *testing.T) {
+		doc := createBaseDoc()
+		doc.Mf.Lds1.Dg11 = &document.DG11{
+			Details: document.PersonDetails{
+				NameOfHolder: &mrz.MrzName{
+					Primary:   "",
+					Secondary: "",
+				},
+			},
+		}
+
+		firstName, lastName := extractNames(doc)
+
+		require.Equal(t, "OSCAR CHARLES EDWARD", firstName)
+		require.Equal(t, "SANDERSON", lastName)
+	})
+
+	t.Run("use DG11 when available with diacritics", func(t *testing.T) {
+		doc := createBaseDoc()
+		doc.Mf.Lds1.Dg11 = &document.DG11{
+			Details: document.PersonDetails{
+				NameOfHolder: &mrz.MrzName{
+					Primary:   "Jovanović",
+					Secondary: "Miloš",
+				},
+			},
+		}
+
+		firstName, lastName := extractNames(doc)
+
+		// DG11 names with diacritics should be used
+		require.Equal(t, "Miloš", firstName)
+		require.Equal(t, "Jovanović", lastName)
+	})
+
+	t.Run("use DG11 when only primary name is present", func(t *testing.T) {
+		doc := createBaseDoc()
+		doc.Mf.Lds1.Dg11 = &document.DG11{
+			Details: document.PersonDetails{
+				NameOfHolder: &mrz.MrzName{
+					Primary:   "Müller",
+					Secondary: "",
+				},
+			},
+		}
+
+		firstName, lastName := extractNames(doc)
+
+		// Should use DG11 since Primary is non-empty
+		require.Equal(t, "", firstName)
+		require.Equal(t, "Müller", lastName)
+	})
+
+	t.Run("use DG11 when only secondary name is present", func(t *testing.T) {
+		doc := createBaseDoc()
+		doc.Mf.Lds1.Dg11 = &document.DG11{
+			Details: document.PersonDetails{
+				NameOfHolder: &mrz.MrzName{
+					Primary:   "",
+					Secondary: "José",
+				},
+			},
+		}
+
+		firstName, lastName := extractNames(doc)
+
+		// Should use DG11 since Secondary is non-empty
+		require.Equal(t, "José", firstName)
+		require.Equal(t, "", lastName)
+	})
+
+	t.Run("DG11 with special characters", func(t *testing.T) {
+		doc := createBaseDoc()
+		doc.Mf.Lds1.Dg11 = &document.DG11{
+			Details: document.PersonDetails{
+				NameOfHolder: &mrz.MrzName{
+					Primary:   "Østerberg",
+					Secondary: "Björk Guðmundsdóttir",
+				},
+			},
+		}
+
+		firstName, lastName := extractNames(doc)
+
+		require.Equal(t, "Björk Guðmundsdóttir", firstName)
+		require.Equal(t, "Østerberg", lastName)
+	})
+}
+
+func TestToPassportData(t *testing.T) {
+	// Helper to create a complete document with DG1 and DG2
+	createCompleteDoc := func(t *testing.T) document.Document {
+		dg1Bytes := utils.HexToBytes(TestDg1Hex)
+		dg1, err := document.NewDG1(dg1Bytes)
+		require.NoError(t, err)
+
+		dg2Bytes := utils.HexToBytes(Dg2Hex)
+		dg2, err := document.NewDG2(dg2Bytes)
+		require.NoError(t, err)
+
+		doc := document.Document{}
+		doc.Mf.Lds1.Dg1 = dg1
+		doc.Mf.Lds1.Dg2 = dg2
+		return doc
+	}
+
+	t.Run("uses DG1 names when DG11 is not present", func(t *testing.T) {
+		doc := createCompleteDoc(t)
+
+		passportData, err := ToPassportData(doc, false)
+		require.NoError(t, err)
+
+		// Names from DG1 MRZ (SANDERSON<<OSCAR<CHARLES<EDWARD)
+		require.Equal(t, "OSCAR CHARLES EDWARD", passportData.FirstName)
+		require.Equal(t, "SANDERSON", passportData.LastName)
+	})
+
+	t.Run("uses DG11 names with diacritics when available", func(t *testing.T) {
+		doc := createCompleteDoc(t)
+		doc.Mf.Lds1.Dg11 = &document.DG11{
+			Details: document.PersonDetails{
+				NameOfHolder: &mrz.MrzName{
+					Primary:   "Jovanović",
+					Secondary: "Miloš",
+				},
+			},
+		}
+
+		passportData, err := ToPassportData(doc, false)
+		require.NoError(t, err)
+
+		// DG11 names should be used
+		require.Equal(t, "Miloš", passportData.FirstName)
+		require.Equal(t, "Jovanović", passportData.LastName)
+	})
+
+	t.Run("normalizes male sex to M", func(t *testing.T) {
+		doc := createCompleteDoc(t)
+		// The test DG1 has "M" as sex
+
+		passportData, err := ToPassportData(doc, false)
+		require.NoError(t, err)
+
+		require.Equal(t, "M", passportData.Gender)
+	})
+
+	t.Run("includes photo from DG2", func(t *testing.T) {
+		doc := createCompleteDoc(t)
+
+		passportData, err := ToPassportData(doc, false)
+		require.NoError(t, err)
+
+		require.NotEmpty(t, passportData.Photo)
+	})
+
+	t.Run("sets active authentication correctly", func(t *testing.T) {
+		doc := createCompleteDoc(t)
+
+		passportDataWithAA, err := ToPassportData(doc, true)
+		require.NoError(t, err)
+		require.Equal(t, "Yes", passportDataWithAA.ActiveAuthentication)
+
+		passportDataWithoutAA, err := ToPassportData(doc, false)
+		require.NoError(t, err)
+		require.Equal(t, "No", passportDataWithoutAA.ActiveAuthentication)
+	})
+
+	t.Run("extracts document metadata correctly", func(t *testing.T) {
+		doc := createCompleteDoc(t)
+
+		passportData, err := ToPassportData(doc, false)
+		require.NoError(t, err)
+
+		// From test DG1: P<GBR (passport, UK)
+		require.Equal(t, "P", passportData.DocumentType)
+		require.Equal(t, "GBR", passportData.Country)
+		require.Equal(t, "GBR", passportData.Nationality)
+		require.Equal(t, "No", passportData.IsEuCitizen) // GBR is not EU
 	})
 }
