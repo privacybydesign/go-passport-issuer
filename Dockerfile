@@ -6,7 +6,7 @@ RUN npm install
 RUN npm run build
 
 # ---------- Backend build (needs CGO + IM6 dev headers) ----------
-FROM golang:1.24-bookworm AS backend-build
+FROM golang:1.25-bookworm AS backend-build
 WORKDIR /app/backend
 
 # Imagick (IM6) build deps
