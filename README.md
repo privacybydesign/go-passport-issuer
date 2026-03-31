@@ -112,6 +112,27 @@ npm install
 npm start
 ```
 
+### API Documentation
+
+The backend serves interactive API documentation using ReDoc at `/api/docs`. The OpenAPI specification is generated from Go code annotations using [swaggo/swag](https://github.com/swaggo/swag).
+
+**View documentation**: Navigate to `http://localhost:8080/api/docs` when the server is running.
+
+**Regenerate documentation** (after modifying API handlers or models):
+```bash
+# Install swag CLI (one-time setup)
+go install github.com/swaggo/swag/cmd/swag@latest
+
+# Regenerate docs
+cd backend
+go generate ./...
+```
+
+The swag annotations are located in:
+- `backend/main.go` - API metadata (title, version, description)
+- `backend/server.go` - Handler annotations
+- `backend/models/` - Request/response model annotations
+
 #### Using Docker Compose
 
 To run both the backend and frontend using Docker Compose, ensure you have Docker and Docker Compose installed. Then, from the root directory of the project, execute:
