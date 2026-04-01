@@ -13,6 +13,20 @@ import (
 	"github.com/gmrtd/gmrtd/cms"
 )
 
+//go:generate swag init --parseDependency --parseInternal -o docs
+
+// @title Go Passport Issuer API
+// @version 1.0
+// @description API for verifying and issuing digital credentials from travel documents (passports, ID cards, and driving licences).
+// @description This service validates MRTD (Machine Readable Travel Documents) and Electronic Driving Licences (EDL), then issues privacy-preserving credentials through the IRMA framework.
+
+// @contact.name Privacy by Design Foundation
+
+// @license.name Apache 2.0
+// @license.url https://www.apache.org/licenses/LICENSE-2.0
+
+// @BasePath /api
+
 type Config struct {
 	ServerConfig            ServerConfig              `json:"server_config"`
 	IrmaServerUrl           string                    `json:"irma_server_url"`

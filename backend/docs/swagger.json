@@ -1,0 +1,388 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "API for verifying and issuing digital credentials from travel documents (passports, ID cards, and driving licences).\nThis service validates MRTD (Machine Readable Travel Documents) and Electronic Driving Licences (EDL), then issues privacy-preserving credentials through the IRMA framework.",
+        "title": "Go Passport Issuer API",
+        "contact": {
+            "name": "Privacy by Design Foundation"
+        },
+        "license": {
+            "name": "Apache 2.0",
+            "url": "https://www.apache.org/licenses/LICENSE-2.0"
+        },
+        "version": "1.0"
+    },
+    "basePath": "/api",
+    "paths": {
+        "/health": {
+            "get": {
+                "description": "Returns the health status of the API service",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Health"
+                ],
+                "summary": "Health check",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.HealthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/issue-driving-licence": {
+            "post": {
+                "description": "Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Driving Licence"
+                ],
+                "summary": "Verify and issue driving licence credential",
+                "parameters": [
+                    {
+                        "description": "Validation request with document data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ValidationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.IssuanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "error:internal",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/issue-id-card": {
+            "post": {
+                "description": "Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ID Card"
+                ],
+                "summary": "Verify and issue ID card credential",
+                "parameters": [
+                    {
+                        "description": "Validation request with document data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ValidationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.IssuanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "error:internal",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/issue-passport": {
+            "post": {
+                "description": "Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Passport"
+                ],
+                "summary": "Verify and issue passport credential",
+                "parameters": [
+                    {
+                        "description": "Validation request with document data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ValidationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.IssuanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "error:internal",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/start-validation": {
+            "post": {
+                "description": "Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Session"
+                ],
+                "summary": "Start document validation session",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.ValidatePassportResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "error:internal",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/verify-driving-licence": {
+            "post": {
+                "description": "Verifies the authenticity of an Electronic Driving Licence (EDL) without issuing credentials. Performs both passive authentication (signature verification) and active authentication (chip challenge-response) if signature is provided.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Driving Licence"
+                ],
+                "summary": "Verify driving licence authenticity",
+                "parameters": [
+                    {
+                        "description": "Validation request with document data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ValidationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.VerificationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "error:internal",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/verify-passport": {
+            "post": {
+                "description": "Verifies the authenticity of a passport without issuing credentials. Performs both passive authentication (signature verification) and active authentication (chip challenge-response) if signature is provided.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Passport"
+                ],
+                "summary": "Verify passport authenticity",
+                "parameters": [
+                    {
+                        "description": "Validation request with document data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ValidationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.VerificationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "error:internal",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "main.HealthResponse": {
+            "type": "object",
+            "properties": {
+                "ok": {
+                    "description": "True if the service is healthy",
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
+        "main.IssuanceResponse": {
+            "type": "object",
+            "properties": {
+                "irma_server_url": {
+                    "description": "URL of the IRMA server for credential issuance",
+                    "type": "string",
+                    "example": "https://irma.example.com"
+                },
+                "jwt": {
+                    "description": "Signed JWT containing the IRMA issuance request",
+                    "type": "string",
+                    "example": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+                }
+            }
+        },
+        "main.ValidatePassportResponse": {
+            "type": "object",
+            "properties": {
+                "nonce": {
+                    "description": "Random nonce for active authentication (16 hex characters)",
+                    "type": "string",
+                    "example": "1234567890abcdef"
+                },
+                "session_id": {
+                    "description": "Unique session identifier (32 hex characters)",
+                    "type": "string",
+                    "example": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+                }
+            }
+        },
+        "main.VerificationResponse": {
+            "type": "object",
+            "properties": {
+                "authentic_chip": {
+                    "description": "True if active authentication (chip challenge-response) succeeded",
+                    "type": "boolean",
+                    "example": true
+                },
+                "authentic_content": {
+                    "description": "True if passive authentication (signature verification) succeeded",
+                    "type": "boolean",
+                    "example": true
+                },
+                "is_expired": {
+                    "description": "True if the document has expired",
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "models.ValidationRequest": {
+            "type": "object",
+            "properties": {
+                "aa_signature": {
+                    "description": "Hex-encoded active authentication signature (optional)",
+                    "type": "string",
+                    "example": "304502..."
+                },
+                "data_groups": {
+                    "description": "Map of data group identifiers to hex-encoded data group contents",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "ef_sod": {
+                    "description": "Hex-encoded Security Object (EF.SOD) containing document signature",
+                    "type": "string",
+                    "example": "778201ab..."
+                },
+                "nonce": {
+                    "description": "Nonce obtained from /start-validation",
+                    "type": "string",
+                    "example": "1234567890abcdef"
+                },
+                "session_id": {
+                    "description": "Session ID obtained from /start-validation",
+                    "type": "string",
+                    "example": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+                }
+            }
+        }
+    }
+}

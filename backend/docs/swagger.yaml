@@ -1,0 +1,275 @@
+basePath: /api
+definitions:
+  main.HealthResponse:
+    properties:
+      ok:
+        description: True if the service is healthy
+        example: true
+        type: boolean
+    type: object
+  main.IssuanceResponse:
+    properties:
+      irma_server_url:
+        description: URL of the IRMA server for credential issuance
+        example: https://irma.example.com
+        type: string
+      jwt:
+        description: Signed JWT containing the IRMA issuance request
+        example: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+        type: string
+    type: object
+  main.ValidatePassportResponse:
+    properties:
+      nonce:
+        description: Random nonce for active authentication (16 hex characters)
+        example: 1234567890abcdef
+        type: string
+      session_id:
+        description: Unique session identifier (32 hex characters)
+        example: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+        type: string
+    type: object
+  main.VerificationResponse:
+    properties:
+      authentic_chip:
+        description: True if active authentication (chip challenge-response) succeeded
+        example: true
+        type: boolean
+      authentic_content:
+        description: True if passive authentication (signature verification) succeeded
+        example: true
+        type: boolean
+      is_expired:
+        description: True if the document has expired
+        example: false
+        type: boolean
+    type: object
+  models.ValidationRequest:
+    properties:
+      aa_signature:
+        description: Hex-encoded active authentication signature (optional)
+        example: 304502...
+        type: string
+      data_groups:
+        additionalProperties:
+          type: string
+        description: Map of data group identifiers to hex-encoded data group contents
+        type: object
+      ef_sod:
+        description: Hex-encoded Security Object (EF.SOD) containing document signature
+        example: 778201ab...
+        type: string
+      nonce:
+        description: Nonce obtained from /start-validation
+        example: 1234567890abcdef
+        type: string
+      session_id:
+        description: Session ID obtained from /start-validation
+        example: a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+        type: string
+    type: object
+info:
+  contact:
+    name: Privacy by Design Foundation
+  description: |-
+    API for verifying and issuing digital credentials from travel documents (passports, ID cards, and driving licences).
+    This service validates MRTD (Machine Readable Travel Documents) and Electronic Driving Licences (EDL), then issues privacy-preserving credentials through the IRMA framework.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+  title: Go Passport Issuer API
+  version: "1.0"
+paths:
+  /health:
+    get:
+      description: Returns the health status of the API service
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.HealthResponse'
+      summary: Health check
+      tags:
+      - Health
+  /issue-driving-licence:
+    post:
+      consumes:
+      - application/json
+      description: Verifies the Electronic Driving Licence (EDL) and issues an IRMA
+        credential. Returns a JWT that can be used with the IRMA server to obtain
+        the credential.
+      parameters:
+      - description: Validation request with document data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.ValidationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.IssuanceResponse'
+        "400":
+          description: invalid request
+          schema:
+            type: string
+        "500":
+          description: error:internal
+          schema:
+            type: string
+      summary: Verify and issue driving licence credential
+      tags:
+      - Driving Licence
+  /issue-id-card:
+    post:
+      consumes:
+      - application/json
+      description: Verifies the ID card and issues an IRMA credential. Returns a JWT
+        that can be used with the IRMA server to obtain the credential.
+      parameters:
+      - description: Validation request with document data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.ValidationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.IssuanceResponse'
+        "400":
+          description: invalid request
+          schema:
+            type: string
+        "500":
+          description: error:internal
+          schema:
+            type: string
+      summary: Verify and issue ID card credential
+      tags:
+      - ID Card
+  /issue-passport:
+    post:
+      consumes:
+      - application/json
+      description: Verifies the passport and issues an IRMA credential. Returns a
+        JWT that can be used with the IRMA server to obtain the credential.
+      parameters:
+      - description: Validation request with document data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.ValidationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.IssuanceResponse'
+        "400":
+          description: invalid request
+          schema:
+            type: string
+        "500":
+          description: error:internal
+          schema:
+            type: string
+      summary: Verify and issue passport credential
+      tags:
+      - Passport
+  /start-validation:
+    post:
+      description: Initializes a new validation session and generates a nonce for
+        active authentication. The nonce should be used to perform active authentication
+        on the document chip. The session ID and nonce must be included in subsequent
+        verification/issuance requests.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.ValidatePassportResponse'
+        "500":
+          description: error:internal
+          schema:
+            type: string
+      summary: Start document validation session
+      tags:
+      - Session
+  /verify-driving-licence:
+    post:
+      consumes:
+      - application/json
+      description: Verifies the authenticity of an Electronic Driving Licence (EDL)
+        without issuing credentials. Performs both passive authentication (signature
+        verification) and active authentication (chip challenge-response) if signature
+        is provided.
+      parameters:
+      - description: Validation request with document data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.ValidationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.VerificationResponse'
+        "400":
+          description: invalid request
+          schema:
+            type: string
+        "500":
+          description: error:internal
+          schema:
+            type: string
+      summary: Verify driving licence authenticity
+      tags:
+      - Driving Licence
+  /verify-passport:
+    post:
+      consumes:
+      - application/json
+      description: Verifies the authenticity of a passport without issuing credentials.
+        Performs both passive authentication (signature verification) and active authentication
+        (chip challenge-response) if signature is provided.
+      parameters:
+      - description: Validation request with document data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.ValidationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.VerificationResponse'
+        "400":
+          description: invalid request
+          schema:
+            type: string
+        "500":
+          description: error:internal
+          schema:
+            type: string
+      summary: Verify passport authenticity
+      tags:
+      - Passport
+swagger: "2.0"

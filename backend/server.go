@@ -20,6 +20,12 @@ import (
 	"github.com/gorilla/mux"
 )
 
+//go:embed docs/swagger.yaml
+var swaggerSpec []byte
+
+//go:embed docs/redoc.html
+var redocHTML []byte
+
 const ErrorInternal = "error:internal"
 const ERR_MARSHAL = "failed to marshal response message"
 const ERR_FAILED_BODY_CLOSE = "failed to close request body: %v"
@@ -105,12 +111,7 @@ func (h SpaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router := mux.NewRouter()
 
-	router.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
-		err := json.NewEncoder(w).Encode(map[string]bool{"ok": true})
-		if err != nil {
-			slog.Error("failed to write body to http response", "error", err)
-		}
-	})
+	router.HandleFunc("/api/health", handleHealth).Methods(http.MethodGet)
 
 	router.HandleFunc("/api/start-validation", func(w http.ResponseWriter, r *http.Request) {
 		handleStartValidatePassport(state, w, r)
@@ -139,6 +140,10 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/.well-known/assetlinks.json", HandleAssetLinksRequest).Methods(http.MethodGet)
 
+	// API Documentation
+	router.HandleFunc("/api/docs", HandleRedocRequest).Methods(http.MethodGet)
+	router.HandleFunc("/api/docs/swagger.yaml", HandleSwaggerRequest).Methods(http.MethodGet)
+
 	spa := SpaHandler{staticPath: "../frontend/build", indexPath: "index.html"}
 	router.PathPrefix("/").Handler(spa)
 
@@ -157,17 +162,55 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	}, nil
 }
 
+// IssuanceResponse contains the JWT and IRMA server URL for credential issuance
 type IssuanceResponse struct {
-	Jwt           string `json:"jwt"`
-	IrmaServerURL string `json:"irma_server_url"`
+	// Signed JWT containing the IRMA issuance request
+	Jwt string `json:"jwt" example:"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."`
+	// URL of the IRMA server for credential issuance
+	IrmaServerURL string `json:"irma_server_url" example:"https://irma.example.com"`
 }
 
+// VerificationResponse contains the result of document verification
 type VerificationResponse struct {
-	AuthenticContent bool `json:"authentic_content"`
-	AuthenticChip    bool `json:"authentic_chip"`
-	IsExpired        bool `json:"is_expired"`
+	// True if passive authentication (signature verification) succeeded
+	AuthenticContent bool `json:"authentic_content" example:"true"`
+	// True if active authentication (chip challenge-response) succeeded
+	AuthenticChip bool `json:"authentic_chip" example:"true"`
+	// True if the document has expired
+	IsExpired bool `json:"is_expired" example:"false"`
 }
 
+// HealthResponse contains the health status of the service
+type HealthResponse struct {
+	// True if the service is healthy
+	Ok bool `json:"ok" example:"true"`
+}
+
+// handleHealth returns the health status of the service
+// @Summary Health check
+// @Description Returns the health status of the API service
+// @Tags Health
+// @Produce json
+// @Success 200 {object} HealthResponse
+// @Router /health [get]
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	response := HealthResponse{Ok: true}
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
+		slog.Error("failed to write health response", "error", err)
+	}
+}
+
+// handleVerifyDrivingLicence verifies driving licence authenticity
+// @Summary Verify driving licence authenticity
+// @Description Verifies the authenticity of an Electronic Driving Licence (EDL) without issuing credentials. Performs both passive authentication (signature verification) and active authentication (chip challenge-response) if signature is provided.
+// @Tags Driving Licence
+// @Accept json
+// @Produce json
+// @Param request body models.ValidationRequest true "Validation request with document data"
+// @Success 200 {object} VerificationResponse
+// @Failure 400 {string} string "invalid request"
+// @Failure 500 {string} string "error:internal"
+// @Router /verify-driving-licence [post]
 func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer closeRequestBody(r)
 
@@ -200,6 +243,17 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 
 }
 
+// handleIssueEDL verifies and issues driving licence credential
+// @Summary Verify and issue driving licence credential
+// @Description Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.
+// @Tags Driving Licence
+// @Accept json
+// @Produce json
+// @Param request body models.ValidationRequest true "Validation request with document data"
+// @Success 200 {object} IssuanceResponse
+// @Failure 400 {string} string "invalid request"
+// @Failure 500 {string} string "error:internal"
+// @Router /issue-driving-licence [post]
 func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer closeRequestBody(r)
 
@@ -241,6 +295,17 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 
 }
 
+// handleVerifyPassport verifies passport authenticity
+// @Summary Verify passport authenticity
+// @Description Verifies the authenticity of a passport without issuing credentials. Performs both passive authentication (signature verification) and active authentication (chip challenge-response) if signature is provided.
+// @Tags Passport
+// @Accept json
+// @Produce json
+// @Param request body models.ValidationRequest true "Validation request with document data"
+// @Success 200 {object} VerificationResponse
+// @Failure 400 {string} string "invalid request"
+// @Failure 500 {string} string "error:internal"
+// @Router /verify-passport [post]
 func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer closeRequestBody(r)
 
@@ -281,6 +346,17 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 
 }
 
+// handleIssueIdCard verifies and issues ID card credential
+// @Summary Verify and issue ID card credential
+// @Description Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.
+// @Tags ID Card
+// @Accept json
+// @Produce json
+// @Param request body models.ValidationRequest true "Validation request with document data"
+// @Success 200 {object} IssuanceResponse
+// @Failure 400 {string} string "invalid request"
+// @Failure 500 {string} string "error:internal"
+// @Router /issue-id-card [post]
 func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer closeRequestBody(r)
 
@@ -322,6 +398,17 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 	removeSessionToken(w, state.tokenStorage, request.SessionId)
 }
 
+// handleIssuePassport verifies and issues passport credential
+// @Summary Verify and issue passport credential
+// @Description Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.
+// @Tags Passport
+// @Accept json
+// @Produce json
+// @Param request body models.ValidationRequest true "Validation request with document data"
+// @Success 200 {object} IssuanceResponse
+// @Failure 400 {string} string "invalid request"
+// @Failure 500 {string} string "error:internal"
+// @Router /issue-passport [post]
 func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer closeRequestBody(r)
 
@@ -448,11 +535,22 @@ func decodeValidationRequest(r *http.Request) (models.ValidationRequest, error) 
 	return request, nil
 }
 
+// ValidatePassportResponse contains the session ID and nonce for document validation
 type ValidatePassportResponse struct {
-	SessionId string `json:"session_id"`
-	Nonce     string `json:"nonce"`
+	// Unique session identifier (32 hex characters)
+	SessionId string `json:"session_id" example:"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"`
+	// Random nonce for active authentication (16 hex characters)
+	Nonce string `json:"nonce" example:"1234567890abcdef"`
 }
 
+// handleStartValidatePassport starts a document validation session
+// @Summary Start document validation session
+// @Description Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests.
+// @Tags Session
+// @Produce json
+// @Success 200 {object} ValidatePassportResponse
+// @Failure 500 {string} string "error:internal"
+// @Router /start-validation [post]
 func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
 	defer closeRequestBody(r)
 
@@ -507,7 +605,21 @@ var appleAssociationJson []byte
 
 func HandleAssaRequest(w http.ResponseWriter, r *http.Request) {
 	writeStaticJSON(w, appleAssociationJson)
+}
 
+func HandleRedocRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if _, err := w.Write(redocHTML); err != nil {
+		slog.Error("failed to write redoc html", "error", err)
+	}
+}
+
+func HandleSwaggerRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if _, err := w.Write(swaggerSpec); err != nil {
+		slog.Error("failed to write swagger spec", "error", err)
+	}
 }
 
 func GenerateSessionId() string {
