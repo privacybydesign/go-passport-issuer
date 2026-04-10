@@ -3,7 +3,7 @@ module go-passport-issuer
 go 1.25.0
 
 require (
-	github.com/gmrtd/gmrtd v0.19.2
+	github.com/gmrtd/gmrtd v0.22.1
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/privacybydesign/irmago v0.19.0
@@ -26,9 +26,9 @@ require (
 	github.com/mailru/easyjson v0.7.6 // indirect
 	github.com/osanderson/brainpool v1.0.0 // indirect
 	github.com/valyala/fastjson v1.6.4 // indirect
-	golang.org/x/mod v0.33.0 // indirect
-	golang.org/x/net v0.50.0 // indirect
-	golang.org/x/tools v0.42.0 // indirect
+	golang.org/x/mod v0.34.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/tools v0.43.0 // indirect
 	gopkg.in/gographics/imagick.v2 v2.6.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
@@ -96,11 +96,11 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go.etcd.io/bbolt v1.3.6 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
+	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/image v0.38.0
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/term v0.40.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
+	golang.org/x/term v0.41.0 // indirect
 	golang.org/x/text v0.35.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/driver/mysql v1.5.2 // indirect
