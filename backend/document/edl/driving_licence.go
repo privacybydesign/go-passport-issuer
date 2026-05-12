@@ -165,11 +165,13 @@ func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err er
 
 	res, err := activeAuth.ValidateActiveAuthSignature(dgDg15, aaSigBytes, nonceBytes)
 	if err != nil {
+		mrtdDoc.LogAATryAlternateHashes(data.SessionId, pubKeyBytes, aaSigBytes, nonceBytes)
 		return false, fmt.Errorf("failed to validate active authentication signature: %w", err)
 	}
 	// Defensive check: In the current gmrtd implementation, if err is nil, then res.Success is always true.
 	// However, we keep this check for safety and future compatibility.
 	if !res.Success {
+		mrtdDoc.LogAATryAlternateHashes(data.SessionId, pubKeyBytes, aaSigBytes, nonceBytes)
 		return false, fmt.Errorf("active authentication failed")
 	}
 

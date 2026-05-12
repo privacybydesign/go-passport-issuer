@@ -180,18 +180,22 @@ func ActiveAuthentication(data models.ValidationRequest, doc document.Document) 
 		return false, nil
 	}
 
-	slog.Info("Starting active authentication signature validation")
+	slog.Info("Starting active authentication signature validation",
+		"session_id", data.SessionId,
+	)
 
 	aaSigBytes := utils.HexToBytes(data.ActiveAuthSignature)
 	nonceBytes := utils.HexToBytes(data.Nonce)
 
 	res, err := activeAuth.ValidateActiveAuthSignature(doc.Mf.Lds1.Dg15, aaSigBytes, nonceBytes)
 	if err != nil {
+		mrtdDoc.LogAATryAlternateHashes(data.SessionId, doc.Mf.Lds1.Dg15.SubjectPublicKeyInfoBytes, aaSigBytes, nonceBytes)
 		return false, fmt.Errorf("failed to validate active authentication signature: %w", err)
 	}
 	// Defensive check: In the current gmrtd implementation, if err is nil, then res.Success is always true.
 	// However, we keep this check for safety and future compatibility.
 	if !res.Success {
+		mrtdDoc.LogAATryAlternateHashes(data.SessionId, doc.Mf.Lds1.Dg15.SubjectPublicKeyInfoBytes, aaSigBytes, nonceBytes)
 		return false, fmt.Errorf("active authentication failed")
 	}
 	return true, nil
