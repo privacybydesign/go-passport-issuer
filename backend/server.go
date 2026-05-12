@@ -218,11 +218,13 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 		return
 	}
 
-	slog.Info("Received request to verify driving license")
+	const endpoint = "verify-driving-licence"
+	slog.Info("Received request", "endpoint", endpoint)
 
 	doc, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving license", err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving license", err,
+			"endpoint", endpoint, "session_id", request.SessionId)
 		return
 	}
 
@@ -261,11 +263,13 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	slog.Info("Received request to verify and issue driving licence")
+	const endpoint = "issue-driving-licence"
+	slog.Info("Received request", "endpoint", endpoint)
 	doc, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
 
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving licence", err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving licence", err,
+			"endpoint", endpoint, "session_id", request.SessionId)
 		return
 	}
 
@@ -313,11 +317,13 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	slog.Info("Received request to do verify a passport readout")
+	const endpoint = "verify-passport"
+	slog.Info("Received request", "endpoint", endpoint)
 
 	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err,
+			"endpoint", endpoint, "session_id", request.SessionId)
 		return
 	}
 
@@ -364,11 +370,13 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	slog.Info("Received request to verify and issue id card")
+	const endpoint = "issue-id-card"
+	slog.Info("Received request", "endpoint", endpoint)
 
 	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err,
+			"endpoint", endpoint, "session_id", request.SessionId)
 		return
 	}
 
@@ -416,11 +424,13 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	slog.Info("Received request to verify and issue passport")
+	const endpoint = "issue-passport"
+	slog.Info("Received request", "endpoint", endpoint)
 
 	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err)
+		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err,
+			"endpoint", endpoint, "session_id", request.SessionId)
 		return
 	}
 
@@ -642,8 +652,10 @@ func GenerateNonce(i int) (string, error) {
 	return hexString, nil
 }
 
-func respondWithErr(w http.ResponseWriter, code int, responseBody string, logMsg string, e error) {
-	slog.Error(logMsg, "error", e, "status_code", code, "response_body", responseBody)
+func respondWithErr(w http.ResponseWriter, code int, responseBody string, logMsg string, e error, extras ...any) {
+	args := []any{"error", e, "status_code", code, "response_body", responseBody}
+	args = append(args, extras...)
+	slog.Error(logMsg, args...)
 	w.WriteHeader(code)
 	if _, err := w.Write([]byte(responseBody)); err != nil {
 		slog.Error("failed to write body to http response", "error", err)

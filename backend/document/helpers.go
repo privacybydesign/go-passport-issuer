@@ -1,9 +1,35 @@
 package document
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sort"
 	"time"
 )
+
+// SodFingerprint returns identifying info about an SOD byte slice for
+// triage logging: total length, SHA-256, and the hex of the first up-to-32
+// bytes (enough to see the TLV root tag, typically 0x77 for a valid SOD).
+func SodFingerprint(sod []byte) (length int, sha256Hex string, headHex string) {
+	sum := sha256.Sum256(sod)
+	head := sod
+	if len(head) > 32 {
+		head = head[:32]
+	}
+	return len(sod), hex.EncodeToString(sum[:]), hex.EncodeToString(head)
+}
+
+// DataGroupInventory returns a sorted list of "DGn(byteLen)" strings derived
+// from a hex-encoded data-group map. Useful to spot wrong-file uploads.
+func DataGroupInventory(dgs map[string]string) []string {
+	out := make([]string, 0, len(dgs))
+	for name, hexStr := range dgs {
+		out = append(out, fmt.Sprintf("%s(%d)", name, len(hexStr)/2))
+	}
+	sort.Strings(out)
+	return out
+}
 
 func BoolToYesNo(value bool) string {
 	if value {

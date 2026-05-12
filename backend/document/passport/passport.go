@@ -1,6 +1,7 @@
 package passport
 
 import (
+	"encoding/hex"
 	"fmt"
 	"go-passport-issuer/images"
 	"go-passport-issuer/models"
@@ -25,6 +26,25 @@ var euCountries = []string{
 	"LVA", "LTU", "LUX", "MLT", "NLD",
 	"POL", "PRT", "ROU", "SVK", "SVN",
 	"ESP", "SWE",
+}
+
+// bestEffortPassportIssuingState attempts to parse DG1 just enough to surface
+// the issuing state for diagnostics when SOD construction fails. Returns ""
+// on any error so it can be safely embedded in log lines.
+func bestEffortPassportIssuingState(dgs map[string]string) string {
+	dg1Hex, ok := dgs["DG1"]
+	if !ok {
+		return ""
+	}
+	dg1Bytes, err := hex.DecodeString(dg1Hex)
+	if err != nil {
+		return ""
+	}
+	dg1, err := document.NewDG1(dg1Bytes)
+	if err != nil || dg1 == nil {
+		return ""
+	}
+	return dg1.Mrz.IssuingState
 }
 
 // parseOptionalDataGroup parses an optional data group and logs errors gracefully
@@ -89,7 +109,10 @@ func parsePassportDGs(doc *document.Document, dataGroups map[string]string) erro
 }
 
 func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.CertPool) (doc document.Document, err error) {
-	slog.Info("Starting passive authentication for passports")
+	slog.Info("Starting passive authentication for passports",
+		"session_id", data.SessionId,
+		"data_groups", mrtdDoc.DataGroupInventory(data.DataGroups),
+	)
 
 	if len(data.DataGroups) == 0 {
 		return document.Document{}, fmt.Errorf("no data groups found")
@@ -99,11 +122,33 @@ func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.C
 		return document.Document{}, fmt.Errorf("EF_SOD is missing in the validation request")
 	}
 
-	slog.Info("Constructing document from data groups")
-
 	var sodFileBytes = utils.HexToBytes(data.EFSOD)
+	sodLen, sodSha, sodHead := mrtdDoc.SodFingerprint(sodFileBytes)
+
+	slog.Info("Constructing document from data groups",
+		"session_id", data.SessionId,
+		"efsod_len", sodLen,
+		"efsod_head_hex", sodHead,
+	)
+	// SHA-256 is a stable per-document identifier (privacy-sensitive); keep at DEBUG.
+	slog.Debug("SOD fingerprint",
+		"session_id", data.SessionId,
+		"efsod_sha256", sodSha,
+	)
+
 	doc.Mf.Lds1.Sod, err = document.NewSOD(sodFileBytes)
 	if err != nil {
+		slog.Error("failed to construct SOD",
+			"session_id", data.SessionId,
+			"efsod_len", sodLen,
+			"efsod_head_hex", sodHead,
+			"issuing_state_best_effort", bestEffortPassportIssuingState(data.DataGroups),
+			"error", err,
+		)
+		slog.Debug("SOD fingerprint for failed construction",
+			"session_id", data.SessionId,
+			"efsod_sha256", sodSha,
+		)
 		return document.Document{}, fmt.Errorf("failed to create SOD: %w", err)
 	}
 
@@ -112,7 +157,10 @@ func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.C
 	if err != nil {
 		return document.Document{}, fmt.Errorf("failed to parse passport DGs: %w", err)
 	}
-	slog.Info("Starting passive authentication for passport", "issuing_state", doc.Mf.Lds1.Dg1.Mrz.IssuingState)
+	slog.Info("Starting passive authentication for passport",
+		"session_id", data.SessionId,
+		"issuing_state", doc.Mf.Lds1.Dg1.Mrz.IssuingState,
+	)
 
 	res, err := passiveauth.PassiveAuth(&doc, certPool)
 	if err != nil {

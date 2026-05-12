@@ -2,6 +2,7 @@ package edl
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	mrtdDoc "go-passport-issuer/document"
 	"go-passport-issuer/models"
@@ -16,6 +17,25 @@ import (
 	"github.com/gmrtd/gmrtd/document"
 	"github.com/gmrtd/gmrtd/utils"
 )
+
+// bestEffortEDLIssuingState attempts to parse the eDL DG1 just enough to
+// surface the issuing member state for diagnostics when SOD construction
+// fails. Returns "" on any error.
+func bestEffortEDLIssuingState(dgs map[string]string) string {
+	dg1Hex, ok := dgs["DG1"]
+	if !ok {
+		return ""
+	}
+	dg1Bytes, err := hex.DecodeString(dg1Hex)
+	if err != nil {
+		return ""
+	}
+	dg1, err := ParseEDLDG1(dg1Bytes)
+	if err != nil || dg1 == nil {
+		return ""
+	}
+	return dg1.IssuingMemberState
+}
 
 func parseDgNumber(dgName string) (int, error) {
 	if !strings.HasPrefix(dgName, "DG") {
@@ -39,13 +59,35 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 		return fmt.Errorf("EF_SOD is missing in the validation request")
 	}
 
-	slog.Info("Constructing EF.SOD from bytes")
-
 	var doc document.Document
 	var sodFileBytes = utils.HexToBytes(data.EFSOD)
+	sodLen, sodSha, sodHead := mrtdDoc.SodFingerprint(sodFileBytes)
+
+	slog.Info("Constructing EF.SOD from bytes",
+		"session_id", data.SessionId,
+		"data_groups", mrtdDoc.DataGroupInventory(data.DataGroups),
+		"efsod_len", sodLen,
+		"efsod_head_hex", sodHead,
+	)
+	// SHA-256 is a stable per-document identifier (privacy-sensitive); keep at DEBUG.
+	slog.Debug("SOD fingerprint",
+		"session_id", data.SessionId,
+		"efsod_sha256", sodSha,
+	)
 
 	doc.Mf.Lds1.Sod, err = document.NewSOD(sodFileBytes)
 	if err != nil {
+		slog.Error("failed to construct SOD",
+			"session_id", data.SessionId,
+			"efsod_len", sodLen,
+			"efsod_head_hex", sodHead,
+			"issuing_state_best_effort", bestEffortEDLIssuingState(data.DataGroups),
+			"error", err,
+		)
+		slog.Debug("SOD fingerprint for failed construction",
+			"session_id", data.SessionId,
+			"efsod_sha256", sodSha,
+		)
 		return fmt.Errorf("failed to create SOD: %w", err)
 	}
 
@@ -56,7 +98,10 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 	}
 	hashAlgo := doc.Mf.Lds1.Sod.LdsSecurityObject.HashAlgorithm.Algorithm
 
-	slog.Info("Performing passive authentication for eDL")
+	slog.Info("Performing passive authentication for eDL",
+		"session_id", data.SessionId,
+		"issuing_member_state", bestEffortEDLIssuingState(data.DataGroups),
+	)
 	for dgName, dgHex := range data.DataGroups {
 		dgBytes := utils.HexToBytes(dgHex)
 		dgNum, err := parseDgNumber(dgName) // DgHash function requires dg number
@@ -79,7 +124,9 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 		}
 	}
 
-	slog.Info("Verifying the request SOD against the certificate chain succeeded")
+	slog.Info("Verifying the request SOD against the certificate chain succeeded",
+		"session_id", data.SessionId,
+	)
 	_, err = doc.Mf.Lds1.Sod.SD.Verify(*certPool)
 	if err != nil {
 		return fmt.Errorf("SOD signature verification failed: %w", err)
