@@ -70,8 +70,8 @@ github.com/fsnotify/fsnotify v1.5.4 h1:jRbGcIw6P2Meqdwuo0H1p6JVLbL5DHKAKlYndzMwV
 github.com/fsnotify/fsnotify v1.5.4/go.mod h1:OVB6XrOHzAwXMpEM7uPOzcehqUV2UqJxmVXmkdnm1bU=
 github.com/fxamacker/cbor v1.5.1 h1:XjQWBgdmQyqimslUh5r4tUGmoqzHmBFQOImkWGi2awg=
 github.com/fxamacker/cbor v1.5.1/go.mod h1:3aPGItF174ni7dDzd6JZ206H8cmr4GDNBGpPa971zsU=
-github.com/gmrtd/gmrtd v0.22.1 h1:Y4IrHwOjohOH3cNZAIgWxJQmicC4a6Z6efsB5kea0mg=
-github.com/gmrtd/gmrtd v0.22.1/go.mod h1:Rk4GiuOkOYLokePAN1FoSjDpLcsEIoCuWZhrBuIIsaE=
+github.com/gmrtd/gmrtd v0.27.3 h1:YvthpN7g6WfB3q2RBxzg/gmAYACkW0D8gyoO1EEQb7M=
+github.com/gmrtd/gmrtd v0.27.3/go.mod h1:Rk4GiuOkOYLokePAN1FoSjDpLcsEIoCuWZhrBuIIsaE=
 github.com/go-co-op/gocron v1.28.3 h1:swTsge6u/1Ei51b9VLMz/YTzEzWpbsk5SiR7m5fklTI=
 github.com/go-co-op/gocron v1.28.3/go.mod h1:39f6KNSGVOU1LO/ZOoZfcSxwlsJDQOKSu8erN0SH48Y=
 github.com/go-errors/errors v1.4.2 h1:J6MZopCL4uSllY1OfXM374weqZFFItUbrImctkmUxIA=
