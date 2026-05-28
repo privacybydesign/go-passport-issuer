@@ -30,7 +30,7 @@ export default function CallbackPage() {
             import("@privacybydesign/yivi-frontend").then((yivi) => {
                 const web = yivi.newWeb({
                     debugging: true,
-                    language: i18n.language,
+                    language: i18n.language as 'en' | 'nl',
                     element: '#yivi-web-form',
 
                     // Back-end options
