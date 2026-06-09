@@ -11,16 +11,6 @@ require (
 	github.com/swaggo/swag v1.16.6
 )
 
-// Block known-broken v2.7.x releases of imagick.v2 from being re-resolved
-// by `go get -u`. v2.7.0 changed (*MagickWand).GetImageBlob() to return
-// ([]byte, error), but pault.ag/go/cbeff@v0.1.1 (unmaintained upstream)
-// still calls it with a single return value, so the jpeg2000 subpackage
-// fails to typecheck. Remove these excludes once cbeff is updated.
-exclude (
-	gopkg.in/gographics/imagick.v2 v2.7.0
-	gopkg.in/gographics/imagick.v2 v2.7.1
-)
-
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
@@ -48,7 +38,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/tools v0.45.0 // indirect
-	gopkg.in/gographics/imagick.v2 v2.6.4 // indirect; pin: v2.7.0 changed (*MagickWand).GetImageBlob() to return ([]byte, error); pault.ag/go/cbeff@v0.1.1 (unmaintained) still uses the single-value signature, so anything v2.7.0+ breaks the build. See exclude block below.
+	gopkg.in/gographics/imagick.v2 v2.6.4 // indirect; pinned via replace directive below — see comment there.
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
@@ -125,3 +115,10 @@ require (
 	gorm.io/gorm v1.31.1 // indirect
 	pault.ag/go/cbeff v0.1.1
 )
+
+// Unconditional pin: v2.7.0 changed (*MagickWand).GetImageBlob() to return
+// ([]byte, error), but pault.ag/go/cbeff@v0.1.1 (unmaintained upstream) still
+// calls it with a single return value, so anything v2.7.0+ breaks the jpeg2000
+// subpackage typecheck. A `replace` (rather than `exclude`) keeps the pin solid
+// against future v2.7.x releases. Remove once cbeff is updated.
+replace gopkg.in/gographics/imagick.v2 => gopkg.in/gographics/imagick.v2 v2.6.4
