@@ -38,7 +38,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/tools v0.45.0 // indirect
-	gopkg.in/gographics/imagick.v2 v2.7.1 // indirect
+	gopkg.in/gographics/imagick.v2 v2.6.4 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
