@@ -3,7 +3,7 @@ module go-passport-issuer
 go 1.25.7
 
 require (
-	github.com/gmrtd/gmrtd v0.33.0
+	github.com/gmrtd/gmrtd v0.35.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/privacybydesign/irmago v0.19.2
