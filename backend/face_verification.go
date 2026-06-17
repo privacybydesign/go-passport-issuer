@@ -33,7 +33,10 @@ type FaceSession struct {
 // tests.
 type FaceSessionCreator interface {
 	// CreateSession starts a session at the face verification service, passing
-	// the DG2 portrait (base64-encoded image) as the reference photo.
+	// the reference photo as portraitImage. This must be the original DG2 bytes
+	// (base64-encoded), since the binding key is derived from
+	// SHA256(reference_photo) and the mobile app derives the same key over the
+	// raw DG2 it read from the chip.
 	CreateSession(ctx context.Context, portraitImage string) (*FaceSession, error)
 }
 

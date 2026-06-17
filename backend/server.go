@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	_ "embed"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -351,7 +352,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 	// Optionally start a face verification session bound to the DG2 portrait and
 	// return it as part of the validation result. Failures are non-fatal so that
 	// passport validation keeps working when the face service is unavailable.
-	response.FaceSession = startFaceSession(r.Context(), state, passportData.Photo, request.SessionId)
+	response.FaceSession = startFaceSession(r.Context(), state, request.DataGroups, request.SessionId)
 
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
@@ -362,15 +363,17 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 
 }
 
-// startFaceSession creates a face verification session from the DG2 portrait
+// startFaceSession creates a face verification session bound to the DG2 portrait
 // when the integration is configured. It never fails the validation: any error
 // is logged and a nil session is returned.
-func startFaceSession(ctx context.Context, state *ServerState, portrait, sessionId string) *FaceSession {
+func startFaceSession(ctx context.Context, state *ServerState, dataGroups map[string]string, sessionId string) *FaceSession {
 	if state.faceSessionCreator == nil {
 		return nil
 	}
+
+	portrait := dg2BindingPortrait(dataGroups, sessionId)
 	if portrait == "" {
-		slog.Warn("skipping face session: no DG2 portrait available", "session_id", sessionId)
+		slog.Warn("skipping face session: no DG2 available", "session_id", sessionId)
 		return nil
 	}
 
@@ -385,6 +388,24 @@ func startFaceSession(ctx context.Context, state *ServerState, portrait, session
 		"face_session_id", faceSession.FaceSessionID,
 	)
 	return faceSession
+}
+
+// dg2BindingPortrait returns the original DG2 bytes, base64-encoded, to use as
+// the face binding reference photo. The binding key is derived from
+// SHA256(reference_photo); the mobile app derives the same key over the raw DG2
+// it read from the chip and never re-encodes it, so the issuer must send the
+// unmodified DG2 bytes here (not the converted PNG portrait).
+func dg2BindingPortrait(dataGroups map[string]string, sessionId string) string {
+	dg2Hex := dataGroups["DG2"]
+	if dg2Hex == "" {
+		return ""
+	}
+	raw, err := hex.DecodeString(dg2Hex)
+	if err != nil {
+		slog.Warn("failed to hex-decode DG2 for face binding", "error", err, "session_id", sessionId)
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(raw)
 }
 
 // handleIssueIdCard verifies and issues ID card credential

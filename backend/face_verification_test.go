@@ -2,15 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
-	"go-passport-issuer/document/edl"
-	"go-passport-issuer/models"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gmrtd/gmrtd/document"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,16 +26,6 @@ func (f *fakeFaceSessionCreator) CreateSession(_ context.Context, portrait strin
 	f.called = true
 	f.gotPortrait = portrait
 	return f.session, f.err
-}
-
-// photoConverter is a fake DocumentDataConverter returning a fixed DG2 portrait.
-type photoConverter struct{ photo string }
-
-func (c photoConverter) ToPassportData(_ document.Document, _ bool) (models.PassportData, error) {
-	return models.PassportData{DocumentNumber: "X", Photo: c.photo}, nil
-}
-func (photoConverter) ToDrivingLicenceData(_ edl.DrivingLicenceDocument, _ bool) (models.EDLData, error) {
-	return models.EDLData{DocumentNumber: "123"}, nil
 }
 
 func TestNewFaceVerificationClientDisabledWhenNoURL(t *testing.T) {
@@ -114,17 +103,24 @@ func TestVerifyPassportReturnsFaceSession(t *testing.T) {
 	}}
 	startTestServer(t, storage, func(s *ServerState) {
 		s.faceSessionCreator = creator
-		s.converter = photoConverter{photo: "dg2-portrait-base64"}
 	})
 
 	session, nonce := startValidation(t)
-	req := newReq(session, nonce)
+	// DG2 is sent as hex; the face session must be bound to the ORIGINAL DG2
+	// bytes (base64), not a re-encoded portrait, so the mobile app derives the
+	// same binding key over the raw DG2 it read from the chip.
+	dg2Hex := "deadbeef0102"
+	req := newReq(session, nonce, withDG("DG2", dg2Hex))
 
 	resp, body, decoded := postJSON[VerificationResponse](t, "http://localhost:8081/api/verify-passport", req)
 	mustStatus(t, resp, http.StatusOK, body)
 
+	rawDG2, err := hex.DecodeString(dg2Hex)
+	require.NoError(t, err)
+	wantPortrait := base64.StdEncoding.EncodeToString(rawDG2)
+
 	require.True(t, creator.called)
-	require.Equal(t, "dg2-portrait-base64", creator.gotPortrait)
+	require.Equal(t, wantPortrait, creator.gotPortrait)
 	require.NotNil(t, decoded.FaceSession)
 	require.Equal(t, "fs_xyz", decoded.FaceSession.FaceSessionID)
 	// Binding secret must never appear in the response body.
@@ -152,11 +148,10 @@ func TestVerifyPassportFaceSessionFailureIsNonFatal(t *testing.T) {
 	creator := &fakeFaceSessionCreator{err: io.ErrUnexpectedEOF}
 	startTestServer(t, storage, func(s *ServerState) {
 		s.faceSessionCreator = creator
-		s.converter = photoConverter{photo: "dg2-portrait-base64"}
 	})
 
 	session, nonce := startValidation(t)
-	req := newReq(session, nonce)
+	req := newReq(session, nonce, withDG("DG2", "deadbeef"))
 
 	resp, body, decoded := postJSON[VerificationResponse](t, "http://localhost:8081/api/verify-passport", req)
 	mustStatus(t, resp, http.StatusOK, body)

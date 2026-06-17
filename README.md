@@ -74,7 +74,14 @@ The issuer can optionally start a session at a
 when validating a passport. When configured, `POST /api/verify-passport` creates
 a session bound to the chip's DG2 portrait and returns it as a `face_session`
 field in the response. The integration is **off by default**: when no `url` is set
-the behaviour is unchanged. Add a `face_verification` block to enable it:
+the behaviour is unchanged.
+
+The reference photo sent to the face service is the **original, unmodified DG2
+bytes** (base64-encoded), not a re-encoded image. The binding key is derived from
+`SHA256(reference_photo)`, and the mobile app derives the same key over the raw
+DG2 it read from the chip — so both sides must hash identical bytes.
+
+Add a `face_verification` block to enable it:
 
 ```json
 {
