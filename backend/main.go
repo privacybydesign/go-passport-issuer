@@ -39,6 +39,7 @@ type Config struct {
 	RedisConfig             redis.RedisConfig         `json:"redis_config"`
 	RedisSentinelConfig     redis.RedisSentinelConfig `json:"redis_sentinel_config"`
 	LogLevel                string                    `json:"log_level"`
+	FaceVerification        FaceVerificationConfig    `json:"face_verification"`
 }
 
 type CredentialConfig struct {
@@ -139,6 +140,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Optional face verification integration. When no URL is configured the
+	// creator stays nil and validation behaves exactly as before. We keep the
+	// interface value nil (rather than a typed-nil client) to avoid the Go
+	// nil-interface gotcha at the call site.
+	var faceSessionCreator FaceSessionCreator
+	if client := NewFaceVerificationClient(config.FaceVerification); client != nil {
+		faceSessionCreator = client
+		slog.Info("Face verification enabled", "url", config.FaceVerification.URL)
+	} else {
+		slog.Info("Face verification disabled (no url configured)")
+	}
+
 	serverState := ServerState{
 		irmaServerURL:          config.IrmaServerUrl,
 		jwtCreators:            jwtCreators,
@@ -148,6 +161,7 @@ func main() {
 		documentValidator:      DocumentValidatorImpl{},
 		converter:              IssuanceRequestConverterImpl{},
 		drivingLicenceParser:   DrivingLicenceParserImpl{},
+		faceSessionCreator:     faceSessionCreator,
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)

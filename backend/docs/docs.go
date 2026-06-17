@@ -299,6 +299,27 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "main.FaceSession": {
+            "type": "object",
+            "properties": {
+                "binding_key_ready": {
+                    "description": "True when a reference portrait was supplied at creation (always true here).",
+                    "type": "boolean"
+                },
+                "face_session_id": {
+                    "description": "Identifier used in every subsequent face verification call.",
+                    "type": "string"
+                },
+                "face_session_token": {
+                    "description": "Base64url-encoded blob the wallet uses to learn the session id and stream URL.",
+                    "type": "string"
+                },
+                "websocket_url": {
+                    "description": "WebSocket endpoint the client streams camera frames to.",
+                    "type": "string"
+                }
+            }
+        },
         "main.HealthResponse": {
             "type": "object",
             "properties": {
@@ -351,6 +372,14 @@ const docTemplate = `{
                     "description": "True if passive authentication (signature verification) succeeded",
                     "type": "boolean",
                     "example": true
+                },
+                "face_session": {
+                    "description": "Optional face verification session, present only when the face verification\nintegration is configured and a session was created from the DG2 portrait.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/main.FaceSession"
+                        }
+                    ]
                 },
                 "is_expired": {
                     "description": "True if the document has expired",

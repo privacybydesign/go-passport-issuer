@@ -67,6 +67,34 @@ It should look like this:
 ```
 The `jwt_private_key_path` should point to a valid RSA private key in PEM format, which is used to sign JWT tokens for the IRMA server.
 
+#### Face verification (optional)
+
+The issuer can optionally start a session at a
+[face verification service](https://github.com/privacybydesign/face-verification-service)
+when validating a passport. When configured, `POST /api/verify-passport` creates
+a session bound to the chip's DG2 portrait and returns it as a `face_session`
+field in the response. The integration is **off by default**: when no `url` is set
+the behaviour is unchanged. Add a `face_verification` block to enable it:
+
+```json
+{
+  "face_verification": {
+    "url": "https://face.example.com",
+    "verifier_id": "passport-issuer",
+    "callback_url": "https://issuer.example.com/face/callback",
+    "timeout_seconds": 10
+  }
+}
+```
+
+- `url` — base URL of the face verification service (the configurable endpoint). Leave empty to disable.
+- `verifier_id` — identifier of this issuer as known to the face service (defaults to `passport-issuer`).
+- `callback_url` — optional URL the face service calls with the signed result.
+- `timeout_seconds` — optional HTTP timeout (defaults to 10).
+
+The `binding_secret` returned by the face service is used to authenticate result
+callbacks and is intentionally never exposed in the validation response.
+
 ### Running the application
 
 #### Local Development (without Docker)

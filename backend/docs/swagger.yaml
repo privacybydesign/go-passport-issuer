@@ -1,5 +1,22 @@
 basePath: /api
 definitions:
+  main.FaceSession:
+    properties:
+      binding_key_ready:
+        description: True when a reference portrait was supplied at creation (always
+          true here).
+        type: boolean
+      face_session_id:
+        description: Identifier used in every subsequent face verification call.
+        type: string
+      face_session_token:
+        description: Base64url-encoded blob the wallet uses to learn the session id
+          and stream URL.
+        type: string
+      websocket_url:
+        description: WebSocket endpoint the client streams camera frames to.
+        type: string
+    type: object
   main.HealthResponse:
     properties:
       ok:
@@ -39,6 +56,12 @@ definitions:
         description: True if passive authentication (signature verification) succeeded
         example: true
         type: boolean
+      face_session:
+        allOf:
+        - $ref: '#/definitions/main.FaceSession'
+        description: |-
+          Optional face verification session, present only when the face verification
+          integration is configured and a session was created from the DG2 portrait.
       is_expired:
         description: True if the document has expired
         example: false

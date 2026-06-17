@@ -55,6 +55,8 @@ type ServerState struct {
 	documentValidator      DocumentValidator
 	drivingLicenceParser   DrivingLicenceParser
 	converter              DocumentDataConverter
+	// Optional; nil when face verification is not configured.
+	faceSessionCreator FaceSessionCreator
 }
 
 type SpaHandler struct {
@@ -178,6 +180,9 @@ type VerificationResponse struct {
 	AuthenticChip bool `json:"authentic_chip" example:"true"`
 	// True if the document has expired
 	IsExpired bool `json:"is_expired" example:"false"`
+	// Optional face verification session, present only when the face verification
+	// integration is configured and a session was created from the DG2 portrait.
+	FaceSession *FaceSession `json:"face_session,omitempty"`
 }
 
 // HealthResponse contains the health status of the service
@@ -343,6 +348,11 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 		IsExpired:        isExpired,
 	}
 
+	// Optionally start a face verification session bound to the DG2 portrait and
+	// return it as part of the validation result. Failures are non-fatal so that
+	// passport validation keeps working when the face service is unavailable.
+	response.FaceSession = startFaceSession(r.Context(), state, passportData.Photo, request.SessionId)
+
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
@@ -350,6 +360,31 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 
 	removeSessionToken(w, state.tokenStorage, request.SessionId)
 
+}
+
+// startFaceSession creates a face verification session from the DG2 portrait
+// when the integration is configured. It never fails the validation: any error
+// is logged and a nil session is returned.
+func startFaceSession(ctx context.Context, state *ServerState, portrait, sessionId string) *FaceSession {
+	if state.faceSessionCreator == nil {
+		return nil
+	}
+	if portrait == "" {
+		slog.Warn("skipping face session: no DG2 portrait available", "session_id", sessionId)
+		return nil
+	}
+
+	faceSession, err := state.faceSessionCreator.CreateSession(ctx, portrait)
+	if err != nil {
+		slog.Error("failed to create face verification session", "error", err, "session_id", sessionId)
+		return nil
+	}
+
+	slog.Info("created face verification session",
+		"session_id", sessionId,
+		"face_session_id", faceSession.FaceSessionID,
+	)
+	return faceSession
 }
 
 // handleIssueIdCard verifies and issues ID card credential

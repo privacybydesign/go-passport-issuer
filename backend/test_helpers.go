@@ -26,7 +26,7 @@ var testConfig = ServerConfig{
 	TlsPrivKeyPath: "",
 }
 
-func startTestServer(t *testing.T, storage TokenStorage) *Server {
+func startTestServer(t *testing.T, storage TokenStorage, opts ...func(*ServerState)) *Server {
 	t.Helper()
 
 	jwtCreators := AllJwtCreators{
@@ -41,6 +41,9 @@ func startTestServer(t *testing.T, storage TokenStorage) *Server {
 		documentValidator:    fakeValidator{},
 		drivingLicenceParser: fakeEDLParser{},
 		converter:            fakeConverter{},
+	}
+	for _, o := range opts {
+		o(testState)
 	}
 
 	srv, err := NewServer(testState, testConfig)
