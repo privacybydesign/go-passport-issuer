@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -115,6 +116,53 @@ func TestIssueDocumentSuccess(t *testing.T) {
 			resp, body, _ := postJSON[map[string]any](t, url, req)
 			require.Equal(t, 200, resp.StatusCode, body)
 			mustStatus(t, resp, http.StatusOK, body)
+		})
+	}
+}
+
+// failingRemoveStorage delegates to an in-memory store for everything except
+// RemoveToken, which always fails. This simulates the best-effort token cleanup
+// failing after the success response has already been committed.
+type failingRemoveStorage struct {
+	*InMemoryTokenStorage
+}
+
+func (s failingRemoveStorage) RemoveToken(sessionId string) error {
+	return fmt.Errorf("forced removal failure for %s", sessionId)
+}
+
+// TestTokenRemovalFailureKeepsResponseValid ensures that when the post-success
+// token cleanup fails, the handler still returns a clean 200 with a valid JSON
+// body (previously the error response got appended to the already-sent body,
+// corrupting it into e.g. `{"jwt":"..."}error:internal`).
+func TestTokenRemovalFailureKeepsResponseValid(t *testing.T) {
+	testCases := []struct {
+		name     string
+		endpoint string
+	}{
+		{"Passport", PASSPORT_ISSUE_ENDPOINT},
+		{"DrivingLicence", EDL_ISSUE_ENDPOINT},
+		{"VerifyPassport", "/api/verify-passport"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			storage := failingRemoveStorage{NewInMemoryTokenStorage()}
+			startTestServer(t, storage)
+
+			session, nonce := startValidation(t)
+			req := newReq(session, nonce)
+
+			url := fmt.Sprintf(TEST_HOST, tc.endpoint)
+			resp, body, _ := postJSON[map[string]any](t, url, req)
+
+			// Cleanup failure must not change the status code.
+			mustStatus(t, resp, http.StatusOK, body)
+
+			// Body must remain a single, valid JSON object — no appended error bytes.
+			require.Truef(t, json.Valid(body), "response body is not valid JSON: %s", body)
+			var decoded map[string]any
+			require.NoErrorf(t, json.Unmarshal(body, &decoded), "body: %s", body)
 		})
 	}
 }

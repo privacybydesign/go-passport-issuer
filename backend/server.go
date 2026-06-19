@@ -241,7 +241,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 		return
 	}
 
-	removeSessionToken(w, state.tokenStorage, request.SessionId)
+	removeSessionToken(state.tokenStorage, request.SessionId)
 
 }
 
@@ -295,7 +295,7 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	removeSessionToken(w, state.tokenStorage, request.SessionId)
+	removeSessionToken(state.tokenStorage, request.SessionId)
 
 }
 
@@ -348,7 +348,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	removeSessionToken(w, state.tokenStorage, request.SessionId)
+	removeSessionToken(state.tokenStorage, request.SessionId)
 
 }
 
@@ -403,7 +403,7 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	removeSessionToken(w, state.tokenStorage, request.SessionId)
+	removeSessionToken(state.tokenStorage, request.SessionId)
 }
 
 // handleIssuePassport verifies and issues passport credential
@@ -457,7 +457,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	removeSessionToken(w, state.tokenStorage, request.SessionId)
+	removeSessionToken(state.tokenStorage, request.SessionId)
 }
 
 func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.ValidationRequest, error) {
@@ -529,10 +529,12 @@ func validateSession(storage TokenStorage, sessionId, nonce string) error {
 	return nil
 }
 
-// removeSessionToken removes token and logs error if failed
-func removeSessionToken(w http.ResponseWriter, storage TokenStorage, sessionId string) {
+// removeSessionToken removes token and logs error if failed.
+// This is best-effort cleanup that runs after the success response has already
+// been written, so a failure must only be logged — it cannot alter the response.
+func removeSessionToken(storage TokenStorage, sessionId string) {
 	if err := storage.RemoveToken(sessionId); err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_TOKEN_REMOVAL, err)
+		slog.Error(ERR_TOKEN_REMOVAL, "error", err)
 	}
 }
 
@@ -694,6 +696,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	_, err = w.Write(payload)
 	if err != nil {
 		slog.Error("failed to write body to http response", "error", err)
