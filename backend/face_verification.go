@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -37,7 +38,29 @@ type FaceSessionCreator interface {
 	// (base64-encoded), since the binding key is derived from
 	// SHA256(reference_photo) and the mobile app derives the same key over the
 	// raw DG2 it read from the chip.
-	CreateSession(ctx context.Context, portraitImage string) (*FaceSession, error)
+	//
+	// It returns the public session (safe to hand to the wallet) and the
+	// binding_secret. The binding_secret authenticates the result callback and
+	// must be persisted server-side; it is never returned to the wallet.
+	CreateSession(ctx context.Context, portraitImage string) (session *FaceSession, bindingSecret string, err error)
+}
+
+// FaceVerificationResult is the authoritative outcome of a face verification
+// session, as learned from the signed callback or the status endpoint.
+type FaceVerificationResult struct {
+	// "success", "failed", "error", or "pending" when not yet complete.
+	Status          string   `json:"status"`
+	MatchConfidence *float64 `json:"match_confidence,omitempty"`
+	LivenessPassed  *bool    `json:"liveness_passed,omitempty"`
+}
+
+// FaceSessionStatusGetter polls the face verification service for the result of
+// a session. It is the pull fallback used when the pushed callback has not yet
+// arrived by the time issuance is requested.
+type FaceSessionStatusGetter interface {
+	// GetSessionStatus returns the current result for a face session. Status is
+	// "pending" while the session is not yet complete.
+	GetSessionStatus(ctx context.Context, faceSessionID string) (*FaceVerificationResult, error)
 }
 
 // faceSessionRequest is the body for POST /api/face/session.
@@ -69,6 +92,10 @@ type FaceVerificationConfig struct {
 	CallbackURL string `json:"callback_url,omitempty"`
 	// Optional request timeout in seconds (defaults to 10s).
 	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+	// Whether issuance must be gated on a successful face verification. When nil
+	// it defaults to true (gate on) for any configured (URL set) integration;
+	// set false to run face verification as advisory only.
+	RequireFaceForIssuance *bool `json:"require_face_for_issuance,omitempty"`
 }
 
 // FaceVerificationClient talks to the face verification service over HTTP.
@@ -105,9 +132,9 @@ func NewFaceVerificationClient(config FaceVerificationConfig) *FaceVerificationC
 }
 
 // CreateSession implements FaceSessionCreator.
-func (c *FaceVerificationClient) CreateSession(ctx context.Context, portraitImage string) (*FaceSession, error) {
+func (c *FaceVerificationClient) CreateSession(ctx context.Context, portraitImage string) (*FaceSession, string, error) {
 	if portraitImage == "" {
-		return nil, fmt.Errorf("portrait image is empty")
+		return nil, "", fmt.Errorf("portrait image is empty")
 	}
 
 	body, err := json.Marshal(faceSessionRequest{
@@ -116,19 +143,19 @@ func (c *FaceVerificationClient) CreateSession(ctx context.Context, portraitImag
 		PortraitImage: portraitImage,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal face session request: %w", err)
+		return nil, "", fmt.Errorf("failed to marshal face session request: %w", err)
 	}
 
 	endpoint := c.baseURL + "/api/face/session"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("failed to build face session request: %w", err)
+		return nil, "", fmt.Errorf("failed to build face session request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to call face verification service: %w", err)
+		return nil, "", fmt.Errorf("failed to call face verification service: %w", err)
 	}
 	defer func() {
 		if cerr := resp.Body.Close(); cerr != nil {
@@ -138,19 +165,19 @@ func (c *FaceVerificationClient) CreateSession(ctx context.Context, portraitImag
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read face session response: %w", err)
+		return nil, "", fmt.Errorf("failed to read face session response: %w", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("face verification service returned status %d: %s", resp.StatusCode, string(respBody))
+		return nil, "", fmt.Errorf("face verification service returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	var parsed faceSessionResponse
 	if err := json.Unmarshal(respBody, &parsed); err != nil {
-		return nil, fmt.Errorf("failed to decode face session response: %w", err)
+		return nil, "", fmt.Errorf("failed to decode face session response: %w", err)
 	}
 	if parsed.FaceSessionID == "" {
-		return nil, fmt.Errorf("face verification service returned empty session id")
+		return nil, "", fmt.Errorf("face verification service returned empty session id")
 	}
 
 	return &FaceSession{
@@ -158,5 +185,58 @@ func (c *FaceVerificationClient) CreateSession(ctx context.Context, portraitImag
 		FaceSessionToken: parsed.FaceSessionToken,
 		WebsocketURL:     parsed.WebsocketURL,
 		BindingKeyReady:  parsed.BindingKeyReady,
-	}, nil
+	}, parsed.BindingSecret, nil
+}
+
+// sessionStatusResponse is the subset of GET /api/face/session/{id}/status we
+// need. The face service nests the terminal verdict under "result".
+type sessionStatusResponse struct {
+	Status string `json:"status"` // created|connected|verifying|completed|failed|expired
+	Result *struct {
+		Result          string   `json:"result"` // success|failed|...
+		MatchConfidence *float64 `json:"match_confidence"`
+		LivenessPassed  *bool    `json:"liveness_passed"`
+	} `json:"result"`
+}
+
+// GetSessionStatus implements FaceSessionStatusGetter.
+func (c *FaceVerificationClient) GetSessionStatus(ctx context.Context, faceSessionID string) (*FaceVerificationResult, error) {
+	endpoint := fmt.Sprintf("%s/api/face/session/%s/status", c.baseURL, url.PathEscape(faceSessionID))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build face status request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call face verification status: %w", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			slog.Error("failed to close face status response body", "error", cerr)
+		}
+	}()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read face status response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("face verification status returned %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var parsed sessionStatusResponse
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to decode face status response: %w", err)
+	}
+
+	// Prefer the explicit terminal verdict; fall back to a pending state.
+	if parsed.Result != nil && parsed.Result.Result != "" {
+		return &FaceVerificationResult{
+			Status:          parsed.Result.Result,
+			MatchConfidence: parsed.Result.MatchConfidence,
+			LivenessPassed:  parsed.Result.LivenessPassed,
+		}, nil
+	}
+	return &FaceVerificationResult{Status: faceStatusPending}, nil
 }

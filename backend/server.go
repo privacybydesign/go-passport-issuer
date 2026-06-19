@@ -58,6 +58,10 @@ type ServerState struct {
 	converter              DocumentDataConverter
 	// Optional; nil when face verification is not configured.
 	faceSessionCreator FaceSessionCreator
+	// Optional; the pull fallback that polls the face service for a result.
+	faceStatusGetter FaceSessionStatusGetter
+	// True when issuance must be gated on a successful face verification.
+	requireFaceForIssuance bool
 }
 
 type SpaHandler struct {
@@ -132,6 +136,10 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	})
 	router.HandleFunc("/api/verify-passport", func(w http.ResponseWriter, r *http.Request) {
 		handleVerifyPassport(state, w, r)
+	})
+	// Server-to-server webhook for the face verification service's signed result.
+	router.HandleFunc("/api/face/callback", func(w http.ResponseWriter, r *http.Request) {
+		handleFaceCallback(state, w, r)
 	})
 	router.HandleFunc("/api/verify-driving-licence", func(w http.ResponseWriter, r *http.Request) {
 		handleVerifyDrivingLicence(state, w, r)
@@ -242,13 +250,17 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 		IsExpired:        isExpired,
 	}
 
+	// Optionally start a face verification session bound to the DG6 portrait.
+	// Non-fatal: validation keeps working when the face service is unavailable.
+	response.FaceSession = startFaceSession(r.Context(), state, request.DataGroups, request.SessionId)
+
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
 
-	removeSessionToken(w, state.tokenStorage, request.SessionId)
-
+	// Session intentionally NOT removed here: it is reused by the gated
+	// issue-driving-licence call, or expires via TTL.
 }
 
 // handleIssueEDL verifies and issues driving licence credential
@@ -275,6 +287,12 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving licence", err,
+			"endpoint", endpoint, "session_id", request.SessionId)
+		return
+	}
+
+	if gerr := state.checkFaceGate(r.Context(), request); gerr != nil {
+		respondWithErr(w, gerr.code, gerr.body, "face verification gate refused issuance", gerr,
 			"endpoint", endpoint, "session_id", request.SessionId)
 		return
 	}
@@ -359,28 +377,46 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	removeSessionToken(w, state.tokenStorage, request.SessionId)
-
+	// The validation session is intentionally NOT removed here: the same session
+	// (and its single chip-read AA signature) is reused by the subsequent gated
+	// issue-passport call. It is consumed by issuance or expires via TTL.
 }
 
-// startFaceSession creates a face verification session bound to the DG2 portrait
-// when the integration is configured. It never fails the validation: any error
-// is logged and a nil session is returned.
+// startFaceSession creates a face verification session bound to the document's
+// face portrait (DG2 for passports/ID cards, DG6 for driving licences) when the
+// integration is configured. It never fails the validation: any error is logged
+// and a nil session is returned.
 func startFaceSession(ctx context.Context, state *ServerState, dataGroups map[string]string, sessionId string) *FaceSession {
 	if state.faceSessionCreator == nil {
 		return nil
 	}
 
-	portrait := dg2BindingPortrait(dataGroups, sessionId)
+	portrait := portraitBindingBase64(dataGroups, sessionId)
 	if portrait == "" {
-		slog.Warn("skipping face session: no DG2 available", "session_id", sessionId)
+		slog.Warn("skipping face session: no portrait data group (DG2/DG6) available", "session_id", sessionId)
 		return nil
 	}
 
-	faceSession, err := state.faceSessionCreator.CreateSession(ctx, portrait)
+	faceSession, bindingSecret, err := state.faceSessionCreator.CreateSession(ctx, portrait)
 	if err != nil {
 		slog.Error("failed to create face verification session", "error", err, "session_id", sessionId)
 		return nil
+	}
+
+	// Persist the issuer-side record so the callback can be authenticated and the
+	// verdict bound to this document's portrait at issuance time. A storage
+	// failure is non-fatal for validation, but issuance will then refuse
+	// (face:required).
+	rec := &FaceRecord{
+		FaceSessionID: faceSession.FaceSessionID,
+		SessionID:     sessionId,
+		BindingSecret: bindingSecret,
+		Dg2Sha256:     portraitSha256Hex(dataGroups),
+		Status:        faceStatusPending,
+	}
+	if err := storeFaceRecord(state.tokenStorage, rec); err != nil {
+		slog.Error("failed to store face record", "error", err, "session_id", sessionId,
+			"face_session_id", faceSession.FaceSessionID)
 	}
 
 	slog.Info("created face verification session",
@@ -390,19 +426,16 @@ func startFaceSession(ctx context.Context, state *ServerState, dataGroups map[st
 	return faceSession
 }
 
-// dg2BindingPortrait returns the original DG2 bytes, base64-encoded, to use as
-// the face binding reference photo. The binding key is derived from
-// SHA256(reference_photo); the mobile app derives the same key over the raw DG2
-// it read from the chip and never re-encodes it, so the issuer must send the
-// unmodified DG2 bytes here (not the converted PNG portrait).
-func dg2BindingPortrait(dataGroups map[string]string, sessionId string) string {
-	dg2Hex := dataGroups["DG2"]
-	if dg2Hex == "" {
-		return ""
-	}
-	raw, err := hex.DecodeString(dg2Hex)
-	if err != nil {
-		slog.Warn("failed to hex-decode DG2 for face binding", "error", err, "session_id", sessionId)
+// portraitBindingBase64 returns the original portrait data-group bytes (DG2 for
+// passports/ID cards, DG6 for driving licences), base64-encoded, to use as the
+// face binding reference photo. The binding key is derived from
+// SHA256(reference_photo); the mobile app derives the same key over the raw data
+// group it read from the chip and never re-encodes it, so the issuer must send
+// the unmodified bytes here (not the converted PNG portrait).
+func portraitBindingBase64(dataGroups map[string]string, sessionId string) string {
+	raw, ok := portraitRawBytes(dataGroups)
+	if !ok {
+		slog.Warn("no portrait data group (DG2/DG6) to bind", "session_id", sessionId)
 		return ""
 	}
 	return base64.StdEncoding.EncodeToString(raw)
@@ -432,6 +465,12 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err,
+			"endpoint", endpoint, "session_id", request.SessionId)
+		return
+	}
+
+	if gerr := state.checkFaceGate(r.Context(), request); gerr != nil {
+		respondWithErr(w, gerr.code, gerr.body, "face verification gate refused issuance", gerr,
 			"endpoint", endpoint, "session_id", request.SessionId)
 		return
 	}
@@ -486,6 +525,12 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err,
+			"endpoint", endpoint, "session_id", request.SessionId)
+		return
+	}
+
+	if gerr := state.checkFaceGate(r.Context(), request); gerr != nil {
+		respondWithErr(w, gerr.code, gerr.body, "face verification gate refused issuance", gerr,
 			"endpoint", endpoint, "session_id", request.SessionId)
 		return
 	}

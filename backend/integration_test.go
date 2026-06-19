@@ -227,7 +227,10 @@ func TestPassportActiveAuthSkipNoSig(t *testing.T) {
 	require.False(t, skipped)
 }
 
-func TestPassportVerifySuccessRemovesSession(t *testing.T) {
+// New contract: verify-passport does NOT consume the session. The same session
+// (and its single chip-read AA signature) is reused by the gated issue-passport
+// call; the session is consumed by issuance or expires via TTL.
+func TestPassportVerifyKeepsSession(t *testing.T) {
 	storage := NewInMemoryTokenStorage()
 	startTestServer(t, storage)
 
@@ -238,8 +241,8 @@ func TestPassportVerifySuccessRemovesSession(t *testing.T) {
 	mustStatus(t, resp, http.StatusOK, body)
 
 	got, err := storage.RetrieveToken(session)
-	require.Error(t, err)
-	require.Equal(t, "", got)
+	require.NoError(t, err)
+	require.Equal(t, nonce, got)
 }
 
 func TestPassportVerifyFailBadNonce(t *testing.T) {
@@ -256,7 +259,9 @@ func TestPassportVerifyFailBadNonce(t *testing.T) {
 	mustStatus(t, resp, http.StatusBadRequest, body)
 }
 
-func TestPassportVerifyFailSessionReuse(t *testing.T) {
+// New contract: verify-passport is repeatable — it no longer consumes the
+// session, so a second verify on the same session still succeeds.
+func TestPassportVerifyAllowsSessionReuse(t *testing.T) {
 	storage := NewInMemoryTokenStorage()
 	startTestServer(t, storage)
 
@@ -267,5 +272,5 @@ func TestPassportVerifyFailSessionReuse(t *testing.T) {
 	mustStatus(t, resp1, http.StatusOK, body1)
 
 	resp2, body2, _ := postJSON[map[string]any](t, "http://localhost:8081/api/verify-passport", req)
-	mustStatus(t, resp2, http.StatusBadRequest, body2)
+	mustStatus(t, resp2, http.StatusOK, body2)
 }

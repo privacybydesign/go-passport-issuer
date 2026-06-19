@@ -13,6 +13,11 @@ services:
     restart: unless-stopped
     networks:
       - app_network
+    # Lets the container reach services published on the host (e.g. the face
+    # verification service on :8000). Resolves automatically on Docker Desktop;
+    # this mapping makes it work on Linux too.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on: [redis]
 
   redis:

@@ -88,19 +88,45 @@ Add a `face_verification` block to enable it:
   "face_verification": {
     "url": "https://face.example.com",
     "verifier_id": "passport-issuer",
-    "callback_url": "https://issuer.example.com/face/callback",
-    "timeout_seconds": 10
+    "callback_url": "https://issuer.example.com/api/face/callback",
+    "timeout_seconds": 10,
+    "require_face_for_issuance": true
   }
 }
 ```
 
 - `url` — base URL of the face verification service (the configurable endpoint). Leave empty to disable.
 - `verifier_id` — identifier of this issuer as known to the face service (defaults to `passport-issuer`).
-- `callback_url` — optional URL the face service calls with the signed result.
+- `callback_url` — URL the face service calls with the signed result. Point it at the issuer's
+  `POST /api/face/callback` route.
 - `timeout_seconds` — optional HTTP timeout (defaults to 10).
+- `require_face_for_issuance` — optional; defaults to `true` when `url` is set. When `true`, issuance of
+  all document types (passport, ID card, driving licence) is **gated** on a successful face verification.
+  Set `false` to run face verification as advisory only (the session is started and the result surfaced,
+  but issuance is not blocked).
 
 The `binding_secret` returned by the face service is used to authenticate result
 callbacks and is intentionally never exposed in the validation response.
+
+#### Gated issuance flow
+
+When face verification is required, the full flow is:
+
+1. `POST /api/start-validation` → `{ session_id, nonce }`.
+2. `POST /api/verify-passport` (or `/api/verify-driving-licence`) performs passive + active authentication
+   and, on success, starts a face session bound to the chip's portrait — **DG2** for passports/ID cards,
+   **DG6** for driving licences — returning it as `face_session`. The validation session is **kept** (not
+   consumed) so it can be reused by issuance.
+3. The wallet streams to the face service; on completion the face service POSTs a signed result to
+   `callback_url` (`POST /api/face/callback`), authenticated by `HMAC-SHA256(binding_secret, …)`.
+4. `POST /api/issue-passport` (or `/api/issue-id-card`, `/api/issue-driving-licence`) with the
+   `face_session_id` from step 2 issues the credential only when **both** authentication and face
+   verification succeeded, and the request's portrait data group hashes to the same portrait the face
+   session was created with. If the result has not yet arrived the issuer polls the face service's status
+   endpoint; while still pending it responds `428` with `face:pending`. A failed or missing verdict yields
+   `403` (`face:failed` / `face:required` / `face:mismatch`).
+
+See [`docs/verification-flow-contracts.md`](docs/verification-flow-contracts.md) for the full contract.
 
 ### Running the application
 

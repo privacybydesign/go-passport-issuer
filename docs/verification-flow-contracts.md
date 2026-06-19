@@ -96,7 +96,8 @@ gains internal fields (see §4) but the response is identical.
 
 ### `POST /api/verify-passport` — BEHAVIOR CHANGE (schema unchanged)
 
-Also applies to `/api/verify-driving-licence` (no face session — EDL has no DG2 portrait).
+Also applies to `/api/verify-driving-licence`, which starts a face session bound to the
+eDL's **DG6** portrait (passports/ID cards use **DG2**).
 
 ```jsonc
 // Request — models.ValidationRequest (unchanged)
@@ -140,24 +141,33 @@ Also applies to `/api/verify-driving-licence` (no face session — EDL has no DG
 ### `POST {face_verification.callback_url}` — NEW ENDPOINT
 
 Server-to-server: the face service calls this when a session reaches a terminal
-verdict. Path is whatever `callback_url` is configured to; suggested route
-`/api/face/callback`.
+verdict. The issuer registers it at `POST /api/face/callback`; point
+`face_verification.callback_url` at that path.
+
+The signature is carried **in the body** as a `signature` field — a hex-encoded
+`HMAC-SHA256(binding_secret, canonical_json)` where `canonical_json` is the body
+**without** the `signature` field, serialized with sorted keys and compact
+separators (Python `json.dumps(payload, sort_keys=True, separators=(",", ":"))`).
 
 ```http
 POST /api/face/callback
 Content-Type: application/json
-X-Face-Signature: base64( HMAC-SHA256( binding_secret, <raw request body> ) )
 ```
 
 ```jsonc
 // Request body
 {
   "face_session_id": "fs_abc123",
-  "result": "success",            // "success" | "failed" | "error"
-  "match_confidence": 0.97,        // optional
-  "liveness_passed": true,         // optional
-  "frames_processed": 42,          // optional
-  "completed_at": "2026-06-19T12:00:00Z"
+  "result": "success",                 // "success" | "failed" | "error"
+  "timestamp": "2026-06-19T12:00:00+00:00",
+  "details": {
+    "match_confidence": 0.97,
+    "liveness_passed": true,
+    "liveness_score": 0.9,
+    "frames_processed": 42,
+    "verification_duration_ms": 1234
+  },
+  "signature": "<hex HMAC-SHA256 over canonical JSON, keyed by binding_secret>"
 }
 ```
 
@@ -169,22 +179,25 @@ X-Face-Signature: base64( HMAC-SHA256( binding_secret, <raw request body> ) )
 | Status | When |
 |--------|------|
 | `200` | signature valid & record updated |
-| `401` | `X-Face-Signature` missing or HMAC mismatch against the stored `binding_secret` |
+| `400` | malformed body / missing `face_session_id` |
+| `401` | `signature` missing or HMAC mismatch against the stored `binding_secret` |
 | `404` | unknown `face_session_id` |
 
-> **⚠️ External dependency.** The exact callback JSON and signature scheme must match
+> **Verified against the service.** This matches
 > [`privacybydesign/face-verification-service`](https://github.com/privacybydesign/face-verification-service)
-> (not in this workspace). The body/headers above are the proposed contract derived
-> from the streaming protocol (`verification_complete` message fields) and the
-> README's "`binding_secret` authenticates result callbacks." Confirm field names &
-> the signature header against that repo before implementing.
+> (`backend/services/callback_service.py`): the verdict nests under `details`, the
+> `signature` is hex over canonical sorted/compact JSON of the unsigned body, and
+> delivery is a background webhook with retries when `callback_url` was supplied at
+> session creation. The Go receiver reproduces the canonical form via `json.Number`
+> (preserving integral floats like `1.0`) with HTML-escaping disabled.
 
 ---
 
 ### `POST /api/issue-passport` — GATED + 1 OPTIONAL FIELD
 
 Identical contract for `/api/issue-id-card`, `/api/issue-driving-licence`, and the
-legacy `/api/verify-and-issue` alias. (EDL stays ungated — no portrait.)
+legacy `/api/verify-and-issue` alias. All document types are gated when face
+verification is required: passports/ID cards bind on **DG2**, driving licences on **DG6**.
 
 ```jsonc
 // Request — ValidationRequest + ONE optional additive field
@@ -225,19 +238,19 @@ left intact so the wallet can retry after the verdict lands.
 
 ## 4 · Internal session & face state
 
-Two short-lived records in `TokenStorage` (string→string today; values become small
-JSON blobs). No interface change required — both are stored/retrieved/removed through
-the existing `StoreToken/RetrieveToken/RemoveToken`.
+The validation-session value is **unchanged** (a bare nonce). The face record is a
+new, separate keyspace. Both go through the existing
+`StoreToken/RetrieveToken/RemoveToken` — no interface change.
 
 ```jsonc
-// key: <ns>:token:<session_id>   (was a bare nonce string)
-{ "nonce": "1234567890abcdef",
-  "face_session_id": "fs_abc123" }   // set by verify-passport (alt to request field)
+// key: <ns>:token:<session_id>   (UNCHANGED — still a bare nonce string)
+"1234567890abcdef"
 ```
 
 ```jsonc
-// key: <ns>:face:<face_session_id>   (NEW)
-{ "session_id": "a1b2…",
+// key: <ns>:token:facerec:<face_session_id>   (NEW)
+{ "face_session_id": "fs_abc123",
+  "session_id": "a1b2…",
   "binding_secret": "<opaque, never returned>",
   "dg2_sha256": "<hex>",
   "status": "pending",           // pending → success | failed | error
@@ -245,16 +258,16 @@ the existing `StoreToken/RetrieveToken/RemoveToken`.
   "liveness_passed": null }
 ```
 
-> **Two correlation options.** _(A, recommended & zero wire change)_: store
-> `face_session_id` inside the session record at verify time, so issuance finds the
-> verdict from `session_id` alone and the request needs no new field. _(B, explicit)_:
-> the wallet passes `face_session_id` on the issue request. Implement A; accept B's
-> field as an override. Either way the DG2-hash binding (§3) is the real security check.
+> **Correlation: option B (implemented).** The wallet passes `face_session_id` on the
+> issue request; the issuer looks up the `facerec:` record and enforces the
+> `SHA256(DG2)` binding. The nonce-keyed session value is untouched, so `validateSession`
+> and the storage backends are unchanged. (Option A — embedding `face_session_id` in
+> the session record for zero wire change — remains a valid alternative, but B keeps
+> the security-critical check, the DG2 hash, explicit and avoids migrating the stored
+> nonce format.)
 
-> **⚠️ Storage value migration.** Changing the `token` value from a bare nonce to JSON
-> is the one internal break. Sessions are short-lived (24h TTL), so a deploy only
-> invalidates in-flight sessions. If you must avoid even that, keep nonce bare and
-> carry `face_session_id` only on the request (option B).
+> **No storage migration.** Because option B keeps the nonce value bare, there is no
+> change to existing session records and nothing to migrate across a deploy.
 
 ---
 
@@ -318,20 +331,27 @@ useful for staged rollout.
 | `issue-*` request | identical | + optional `face_session_id` |
 | `issue-*` behavior | ungated — as today | gated on face verdict |
 | `/api/face/callback` | n/a | new server-to-server route |
-| token storage value | nonce → JSON (opt A) | nonce → JSON (opt A) |
+| token storage value (nonce) | unchanged (bare nonce) | unchanged (bare nonce) |
+| token storage (new keyspace) | n/a | `facerec:<id>` JSON record |
 
 ---
 
-## 8 · Open questions to confirm
+## 8 · Resolved decisions (as implemented)
 
-1. **Callback schema & signature** — exact field names and the HMAC header/format
-   must be read from `face-verification-service` (not in this workspace).
-   Everything else keys off this.
-2. **Pending-verdict UX** — `428 face:pending` + client retry (proposed) vs. a short
-   server-side wait vs. a `GET /api/face/result` poll endpoint. The wallet already
-   knows the verdict from the WebSocket, so it only issues after local success; the
-   issuer just needs the callback to have landed.
-3. **Correlation option** — A (session-record link, zero wire change) vs. B (explicit
-   request field). Recommend A with B as override.
-4. **ID card** — same gate as passport (it carries DG2); confirm the product intent
-   that ID cards also require face verification.
+1. **Callback schema & signature** — ✅ confirmed against
+   `face-verification-service`: in-body hex `signature` over canonical sorted/compact
+   JSON, verdict under `details` (see §3). The Go receiver reproduces the canonical
+   form with `json.Number` + HTML-escaping disabled.
+2. **Pending-verdict UX** — implemented as **both**: `428 face:pending` is returned
+   only when the verdict is genuinely not yet known *and* no status poll is wired.
+   When `faceStatusGetter` is configured the issuer first pulls
+   `GET /api/face/session/{id}/status` as a synchronous fallback, so the wallet
+   normally needs no retry.
+3. **Correlation option** — implemented **option B**: the wallet passes
+   `face_session_id` on the issue request; the nonce-keyed session value is left
+   unchanged. The face record (binding_secret, `dg2_sha256`, status) lives in a
+   separate `facerec:<id>` keyspace. The `SHA256(DG2)` binding is the security check.
+4. **ID card & driving licence** — gated identically to passport. ID cards bind on
+   DG2 (same eMRTD path as passports); driving licences bind on DG6. The face
+   service extracts the embedded JPEG/JPEG2000 from either container, so the
+   binding stays over the raw data-group bytes on both sides.

@@ -16,16 +16,17 @@ import (
 // fakeFaceSessionCreator records the portrait it received and returns a canned
 // session (or error).
 type fakeFaceSessionCreator struct {
-	gotPortrait string
-	called      bool
-	session     *FaceSession
-	err         error
+	gotPortrait   string
+	called        bool
+	session       *FaceSession
+	bindingSecret string
+	err           error
 }
 
-func (f *fakeFaceSessionCreator) CreateSession(_ context.Context, portrait string) (*FaceSession, error) {
+func (f *fakeFaceSessionCreator) CreateSession(_ context.Context, portrait string) (*FaceSession, string, error) {
 	f.called = true
 	f.gotPortrait = portrait
-	return f.session, f.err
+	return f.session, f.bindingSecret, f.err
 }
 
 func TestNewFaceVerificationClientDisabledWhenNoURL(t *testing.T) {
@@ -59,12 +60,14 @@ func TestFaceClientCreateSessionSuccess(t *testing.T) {
 	})
 	require.NotNil(t, client)
 
-	session, err := client.CreateSession(context.Background(), "base64-dg2-portrait")
+	session, bindingSecret, err := client.CreateSession(context.Background(), "base64-dg2-portrait")
 	require.NoError(t, err)
 	require.Equal(t, "fs_abc123", session.FaceSessionID)
 	require.Equal(t, "tok", session.FaceSessionToken)
 	require.Equal(t, "wss://face.example/stream/fs_abc123", session.WebsocketURL)
 	require.True(t, session.BindingKeyReady)
+	// binding_secret is captured server-side (never returned to the wallet).
+	require.Equal(t, "secret-should-not-leak", bindingSecret)
 
 	// Request carried the DG2 portrait and config values.
 	require.Equal(t, "base64-dg2-portrait", gotBody.PortraitImage)
@@ -80,14 +83,14 @@ func TestFaceClientCreateSessionErrorStatus(t *testing.T) {
 	defer srv.Close()
 
 	client := NewFaceVerificationClient(FaceVerificationConfig{URL: srv.URL})
-	_, err := client.CreateSession(context.Background(), "portrait")
+	_, _, err := client.CreateSession(context.Background(), "portrait")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "500")
 }
 
 func TestFaceClientCreateSessionEmptyPortrait(t *testing.T) {
 	client := NewFaceVerificationClient(FaceVerificationConfig{URL: "https://face.example"})
-	_, err := client.CreateSession(context.Background(), "")
+	_, _, err := client.CreateSession(context.Background(), "")
 	require.Error(t, err)
 }
 

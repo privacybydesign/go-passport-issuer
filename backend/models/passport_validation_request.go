@@ -12,4 +12,8 @@ type ValidationRequest struct {
 	EFSOD string `json:"ef_sod" example:"778201ab..."`
 	// Hex-encoded active authentication signature (optional)
 	ActiveAuthSignature string `json:"aa_signature,omitempty" example:"304502..."`
+	// Face verification session id obtained from /verify-passport (optional).
+	// Required on issuance only when face verification is enabled and required;
+	// it lets the issuer look up the authoritative face verification result.
+	FaceSessionId string `json:"face_session_id,omitempty" example:"fs_abc123"`
 }

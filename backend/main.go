@@ -145,9 +145,17 @@ func main() {
 	// interface value nil (rather than a typed-nil client) to avoid the Go
 	// nil-interface gotcha at the call site.
 	var faceSessionCreator FaceSessionCreator
+	var faceStatusGetter FaceSessionStatusGetter
+	requireFaceForIssuance := false
 	if client := NewFaceVerificationClient(config.FaceVerification); client != nil {
 		faceSessionCreator = client
-		slog.Info("Face verification enabled", "url", config.FaceVerification.URL)
+		faceStatusGetter = client
+		// Gate issuance by default; only off when explicitly disabled.
+		requireFaceForIssuance = config.FaceVerification.RequireFaceForIssuance == nil ||
+			*config.FaceVerification.RequireFaceForIssuance
+		slog.Info("Face verification enabled",
+			"url", config.FaceVerification.URL,
+			"require_for_issuance", requireFaceForIssuance)
 	} else {
 		slog.Info("Face verification disabled (no url configured)")
 	}
@@ -162,6 +170,8 @@ func main() {
 		converter:              IssuanceRequestConverterImpl{},
 		drivingLicenceParser:   DrivingLicenceParserImpl{},
 		faceSessionCreator:     faceSessionCreator,
+		faceStatusGetter:       faceStatusGetter,
+		requireFaceForIssuance: requireFaceForIssuance,
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)
