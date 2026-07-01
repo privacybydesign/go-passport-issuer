@@ -1,15 +1,17 @@
 module go-passport-issuer
 
-go 1.25.7
+go 1.25.11
 
 require (
-	github.com/gmrtd/gmrtd v0.35.0
+	github.com/gmrtd/gmrtd v0.44.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/privacybydesign/irmago v0.19.2
-	github.com/redis/go-redis/v9 v9.20.0
+	github.com/redis/go-redis/v9 v9.21.0
 	github.com/swaggo/swag v1.16.6
 )
+
+require github.com/fxamacker/cbor/v2 v2.9.2 // indirect
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
@@ -103,7 +105,7 @@ require (
 	go.etcd.io/bbolt v1.4.3 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
-	golang.org/x/image v0.42.0
+	golang.org/x/image v0.43.0
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/term v0.44.0 // indirect
