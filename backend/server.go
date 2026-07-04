@@ -248,6 +248,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 // handleIssueEDL verifies and issues driving licence credential
 // @Summary Verify and issue driving licence credential
 // @Description Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.
+// @Description Passive authentication (SOD signature verification) is mandatory: if it fails the request is rejected and no credential is issued. Active Authentication (the chip-liveness challenge-response) is NOT mandatory for issuance: if it is not attempted (no nonce/aa_signature supplied, or the document has no Active Authentication key) the credential is still issued. Only an Active Authentication attempt that actually fails (an invalid aa_signature) rejects the request. The outcome is recorded in the credential's "active_authentication" attribute ("yes" when the chip-liveness proof succeeded, "no" otherwise) so relying parties can decide whether to trust the chip-liveness proof.
 // @Tags Driving Licence
 // @Accept json
 // @Produce json
@@ -355,6 +356,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 // handleIssueIdCard verifies and issues ID card credential
 // @Summary Verify and issue ID card credential
 // @Description Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.
+// @Description Passive authentication (SOD signature verification) is mandatory: if it fails the request is rejected and no credential is issued. Active Authentication (the chip-liveness challenge-response) is NOT mandatory for issuance: if it is not attempted (no nonce/aa_signature supplied, or the document has no Active Authentication key) the credential is still issued. Only an Active Authentication attempt that actually fails (an invalid aa_signature) rejects the request. The outcome is recorded in the credential's "active_authentication" attribute ("yes" when the chip-liveness proof succeeded, "no" otherwise) so relying parties can decide whether to trust the chip-liveness proof.
 // @Tags ID Card
 // @Accept json
 // @Produce json
@@ -409,6 +411,7 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 // handleIssuePassport verifies and issues passport credential
 // @Summary Verify and issue passport credential
 // @Description Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.
+// @Description Passive authentication (SOD signature verification) is mandatory: if it fails the request is rejected and no credential is issued. Active Authentication (the chip-liveness challenge-response) is NOT mandatory for issuance: if it is not attempted (no nonce/aa_signature supplied, or the document has no Active Authentication key) the credential is still issued. Only an Active Authentication attempt that actually fails (an invalid aa_signature) rejects the request. The outcome is recorded in the credential's "active_authentication" attribute ("yes" when the chip-liveness proof succeeded, "no" otherwise) so relying parties can decide whether to trust the chip-liveness proof.
 // @Tags Passport
 // @Accept json
 // @Produce json
@@ -460,6 +463,19 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	removeSessionToken(w, state.tokenStorage, request.SessionId)
 }
 
+// VerifyPassportRequest runs passive and active authentication on a passport / ID-card
+// validation request. The returned bool reports whether Active Authentication (the
+// chip-liveness challenge-response) succeeded.
+//
+// Note on the intended issuance behaviour: passive authentication is mandatory — a failure
+// returns an error and the caller rejects the request. Active Authentication is deliberately
+// NOT a hard gate for issuance. ActivePassport returns (false, nil) when Active Authentication
+// is not attempted (no nonce/aa_signature was supplied, or the document has no DG15 Active
+// Authentication key), so the caller still issues the credential in that case. It only returns
+// an error — which the caller turns into a rejection — when an Active Authentication attempt
+// actually fails (an invalid aa_signature). The bool is faithfully recorded in the issued
+// credential's "active_authentication" attribute so relying parties can decide whether to
+// require a valid chip-liveness proof. See the README and the /issue-* endpoint docs.
 func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.ValidationRequest, error) {
 
 	request, err := decodeValidationRequest(r)
@@ -485,6 +501,17 @@ func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Docume
 	return doc, activeAuth, request, nil
 }
 
+// VerifyDrivingLicenceRequest runs passive and active authentication on an Electronic Driving
+// Licence (EDL) validation request. The returned activeRes bool reports whether Active
+// Authentication (the chip-liveness challenge-response) succeeded.
+//
+// The issuance behaviour matches VerifyPassportRequest: passive authentication is mandatory,
+// while Active Authentication is not a hard gate. ActiveEDL returns (false, nil) when Active
+// Authentication is not attempted (no nonce/aa_signature, or the document has no Active
+// Authentication key in DG13), so the caller still issues the credential; it only returns an
+// error — rejecting the request — when an attempted Active Authentication actually fails. The
+// bool is recorded in the credential's "active_authentication" attribute. See the README and
+// the /issue-* endpoint docs.
 func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.DrivingLicenceDocument, request models.ValidationRequest, activeRes bool, err error) {
 
 	request, err = decodeValidationRequest(r)

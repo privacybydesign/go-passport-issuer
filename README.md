@@ -133,6 +133,26 @@ The swag annotations are located in:
 - `backend/server.go` - Handler annotations
 - `backend/models/` - Request/response model annotations
 
+### Document authentication and issuance policy
+
+Each document goes through two independent checks before a credential is issued. It is important to understand which of them gates issuance.
+
+#### Passive authentication (mandatory)
+
+Passive authentication verifies the digital signature over the document data (the Document Security Object, SOD) against the trusted CSCA certificates. This proves the data was issued by a genuine authority and has not been tampered with. **Passive authentication is mandatory:** if it fails, the request is rejected with `400` and no credential is issued.
+
+#### Active Authentication / chip-liveness (recorded, not gated)
+
+Active Authentication is a challenge-response with the document chip's private key that proves the chip is physically present ("chip-liveness"), guarding against cloned chips. In this service Active Authentication is **not** a hard requirement for issuance. The behaviour is:
+
+- **Not attempted** (the client supplied no `nonce` / `aa_signature`, or the document has no Active Authentication key present, e.g. no `DG15` for passports/ID cards or no `DG13` for driving licences): the credential is **still issued**.
+- **Attempted and successful:** the credential is issued.
+- **Attempted and failed** (an invalid `aa_signature`): the request is **rejected** with `400`; no credential is issued.
+
+In other words, a *failed* chip-liveness proof blocks issuance, but a *missing* one does not. This is a deliberate design choice: not every document chip supports Active Authentication, and requiring it would prevent issuance for those documents.
+
+The outcome is recorded in the issued credential's `active_authentication` attribute (`"yes"` when the chip-liveness proof succeeded, `"no"` otherwise) so that relying parties who need cloned-chip protection can require `active_authentication == "yes"` when verifying the credential. The `/verify-passport` and `/verify-driving-licence` endpoints expose the same information in real time via the `authentic_chip` field of their response.
+
 #### Using Docker Compose
 
 To run both the backend and frontend using Docker Compose, ensure you have Docker and Docker Compose installed. Then, from the root directory of the project, execute:

@@ -36,7 +36,7 @@
         },
         "/issue-driving-licence": {
             "post": {
-                "description": "Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.",
+                "description": "Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.\nPassive authentication (SOD signature verification) is mandatory: if it fails the request is rejected and no credential is issued. Active Authentication (the chip-liveness challenge-response) is NOT mandatory for issuance: if it is not attempted (no nonce/aa_signature supplied, or the document has no Active Authentication key) the credential is still issued. Only an Active Authentication attempt that actually fails (an invalid aa_signature) rejects the request. The outcome is recorded in the credential's \"active_authentication\" attribute (\"yes\" when the chip-liveness proof succeeded, \"no\" otherwise) so relying parties can decide whether to trust the chip-liveness proof.",
                 "consumes": [
                     "application/json"
                 ],
@@ -82,7 +82,7 @@
         },
         "/issue-id-card": {
             "post": {
-                "description": "Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.",
+                "description": "Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.\nPassive authentication (SOD signature verification) is mandatory: if it fails the request is rejected and no credential is issued. Active Authentication (the chip-liveness challenge-response) is NOT mandatory for issuance: if it is not attempted (no nonce/aa_signature supplied, or the document has no Active Authentication key) the credential is still issued. Only an Active Authentication attempt that actually fails (an invalid aa_signature) rejects the request. The outcome is recorded in the credential's \"active_authentication\" attribute (\"yes\" when the chip-liveness proof succeeded, \"no\" otherwise) so relying parties can decide whether to trust the chip-liveness proof.",
                 "consumes": [
                     "application/json"
                 ],
@@ -128,7 +128,7 @@
         },
         "/issue-passport": {
             "post": {
-                "description": "Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.",
+                "description": "Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.\nPassive authentication (SOD signature verification) is mandatory: if it fails the request is rejected and no credential is issued. Active Authentication (the chip-liveness challenge-response) is NOT mandatory for issuance: if it is not attempted (no nonce/aa_signature supplied, or the document has no Active Authentication key) the credential is still issued. Only an Active Authentication attempt that actually fails (an invalid aa_signature) rejects the request. The outcome is recorded in the credential's \"active_authentication\" attribute (\"yes\" when the chip-liveness proof succeeded, \"no\" otherwise) so relying parties can decide whether to trust the chip-liveness proof.",
                 "consumes": [
                     "application/json"
                 ],
