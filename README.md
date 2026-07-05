@@ -151,7 +151,7 @@ Active Authentication is a challenge-response with the document chip's private k
 
 In other words, a *failed* chip-liveness proof blocks issuance, but a *missing* one does not. This is a deliberate design choice: not every document chip supports Active Authentication, and requiring it would prevent issuance for those documents.
 
-The outcome is recorded in the issued credential's `active_authentication` attribute (`"yes"` when the chip-liveness proof succeeded, `"no"` otherwise) so that relying parties who need cloned-chip protection can require `active_authentication == "yes"` when verifying the credential. The `/verify-passport` and `/verify-driving-licence` endpoints expose the same information in real time via the `authentic_chip` field of their response.
+The outcome is recorded in the issued credential's `activeAuthentication` attribute (`"Yes"` when the chip-liveness proof succeeded, `"No"` otherwise) so that relying parties who need cloned-chip protection can require `activeAuthentication == "Yes"` (a case-sensitive match) when verifying the credential. The `/verify-passport` and `/verify-driving-licence` endpoints expose the same information in real time via the `authentic_chip` field of their response.
 
 #### Using Docker Compose
 
