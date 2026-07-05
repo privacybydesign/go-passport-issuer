@@ -135,7 +135,7 @@ The swag annotations are located in:
 
 ### Document authentication and issuance policy
 
-Each document goes through two independent checks before a credential is issued. It is important to understand which of them gates issuance.
+Each document goes through two independent checks before a credential is issued. Only one of them gates issuance.
 
 #### Passive authentication (mandatory)
 
