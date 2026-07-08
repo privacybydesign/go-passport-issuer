@@ -258,7 +258,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 
 // handleIssueEDL verifies and issues driving licence credential
 // @Summary Verify and issue driving licence credential
-// @Description Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.
+// @Description Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG13) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.
 // @Tags Driving Licence
 // @Accept json
 // @Produce json
@@ -369,7 +369,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 
 // handleIssueIdCard verifies and issues ID card credential
 // @Summary Verify and issue ID card credential
-// @Description Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.
+// @Description Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.
 // @Tags ID Card
 // @Accept json
 // @Produce json
@@ -425,7 +425,7 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 
 // handleIssuePassport verifies and issues passport credential
 // @Summary Verify and issue passport credential
-// @Description Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.
+// @Description Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.
 // @Tags Passport
 // @Accept json
 // @Produce json
@@ -479,6 +479,13 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// VerifyPassportRequest decodes and validates a passport/ID-card request. It runs
+// passive authentication (always mandatory) followed by active authentication.
+// Active authentication is mandatory when the chip supports it: if the chip
+// carries an AA public key (DG15) the request must supply a valid nonce and
+// aa_signature, otherwise an error is returned and the caller rejects the request
+// with 400. When the chip has no AA key, the returned bool is false and issuance
+// proceeds. The returned bool reports whether active authentication succeeded.
 func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.ValidationRequest, error) {
 
 	request, err := decodeValidationRequest(r)
@@ -504,6 +511,14 @@ func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Docume
 	return doc, activeAuth, request, nil
 }
 
+// VerifyDrivingLicenceRequest decodes and validates a driving-licence request. It
+// runs passive authentication (always mandatory) followed by active
+// authentication. Active authentication is mandatory when the chip supports it:
+// if the chip carries an AA public key (DG13) the request must supply a valid
+// nonce and aa_signature, otherwise an error is returned and the caller rejects
+// the request with 400. When the chip has no AA key, the returned bool is false
+// and issuance proceeds. The returned bool reports whether active authentication
+// succeeded.
 func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.DrivingLicenceDocument, request models.ValidationRequest, activeRes bool, err error) {
 
 	request, err = decodeValidationRequest(r)

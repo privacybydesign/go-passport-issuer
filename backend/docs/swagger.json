@@ -36,7 +36,7 @@
         },
         "/issue-driving-licence": {
             "post": {
-                "description": "Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.",
+                "description": "Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG13) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.",
                 "consumes": [
                     "application/json"
                 ],
@@ -82,7 +82,7 @@
         },
         "/issue-id-card": {
             "post": {
-                "description": "Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.",
+                "description": "Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.",
                 "consumes": [
                     "application/json"
                 ],
@@ -128,7 +128,7 @@
         },
         "/issue-passport": {
             "post": {
-                "description": "Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential.",
+                "description": "Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.",
                 "consumes": [
                     "application/json"
                 ],

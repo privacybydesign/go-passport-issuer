@@ -97,9 +97,13 @@ paths:
     post:
       consumes:
       - application/json
-      description: Verifies the Electronic Driving Licence (EDL) and issues an IRMA
+      description: 'Verifies the Electronic Driving Licence (EDL) and issues an IRMA
         credential. Returns a JWT that can be used with the IRMA server to obtain
-        the credential.
+        the credential. Passive authentication (SOD signature) is always mandatory.
+        Active authentication (chip challenge-response) is mandatory when the chip
+        supports it: if the chip carries an AA public key (DG13) the request must
+        include a valid nonce and aa_signature, otherwise issuance is rejected with
+        400.'
       parameters:
       - description: Validation request with document data
         in: body
@@ -129,8 +133,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: Verifies the ID card and issues an IRMA credential. Returns a JWT
-        that can be used with the IRMA server to obtain the credential.
+      description: 'Verifies the ID card and issues an IRMA credential. Returns a
+        JWT that can be used with the IRMA server to obtain the credential. Passive
+        authentication (SOD signature) is always mandatory. Active authentication
+        (chip challenge-response) is mandatory when the chip supports it: if the chip
+        carries an AA public key (DG15) the request must include a valid nonce and
+        aa_signature, otherwise issuance is rejected with 400.'
       parameters:
       - description: Validation request with document data
         in: body
@@ -160,8 +168,12 @@ paths:
     post:
       consumes:
       - application/json
-      description: Verifies the passport and issues an IRMA credential. Returns a
-        JWT that can be used with the IRMA server to obtain the credential.
+      description: 'Verifies the passport and issues an IRMA credential. Returns a
+        JWT that can be used with the IRMA server to obtain the credential. Passive
+        authentication (SOD signature) is always mandatory. Active authentication
+        (chip challenge-response) is mandatory when the chip supports it: if the chip
+        carries an AA public key (DG15) the request must include a valid nonce and
+        aa_signature, otherwise issuance is rejected with 400.'
       parameters:
       - description: Validation request with document data
         in: body

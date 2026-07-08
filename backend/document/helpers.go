@@ -3,10 +3,18 @@ package document
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
 )
+
+// ErrActiveAuthRequired is returned when a document chip advertises an Active
+// Authentication key but the request did not include the nonce/signature needed
+// to perform the challenge-response. Active Authentication is mandatory whenever
+// the chip supports it, so this condition rejects issuance rather than falling
+// through to a credential with activeAuthentication = "No".
+var ErrActiveAuthRequired = errors.New("active authentication required for this document")
 
 // SodFingerprint returns identifying info about an SOD byte slice for
 // triage logging: total length, SHA-256, and the hex of the first up-to-32
