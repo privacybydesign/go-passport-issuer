@@ -176,8 +176,18 @@ func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.C
 }
 
 func ActiveAuthentication(data models.ValidationRequest, doc document.Document) (bool, error) {
-	if data.Nonce == "" || data.ActiveAuthSignature == "" || doc.Mf.Lds1.Dg15 == nil {
+	// No AA public key on the chip (no DG15) means Active Authentication is
+	// genuinely unsupported for this document: issue without it.
+	if doc.Mf.Lds1.Dg15 == nil {
 		return false, nil
+	}
+
+	// The chip advertises an AA key, so Active Authentication is mandatory. A
+	// client that omits the nonce/signature cannot prove chip liveness, so
+	// reject issuance instead of silently issuing a credential a cloned chip
+	// could obtain.
+	if data.Nonce == "" || data.ActiveAuthSignature == "" {
+		return false, mrtdDoc.ErrActiveAuthRequired
 	}
 
 	slog.Info("Starting active authentication signature validation")

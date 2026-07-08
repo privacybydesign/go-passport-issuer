@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	mrtdDoc "go-passport-issuer/document"
 	"net/http"
 	"testing"
 
@@ -257,7 +258,10 @@ func TestPassportActiveAuthSkipNoDG15(t *testing.T) {
 	require.False(t, skipped)
 }
 
-func TestPassportActiveAuthSkipNoSig(t *testing.T) {
+func TestPassportActiveAuthRequiredWhenDG15Present(t *testing.T) {
+	// The chip advertises an AA key (DG15 present) but the request omits the
+	// signature: Active Authentication is mandatory when supported, so this must
+	// be rejected rather than issued with activeAuthentication = "No".
 	req := newReq(testSessionId, testNonce,
 		withDG("DG1", readBinToHex(t, "test-data/EF_DG1.bin")),
 		withDG("DG15", readBinToHex(t, "test-data/EF_DG15.bin")),
@@ -271,9 +275,9 @@ func TestPassportActiveAuthSkipNoSig(t *testing.T) {
 	doc.Mf.Lds1.Dg15, err = document.NewDG15(utils.HexToBytes(req.DataGroups["DG15"]))
 	require.NoError(t, err)
 
-	skipped, err := DocumentValidatorImpl{}.ActivePassport(req, doc)
-	require.NoError(t, err)
-	require.False(t, skipped)
+	authentic, err := DocumentValidatorImpl{}.ActivePassport(req, doc)
+	require.ErrorIs(t, err, mrtdDoc.ErrActiveAuthRequired)
+	require.False(t, authentic)
 }
 
 func TestPassportVerifySuccessRemovesSession(t *testing.T) {

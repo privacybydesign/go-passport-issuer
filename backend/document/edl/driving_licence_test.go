@@ -1,6 +1,7 @@
 package edl_test
 
 import (
+	mrtdDoc "go-passport-issuer/document"
 	"go-passport-issuer/document/edl"
 	"go-passport-issuer/document/passport"
 	"go-passport-issuer/models"
@@ -59,6 +60,47 @@ func TestActiveAuthenticationEDL(t *testing.T) {
 		})
 	}
 
+}
+
+func TestActiveAuthenticationEDL_KeyPresentButNoSignature(t *testing.T) {
+	// A chip carrying DG13 (AA key material) but a request omitting the
+	// nonce/signature must be rejected: Active Authentication is mandatory when
+	// the chip supports it.
+	cases := []struct {
+		name      string
+		nonce     string
+		signature string
+	}{
+		{"nonce and signature missing", "", ""},
+		{"nonce missing", "", "6F"},
+		{"signature missing", "6F", ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data := models.ValidationRequest{
+				Nonce:               tc.nonce,
+				ActiveAuthSignature: tc.signature,
+				DataGroups:          map[string]string{"DG13": dg13Hex},
+			}
+			result, err := edl.ActiveAuthenticationEDL(data)
+			require.ErrorIs(t, err, mrtdDoc.ErrActiveAuthRequired)
+			require.False(t, result)
+		})
+	}
+}
+
+func TestActiveAuthenticationEDL_NoKeyIssuesWithoutAA(t *testing.T) {
+	// A chip without DG13 is allowed to be issued without Active Authentication,
+	// even when a nonce/signature happens to be supplied.
+	data := models.ValidationRequest{
+		Nonce:               "AABBCCDD",
+		ActiveAuthSignature: "DEADBEEF",
+		DataGroups:          map[string]string{"DG2": passport.Dg2Hex},
+	}
+	result, err := edl.ActiveAuthenticationEDL(data)
+	require.NoError(t, err)
+	require.False(t, result)
 }
 
 func TestActiveAuthenticationEDLInvalidSignature(t *testing.T) {

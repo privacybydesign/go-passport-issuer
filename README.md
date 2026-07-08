@@ -112,6 +112,28 @@ npm install
 npm start
 ```
 
+### Authentication and issuance policy
+
+Before a credential is issued, the document undergoes two checks:
+
+- **Passive Authentication (always mandatory).** Verifies the SOD signature over
+  the document data against the trusted CSCA certificates. If it fails, the
+  request is rejected with `400` and no credential is issued.
+- **Active Authentication (mandatory when the chip supports it).** A
+  challenge-response with the chip's private key that proves the physical chip is
+  present, guarding against cloned chips. A chip supports AA when it carries an AA
+  public key (`DG15` for passports/ID cards, `DG13` for driving licences).
+  - **Chip supports AA** → the request *must* include the `nonce` and
+    `aa_signature`, and the signature must be valid. A missing signature or an
+    invalid one is rejected with `400`. This means a cloned chip cannot skip
+    liveness by simply omitting the signature.
+  - **Chip does not support AA** → the credential is issued and the
+    `activeAuthentication` attribute is set to `No`.
+
+The issued credential carries an `activeAuthentication` attribute
+(value `Yes`/`No`). With this policy, a value of `Yes` means AA was performed and
+succeeded; `No` only ever means the chip does not support AA.
+
 ### API Documentation
 
 The backend serves interactive API documentation using ReDoc at `/api/docs`. The OpenAPI specification is generated from Go code annotations using [swaggo/swag](https://github.com/swaggo/swag).

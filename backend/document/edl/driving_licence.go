@@ -136,13 +136,20 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 }
 
 func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err error) {
-	if data.Nonce == "" || data.ActiveAuthSignature == "" {
-		return false, nil
-	}
-
+	// No DG13 means there is no AA public key on the chip, so Active
+	// Authentication is genuinely unsupported for this document: issue without it.
 	dg13Hex, exists := data.DataGroups["DG13"]
 	if !exists {
 		return false, nil
+	}
+
+	// The chip carries a DG13 (AA key material), so Active Authentication is
+	// mandatory. A client that omits the nonce/signature cannot prove chip
+	// liveness, so reject issuance instead of silently issuing a credential a
+	// cloned chip could obtain. A DG13 that is present but unparseable is
+	// likewise rejected below (ExtractDG13PublicKeyInfo returns an error).
+	if data.Nonce == "" || data.ActiveAuthSignature == "" {
+		return false, mrtdDoc.ErrActiveAuthRequired
 	}
 
 	dg13Bytes := utils.HexToBytes(dg13Hex)
