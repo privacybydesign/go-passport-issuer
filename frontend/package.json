@@ -9,14 +9,14 @@
   "dependencies": {
     "@privacybydesign/yivi-css": "^1.0.1",
     "@privacybydesign/yivi-frontend": "^1.0.4",
-    "i18next": "^26.3.1",
+    "i18next": "^26.3.3",
     "i18next-browser-languagedetector": "^8.1.0",
     "js-cookie": "^3.0.8",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-i18next": "^17.0.8",
     "react-international-phone": "^4.5.0",
-    "react-router-dom": "^7.17.0",
+    "react-router-dom": "^7.18.0",
     "react-turnstile": "^1.1.4"
   },
   "devDependencies": {
@@ -25,10 +25,10 @@
     "@types/js-cookie": "^3.0.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.0",
-    "@vitejs/plugin-react": "^6.0.2",
+    "@vitejs/plugin-react": "^6.0.3",
     "jsdom": "^29.1.1",
     "typescript": "^6.0.3",
-    "vite": "^8.0.16",
-    "vitest": "^4.1.8"
+    "vite": "^8.1.0",
+    "vitest": "^4.1.9"
   }
 }
