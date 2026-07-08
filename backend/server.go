@@ -236,12 +236,14 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 		IsExpired:        isExpired,
 	}
 
+	// Invalidate the one-time session before writing the response so the token
+	// cannot be replayed even if the write below fails.
+	removeSessionToken(state.tokenStorage, request.SessionId)
+
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
-
-	removeSessionToken(w, state.tokenStorage, request.SessionId)
 
 }
 
@@ -290,12 +292,14 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 		IrmaServerURL: state.irmaServerURL,
 	}
 
+	// Invalidate the one-time session before writing the response so the token
+	// cannot be replayed even if the write below fails.
+	removeSessionToken(state.tokenStorage, request.SessionId)
+
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
-
-	removeSessionToken(w, state.tokenStorage, request.SessionId)
 
 }
 
@@ -343,12 +347,14 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 		IsExpired:        isExpired,
 	}
 
+	// Invalidate the one-time session before writing the response so the token
+	// cannot be replayed even if the write below fails.
+	removeSessionToken(state.tokenStorage, request.SessionId)
+
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
-
-	removeSessionToken(w, state.tokenStorage, request.SessionId)
 
 }
 
@@ -398,12 +404,14 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 		IrmaServerURL: state.irmaServerURL,
 	}
 
+	// Invalidate the one-time session before writing the response so the token
+	// cannot be replayed even if the write below fails.
+	removeSessionToken(state.tokenStorage, request.SessionId)
+
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
-
-	removeSessionToken(w, state.tokenStorage, request.SessionId)
 }
 
 // handleIssuePassport verifies and issues passport credential
@@ -452,12 +460,14 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		IrmaServerURL: state.irmaServerURL,
 	}
 
+	// Invalidate the one-time session before writing the response so the token
+	// cannot be replayed even if the write below fails.
+	removeSessionToken(state.tokenStorage, request.SessionId)
+
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
 	}
-
-	removeSessionToken(w, state.tokenStorage, request.SessionId)
 }
 
 func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.ValidationRequest, error) {
@@ -529,10 +539,14 @@ func validateSession(storage TokenStorage, sessionId, nonce string) error {
 	return nil
 }
 
-// removeSessionToken removes token and logs error if failed
-func removeSessionToken(w http.ResponseWriter, storage TokenStorage, sessionId string) {
+// removeSessionToken invalidates the one-time session token, logging an error if
+// removal fails. It is invoked before the response is written so that a validated
+// session is always consumed even if the subsequent write fails. Removal is
+// best-effort: a failure must not alter the response, so it is only logged (never
+// written back to the client).
+func removeSessionToken(storage TokenStorage, sessionId string) {
 	if err := storage.RemoveToken(sessionId); err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_TOKEN_REMOVAL, err)
+		slog.Error(ERR_TOKEN_REMOVAL, "error", err, "session_id", sessionId)
 	}
 }
 
