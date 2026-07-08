@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -42,6 +43,54 @@ func TestIssueDocumentSuccessRemovesSessionID(t *testing.T) {
 		})
 	}
 }
+
+// failingRemoveStorage delegates to an in-memory store for everything except
+// RemoveToken, which always fails. It simulates the session-token cleanup failing
+// while the handler is producing a success response.
+type failingRemoveStorage struct {
+	*InMemoryTokenStorage
+}
+
+func (s failingRemoveStorage) RemoveToken(sessionId string) error {
+	return fmt.Errorf("forced removal failure for %s", sessionId)
+}
+
+// TestTokenRemovalFailureKeepsResponseValid ensures that the session-token cleanup
+// (now performed before the response is written, see issue #131) is best-effort: a
+// RemoveToken failure is only logged and must not corrupt the response, which must
+// remain a single valid 200 JSON body.
+func TestTokenRemovalFailureKeepsResponseValid(t *testing.T) {
+	testCases := []struct {
+		name     string
+		endpoint string
+	}{
+		{"Passport", PASSPORT_ISSUE_ENDPOINT},
+		{"DrivingLicence", EDL_ISSUE_ENDPOINT},
+		{"VerifyPassport", "/api/verify-passport"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			storage := failingRemoveStorage{NewInMemoryTokenStorage()}
+			startTestServer(t, storage)
+
+			session, nonce := startValidation(t)
+			req := newReq(session, nonce)
+
+			url := fmt.Sprintf(TEST_HOST, tc.endpoint)
+			resp, body, _ := postJSON[map[string]any](t, url, req)
+
+			// Cleanup failure must not change the status code.
+			mustStatus(t, resp, http.StatusOK, body)
+
+			// Body must remain a single, valid JSON object — no appended error bytes.
+			require.Truef(t, json.Valid(body), "response body is not valid JSON: %s", body)
+			var decoded map[string]any
+			require.NoErrorf(t, json.Unmarshal(body, &decoded), "body: %s", body)
+		})
+	}
+}
+
 func TestIssueDocumentFailBadNonce(t *testing.T) {
 	testCases := []struct {
 		name     string
