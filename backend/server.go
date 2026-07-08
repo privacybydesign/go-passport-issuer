@@ -344,18 +344,8 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Optional face matching before issuance
-	if request.SelfieImage != "" && issuanceRequest.Photo != "" {
-		slog.Info("Performing face verification before driving license issuance")
-		faceMatch, err := performFaceMatch(state, issuanceRequest.Photo, request.SelfieImage)
-		if err != nil {
-			slog.Warn("Face matching failed during driving license issuance", "error", err)
-		} else if faceMatch != nil && !faceMatch.Matched {
-			slog.Warn("Face verification failed - similarity below threshold", "similarity", faceMatch.Similarity)
-			respondWithErr(w, http.StatusBadRequest, "face verification failed", "face does not match document photo", fmt.Errorf("similarity: %f", faceMatch.Similarity))
-			return
-		} else if faceMatch != nil {
-			slog.Debug("Face verification passed", "similarity", faceMatch.Similarity)
-		}
+	if !verifyFaceBeforeIssuance(state, w, issuanceRequest.Photo, request.SelfieImage, "driving-licence") {
+		return
 	}
 
 	slog.Debug("Creating driving license JWT", "session_id", request.SessionId)
@@ -365,17 +355,7 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	response := IssuanceResponse{
-		Jwt:           jwt,
-		IrmaServerURL: state.irmaServerURL,
-	}
-
-	// Invalidate the one-time session before writing the response so the token
-	// cannot be replayed even if the write below fails.
-	removeSessionToken(state.tokenStorage, request.SessionId)
-
-	if err := writeJSON(w, http.StatusOK, response); err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
+	if !writeIssuanceResponse(state, w, jwt, request.SessionId) {
 		return
 	}
 
@@ -492,18 +472,8 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 	}
 
 	// Optional face matching before issuance
-	if request.SelfieImage != "" && issuanceRequest.Photo != "" {
-		slog.Info("Performing face verification before ID card issuance")
-		faceMatch, err := performFaceMatch(state, issuanceRequest.Photo, request.SelfieImage)
-		if err != nil {
-			slog.Warn("Face matching failed during ID card issuance", "error", err)
-		} else if faceMatch != nil && !faceMatch.Matched {
-			slog.Warn("Face verification failed - similarity below threshold", "similarity", faceMatch.Similarity)
-			respondWithErr(w, http.StatusBadRequest, "face verification failed", "face does not match document photo", fmt.Errorf("similarity: %f", faceMatch.Similarity))
-			return
-		} else if faceMatch != nil {
-			slog.Debug("Face verification passed", "similarity", faceMatch.Similarity)
-		}
+	if !verifyFaceBeforeIssuance(state, w, issuanceRequest.Photo, request.SelfieImage, "id-card") {
+		return
 	}
 
 	slog.Debug("Creating ID card JWT", "session_id", request.SessionId)
@@ -513,17 +483,7 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	response := IssuanceResponse{
-		Jwt:           jwt,
-		IrmaServerURL: state.irmaServerURL,
-	}
-
-	// Invalidate the one-time session before writing the response so the token
-	// cannot be replayed even if the write below fails.
-	removeSessionToken(state.tokenStorage, request.SessionId)
-
-	if err := writeJSON(w, http.StatusOK, response); err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
+	if !writeIssuanceResponse(state, w, jwt, request.SessionId) {
 		return
 	}
 
@@ -567,18 +527,8 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	}
 
 	// Optional face matching before issuance
-	if request.SelfieImage != "" && issuanceRequest.Photo != "" {
-		slog.Info("Performing face verification before passport issuance")
-		faceMatch, err := performFaceMatch(state, issuanceRequest.Photo, request.SelfieImage)
-		if err != nil {
-			slog.Warn("Face matching failed during passport issuance", "error", err)
-		} else if faceMatch != nil && !faceMatch.Matched {
-			slog.Warn("Face verification failed - similarity below threshold", "similarity", faceMatch.Similarity)
-			respondWithErr(w, http.StatusBadRequest, "face verification failed", "face does not match document photo", fmt.Errorf("similarity: %f", faceMatch.Similarity))
-			return
-		} else if faceMatch != nil {
-			slog.Debug("Face verification passed", "similarity", faceMatch.Similarity)
-		}
+	if !verifyFaceBeforeIssuance(state, w, issuanceRequest.Photo, request.SelfieImage, "passport") {
+		return
 	}
 
 	slog.Debug("Creating passport JWT", "session_id", request.SessionId)
@@ -588,17 +538,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	response := IssuanceResponse{
-		Jwt:           jwt,
-		IrmaServerURL: state.irmaServerURL,
-	}
-
-	// Invalidate the one-time session before writing the response so the token
-	// cannot be replayed even if the write below fails.
-	removeSessionToken(state.tokenStorage, request.SessionId)
-
-	if err := writeJSON(w, http.StatusOK, response); err != nil {
-		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
+	if !writeIssuanceResponse(state, w, jwt, request.SessionId) {
 		return
 	}
 
@@ -926,5 +866,55 @@ func performFaceMatch(state *ServerState, documentPhotoBase64, selfieBase64 stri
 		Matched:    response.Matched,
 		Similarity: response.Similarity,
 	}, nil
+}
+
+// verifyFaceBeforeIssuance performs optional face matching before credential
+// issuance. It returns true when issuance may proceed, and false (after writing
+// an error response) only when a selfie was provided but did not match the
+// document photo. Face matching is skipped when no selfie or document photo is
+// available, and matching errors are logged but do not block issuance.
+func verifyFaceBeforeIssuance(state *ServerState, w http.ResponseWriter, documentPhoto, selfieImage, documentType string) bool {
+	if selfieImage == "" || documentPhoto == "" {
+		return true
+	}
+
+	slog.Info("Performing face verification before issuance", "document_type", documentType)
+	faceMatch, err := performFaceMatch(state, documentPhoto, selfieImage)
+	if err != nil {
+		slog.Warn("Face matching failed during issuance", "document_type", documentType, "error", err)
+		return true
+	}
+
+	if faceMatch != nil && !faceMatch.Matched {
+		slog.Warn("Face verification failed - similarity below threshold", "similarity", faceMatch.Similarity)
+		respondWithErr(w, http.StatusBadRequest, "face verification failed", "face does not match document photo", fmt.Errorf("similarity: %f", faceMatch.Similarity))
+		return false
+	}
+
+	if faceMatch != nil {
+		slog.Debug("Face verification passed", "similarity", faceMatch.Similarity)
+	}
+	return true
+}
+
+// writeIssuanceResponse invalidates the one-time session token and writes the
+// issuance response. The token is removed before the write so a validated
+// session is always consumed even if the write fails. It returns false (after
+// writing an error response) when marshalling the response fails.
+func writeIssuanceResponse(state *ServerState, w http.ResponseWriter, jwt, sessionId string) bool {
+	response := IssuanceResponse{
+		Jwt:           jwt,
+		IrmaServerURL: state.irmaServerURL,
+	}
+
+	// Invalidate the one-time session before writing the response so the token
+	// cannot be replayed even if the write below fails.
+	removeSessionToken(state.tokenStorage, sessionId)
+
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
+		return false
+	}
+	return true
 }
 

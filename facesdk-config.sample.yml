@@ -32,8 +32,9 @@ service:
         console: true
 
   database:
-    # PostgreSQL connection string for liveness metadata storage
-    connectionString: "postgresql://regula:Regulapasswd#1@db-postgres:5432/regula_db"
+    # PostgreSQL connection string for liveness metadata storage.
+    # Replace <DB_PASSWORD> with the password configured for your Postgres instance.
+    connectionString: "postgresql://regula:<DB_PASSWORD>@db-postgres:5432/regula_db"
 
   storage:
     type: "fs"
