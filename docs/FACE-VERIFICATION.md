@@ -2,7 +2,7 @@
 
 ## Components
 
-This implementation uses [Regula Face SDK](https://docs.regulaforensics.com/develop/face-sdk/) for face matching and liveness detection.
+This implementation uses [Regula Face SDK](https://docs.regulaforensics.com/develop/face-sdk/) for face matching and liveness detection. The live face is captured by the client during a Regula liveness session and referenced by a `liveness_transaction_id`; the backend confirms the liveness verdict, matches it against the document chip portrait, then deletes the transaction. See [face-verification-design.md](face-verification-design.md) for the full flow and sequence diagram.
 
 ### Required Services
 
@@ -37,6 +37,13 @@ Face API is configured in `local-secrets/facesdk-config.yml`:
 - Port: `5432`
 - Database: `regula_db`
 - User: `regula` / `Regulapasswd#1`
+
+## Backend Configuration
+
+Enable face verification by setting these keys in the issuer `config.json`:
+
+- `regula_face_api_url` — Regula Face API base URL (e.g. `http://regula-face-api:41101`). When omitted, face verification is disabled.
+- `regula_face_match_threshold` — similarity threshold (0-1) above which the live face is considered a match. Defaults to `0.75`.
 
 ## Implementation
 

@@ -143,23 +143,27 @@ docker-compose up --build
 
 ## Face Verification with Liveness Detection
 
-The Go Passport Issuer integrates with Regula Forensics Face SDK to provide optional face verification during document verification and issuance. The system automatically compares the photo from the document chip (DG2 for passports/ID cards, DG6 for driver's licenses) with a user-provided selfie.
+The Go Passport Issuer integrates with Regula Forensics Face SDK to provide face verification with liveness detection during document verification and issuance. It compares the portrait read from the document chip (DG2 for passports/ID cards, DG6 for driving licences) with the live face captured during a Regula liveness session, referenced by its **liveness transaction ID**.
+
+See [docs/face-verification-design.md](docs/face-verification-design.md) for the full design and sequence diagram.
 
 ### Features
 
-- **Integrated Face Matching**: Automatically compare document photo with selfie during verification/issuance
-- **Optional Verification**: Face matching is only performed when a selfie is provided
-- **Liveness Support**: Use Regula's liveness detection in your frontend before sending the selfie
-- **Threshold-Based Matching**: Configurable similarity threshold (default 0.75) to determine if faces match
+- **Liveness-Bound Matching**: The live face is supplied as a Regula `liveness_transaction_id`, not a raw selfie, so the match is bound to a face Regula validated as live.
+- **Server-Side Liveness Confirmation**: The backend confirms the liveness verdict (`GET /api/v2/liveness`) before trusting the transaction.
+- **Retention Cleanup**: The liveness transaction (portrait, video, metadata) is deleted (`DELETE /api/v2/liveness`) after the match.
+- **Original Chip Image**: Matching uses the unaltered DG2/DG6 chip image, not the display-optimised PNG.
+- **Configurable Threshold**: Similarity threshold (default 0.75) via `regula_face_match_threshold`.
+- **Feature Flag + Fail-Closed**: Face verification is enabled only when `regula_face_api_url` is set. When enabled, issuance is fail-closed — it is rejected unless a confirmed liveness transaction matches the document portrait.
 
 ### How It Works
 
-1. User scans document (passport, ID card, or driver's license) via NFC
-2. User optionally provides a selfie (after liveness check in frontend)
-3. Backend extracts photo from document chip
-4. Backend compares document photo with selfie using Regula Face SDK
-5. Result includes face match score in verification response
-6. For issuance endpoints, face verification can block credential issuance if faces don't match
+1. User scans the document (passport, ID card, or driving licence) via NFC.
+2. The client (Yivi app) runs a Regula liveness session directly against the Face API and obtains a `liveness_transaction_id`.
+3. The client sends the document data groups and the `liveness_transaction_id` to the issuer.
+4. Backend confirms the liveness verdict, then compares the chip portrait against the live face via Regula `POST /api/match`.
+5. Backend deletes the liveness transaction.
+6. `verify-*` endpoints return the face match result (non-blocking). `issue-*` endpoints block issuance (fail-closed) when face verification is enabled and the match does not pass.
 
 ### Setup
 
@@ -186,12 +190,13 @@ regula-face-api:
 
 #### 3. Enable in Configuration
 
-Add the `regula_face_api_url` to your `config.json`:
+Add the `regula_face_api_url` (and optionally `regula_face_match_threshold`) to your `config.json`:
 
 ```json
 {
   ...
-  "regula_face_api_url": "http://regula-face-api:41101"
+  "regula_face_api_url": "http://regula-face-api:41101",
+  "regula_face_match_threshold": 0.75
 }
 ```
 
@@ -203,11 +208,13 @@ For local development without Docker, use:
 }
 ```
 
+When `regula_face_api_url` is omitted, face verification is disabled and issuance proceeds without it.
+
 ### Usage with Existing Endpoints
 
-Face verification is integrated into existing verification and issuance endpoints. Simply add the `selfie_image` field to your requests:
+Face verification is integrated into the existing verification and issuance endpoints. Add the `liveness_transaction_id` field (obtained from a completed Regula liveness session) to your requests:
 
-#### Passport/ID Card/Driver's License Verification
+#### Passport/ID Card/Driving Licence Verification
 ```bash
 POST /api/verify-passport  # or /api/verify-driving-licence
 Content-Type: application/json
@@ -217,7 +224,7 @@ Content-Type: application/json
   "nonce": "nonce-value",
   "data_groups": { ... },
   "ef_sod": "...",
-  "selfie_image": "base64-encoded-selfie"  // Optional: include for face verification
+  "liveness_transaction_id": "a1b2c3d4-..."  // Optional: include for face verification
 }
 ```
 
@@ -234,7 +241,7 @@ Response with face verification:
 }
 ```
 
-#### Passport/ID Card/Driver's License Issuance
+#### Passport/ID Card/Driving Licence Issuance
 ```bash
 POST /api/issue-passport  # or /api/issue-id-card, /api/issue-driving-licence
 Content-Type: application/json
@@ -244,11 +251,11 @@ Content-Type: application/json
   "nonce": "nonce-value",
   "data_groups": { ... },
   "ef_sod": "...",
-  "selfie_image": "base64-encoded-selfie"  // Optional: if provided and doesn't match, issuance fails
+  "liveness_transaction_id": "a1b2c3d4-..."  // Required when face verification is enabled
 }
 ```
 
-**Note**: For issuance endpoints, if `selfie_image` is provided and the face doesn't match (similarity < 0.75), the request will be rejected with status 400.
+**Note**: When face verification is enabled (`regula_face_api_url` set), issuance is fail-closed: the request is rejected with status 400 unless a `liveness_transaction_id` is provided, its liveness is confirmed, and the live face matches the document portrait (similarity ≥ threshold). When face verification is disabled, issuance proceeds without it.
 
 ### Docker Deployment
 
@@ -285,9 +292,9 @@ brew list imagemagick@6
 pkg-config --cflags --libs MagickWand
 ```
 
-**Issue**: Face verification endpoints return "face verification not available"
+**Issue**: Issuance returns "face verification failed" or "face verification required"
 
-**Solution**: Ensure the `regula_face_api_url` is configured in your `config.json` and the Regula Face API service is running. Check the service health:
+**Solution**: When face verification is enabled, issuance requires a confirmed `liveness_transaction_id` that matches the document portrait. Ensure the client completes a Regula liveness session and passes its transaction ID, that `regula_face_api_url` is configured in your `config.json`, and that the Regula Face API service is running. Check the service health:
 ```bash
 curl http://localhost:41101/api/healthz
 ```

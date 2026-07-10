@@ -1,6 +1,7 @@
 package images
 
 import (
+	"encoding/base64"
 	"fmt"
 	"image/png"
 	"log/slog"
@@ -30,6 +31,17 @@ func (ic *ImageContainer) ImageType() (ImageType, bool) {
 		return ImageJPEG, true
 	}
 	return ImageJPEG2000, true
+}
+
+// RawBase64 returns the original image bytes (JPEG/JPEG2000) as a base64-encoded
+// string, without any re-encoding. This is used for face matching against Regula,
+// which expects the unaltered biometric image rather than the display-optimised
+// PNG produced by ConvertToPNG.
+func (ic *ImageContainer) RawBase64() (string, error) {
+	if len(ic.ImageData) == 0 {
+		return "", fmt.Errorf("no image data provided")
+	}
+	return base64.StdEncoding.EncodeToString(ic.ImageData), nil
 }
 
 // ConvertToPNG converts the image data to PNG format and returns it as base64-encoded strings

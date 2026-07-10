@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"go-passport-issuer/document/edl"
+	"go-passport-issuer/images"
 	"go-passport-issuer/models"
 
 	"github.com/gmrtd/gmrtd/cms"
@@ -210,11 +211,12 @@ type VerificationResponse struct {
 	FaceMatch *FaceMatchResult `json:"face_match,omitempty"`
 }
 
-// FaceMatchResult contains the result of comparing the document photo with a selfie
+// FaceMatchResult contains the result of comparing the document chip portrait
+// with the live face captured during a Regula liveness session.
 type FaceMatchResult struct {
-	// True if the document photo and selfie match above the similarity threshold
+	// True if the document portrait and live face match above the similarity threshold
 	Matched bool `json:"matched" example:"true"`
-	// Similarity score between the document photo and selfie
+	// Similarity score between the document portrait and live face
 	Similarity float64 `json:"similarity" example:"0.92"`
 }
 
@@ -271,21 +273,21 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 	isExpired := doc.Dg1.DateOfExpiry.Before(time.Now())
 	slog.Debug("Checking expiry", "is_expired", isExpired, "expiry_date", doc.Dg1.DateOfExpiry)
 
-	// Optional face matching
+	// Optional face matching against the live face from the liveness session.
 	var faceMatch *FaceMatchResult
-	if request.SelfieImage != "" && doc.Dg6 != nil {
+	if request.LivenessTransactionId != "" && doc.Dg6 != nil {
 		slog.Info("Performing face verification for driving license")
-		// Extract photo from DG6
-		pngs, err := doc.Dg6.ConvertToPNG()
-		if err == nil && len(pngs) > 0 {
-			faceMatch, err = performFaceMatch(state, pngs[0], request.SelfieImage)
+		// Use the original DG6 chip image (not the display PNG) for matching.
+		docImage, imgErr := doc.Dg6.RawBase64()
+		if imgErr != nil {
+			slog.Warn("Failed to extract DG6 image for face matching", "error", imgErr)
+		} else {
+			faceMatch, err = performFaceMatch(state, docImage, request.LivenessTransactionId)
 			if err != nil {
 				slog.Warn("Face matching failed", "error", err)
 			} else if faceMatch != nil {
 				slog.Debug("Face match completed", "matched", faceMatch.Matched, "similarity", faceMatch.Similarity)
 			}
-		} else if err != nil {
-			slog.Warn("Failed to convert DG6 to PNG", "error", err)
 		}
 	}
 
@@ -343,8 +345,17 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Optional face matching before issuance
-	if !verifyFaceBeforeIssuance(state, w, issuanceRequest.Photo, request.SelfieImage, "driving-licence") {
+	// Face verification before issuance (fail-closed when Regula is configured).
+	// Uses the original DG6 chip image (not the display PNG) for matching.
+	var edlImage string
+	if doc.Dg6 != nil {
+		if img, imgErr := doc.Dg6.RawBase64(); imgErr != nil {
+			slog.Warn("Failed to extract DG6 image for face matching", "error", imgErr)
+		} else {
+			edlImage = img
+		}
+	}
+	if !verifyFaceBeforeIssuance(state, w, edlImage, request.LivenessTransactionId, "driving-licence") {
 		return
 	}
 
@@ -402,16 +413,22 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 	isExpired := passportData.DateOfExpiry.Before(time.Now())
 	slog.Debug("Checking passport expiry", "is_expired", isExpired, "expiry_date", passportData.DateOfExpiry)
 
-	// Optional face matching
+	// Optional face matching against the live face from the liveness session.
 	var faceMatch *FaceMatchResult
-	if request.SelfieImage != "" && passportData.Photo != "" {
+	if request.LivenessTransactionId != "" {
 		slog.Info("Performing face verification")
-		faceMatch, err = performFaceMatch(state, passportData.Photo, request.SelfieImage)
-		if err != nil {
-			slog.Warn("Face matching failed", "error", err)
-			// Don't fail the entire verification if face matching fails
-		} else if faceMatch != nil {
-			slog.Debug("Face match completed", "matched", faceMatch.Matched, "similarity", faceMatch.Similarity)
+		// Use the original DG2 chip image (not the display PNG) for matching.
+		docImage, imgErr := images.RawDG2ImageBase64(doc.Mf.Lds1.Dg2)
+		if imgErr != nil {
+			slog.Warn("Failed to extract DG2 image for face matching", "error", imgErr)
+		} else {
+			faceMatch, err = performFaceMatch(state, docImage, request.LivenessTransactionId)
+			if err != nil {
+				slog.Warn("Face matching failed", "error", err)
+				// Don't fail the entire verification if face matching fails
+			} else if faceMatch != nil {
+				slog.Debug("Face match completed", "matched", faceMatch.Matched, "similarity", faceMatch.Similarity)
+			}
 		}
 	}
 
@@ -471,8 +488,13 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Optional face matching before issuance
-	if !verifyFaceBeforeIssuance(state, w, issuanceRequest.Photo, request.SelfieImage, "id-card") {
+	// Face verification before issuance (fail-closed when Regula is configured).
+	// Uses the original DG2 chip image (not the display PNG) for matching.
+	idCardImage, imgErr := images.RawDG2ImageBase64(doc.Mf.Lds1.Dg2)
+	if imgErr != nil {
+		slog.Warn("Failed to extract DG2 image for face matching", "error", imgErr)
+	}
+	if !verifyFaceBeforeIssuance(state, w, idCardImage, request.LivenessTransactionId, "id-card") {
 		return
 	}
 
@@ -526,8 +548,13 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Optional face matching before issuance
-	if !verifyFaceBeforeIssuance(state, w, issuanceRequest.Photo, request.SelfieImage, "passport") {
+	// Face verification before issuance (fail-closed when Regula is configured).
+	// Uses the original DG2 chip image (not the display PNG) for matching.
+	passportImage, imgErr := images.RawDG2ImageBase64(doc.Mf.Lds1.Dg2)
+	if imgErr != nil {
+		slog.Warn("Failed to extract DG2 image for face matching", "error", imgErr)
+	}
+	if !verifyFaceBeforeIssuance(state, w, passportImage, request.LivenessTransactionId, "passport") {
 		return
 	}
 
@@ -835,8 +862,12 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 
 // Face verification helpers
 
-// performFaceMatch extracts the document photo and compares it with the provided selfie
-func performFaceMatch(state *ServerState, documentPhotoBase64, selfieBase64 string) (*FaceMatchResult, error) {
+// performFaceMatch compares the document chip portrait with the live face
+// captured during a Regula liveness session. It confirms the liveness verdict
+// server-side before matching, and always deletes the liveness transaction
+// afterwards so biometric session data is not retained. It returns nil (with no
+// error) when no liveness transaction is provided, meaning matching is skipped.
+func performFaceMatch(state *ServerState, documentImageBase64, livenessTransactionID string) (*FaceMatchResult, error) {
 	slog.Debug("Starting face matching process")
 
 	if state.faceVerificationClient == nil {
@@ -844,18 +875,38 @@ func performFaceMatch(state *ServerState, documentPhotoBase64, selfieBase64 stri
 		return nil, fmt.Errorf("face verification client not configured")
 	}
 
-	if selfieBase64 == "" {
-		slog.Debug("No selfie provided, skipping face matching")
-		return nil, nil // No selfie provided, skip face matching
+	if livenessTransactionID == "" {
+		slog.Debug("No liveness transaction provided, skipping face matching")
+		return nil, nil // No liveness transaction, skip face matching
 	}
 
-	if documentPhotoBase64 == "" {
+	if documentImageBase64 == "" {
 		slog.Warn("Document photo not available for face matching")
 		return nil, fmt.Errorf("document photo not available")
 	}
 
+	// Regula stores the live portrait and session video against the transaction;
+	// remove it once we are done regardless of the outcome (data retention/GDPR).
+	defer func() {
+		if err := state.faceVerificationClient.DeleteLivenessTransaction(livenessTransactionID); err != nil {
+			slog.Warn("Failed to delete liveness transaction", "error", err)
+		}
+	}()
+
+	// Confirm the liveness verdict server-side before trusting the transaction.
+	slog.Debug("Confirming liveness status")
+	status, err := state.faceVerificationClient.GetLivenessStatus(livenessTransactionID)
+	if err != nil {
+		slog.Error("Liveness status check failed", "error", err)
+		return nil, fmt.Errorf("failed to retrieve liveness status: %w", err)
+	}
+	if !status.Confirmed {
+		slog.Warn("Liveness not confirmed", "code", status.Code)
+		return nil, fmt.Errorf("liveness not confirmed (code %d)", status.Code)
+	}
+
 	slog.Debug("Calling face verification client")
-	response, err := state.faceVerificationClient.MatchFaces(documentPhotoBase64, selfieBase64)
+	response, err := state.faceVerificationClient.MatchFaceWithLiveness(documentImageBase64, livenessTransactionID)
 	if err != nil {
 		slog.Error("Face matching call failed", "error", err)
 		return nil, fmt.Errorf("face matching failed: %w", err)
@@ -868,32 +919,44 @@ func performFaceMatch(state *ServerState, documentPhotoBase64, selfieBase64 stri
 	}, nil
 }
 
-// verifyFaceBeforeIssuance performs optional face matching before credential
-// issuance. It returns true when issuance may proceed, and false (after writing
-// an error response) only when a selfie was provided but did not match the
-// document photo. Face matching is skipped when no selfie or document photo is
-// available, and matching errors are logged but do not block issuance.
-func verifyFaceBeforeIssuance(state *ServerState, w http.ResponseWriter, documentPhoto, selfieImage, documentType string) bool {
-	if selfieImage == "" || documentPhoto == "" {
+// verifyFaceBeforeIssuance performs face matching before credential issuance.
+// Face verification is a feature flag: when Regula is not configured
+// (state.faceVerificationClient is nil) it is disabled and issuance proceeds.
+// When it is configured, verification is fail-closed — issuance is rejected
+// (after writing an error response) unless a confirmed liveness transaction is
+// provided and the live face matches the document portrait above the threshold.
+// It returns true when issuance may proceed.
+func verifyFaceBeforeIssuance(state *ServerState, w http.ResponseWriter, documentImage, livenessTransactionID, documentType string) bool {
+	if state.faceVerificationClient == nil {
+		slog.Debug("Face verification disabled, skipping", "document_type", documentType)
 		return true
 	}
 
-	slog.Info("Performing face verification before issuance", "document_type", documentType)
-	faceMatch, err := performFaceMatch(state, documentPhoto, selfieImage)
-	if err != nil {
-		slog.Warn("Face matching failed during issuance", "document_type", documentType, "error", err)
-		return true
-	}
-
-	if faceMatch != nil && !faceMatch.Matched {
-		slog.Warn("Face verification failed - similarity below threshold", "similarity", faceMatch.Similarity)
-		respondWithErr(w, http.StatusBadRequest, "face verification failed", "face does not match document photo", fmt.Errorf("similarity: %f", faceMatch.Similarity))
+	if livenessTransactionID == "" {
+		slog.Warn("Liveness transaction required for issuance", "document_type", documentType)
+		respondWithErr(w, http.StatusBadRequest, "face verification required", "no liveness transaction provided for issuance", nil, "document_type", documentType)
 		return false
 	}
 
-	if faceMatch != nil {
-		slog.Debug("Face verification passed", "similarity", faceMatch.Similarity)
+	slog.Info("Performing face verification before issuance", "document_type", documentType)
+	faceMatch, err := performFaceMatch(state, documentImage, livenessTransactionID)
+	if err != nil {
+		slog.Warn("Face verification failed during issuance", "document_type", documentType, "error", err)
+		respondWithErr(w, http.StatusBadRequest, "face verification failed", "face verification error during issuance", err, "document_type", documentType)
+		return false
 	}
+
+	if faceMatch == nil || !faceMatch.Matched {
+		similarity := 0.0
+		if faceMatch != nil {
+			similarity = faceMatch.Similarity
+		}
+		slog.Warn("Face verification failed - similarity below threshold", "similarity", similarity)
+		respondWithErr(w, http.StatusBadRequest, "face verification failed", "face does not match document photo", fmt.Errorf("similarity: %f", similarity))
+		return false
+	}
+
+	slog.Debug("Face verification passed", "similarity", faceMatch.Similarity)
 	return true
 }
 
@@ -917,4 +980,3 @@ func writeIssuanceResponse(state *ServerState, w http.ResponseWriter, jwt, sessi
 	}
 	return true
 }
-

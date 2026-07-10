@@ -64,6 +64,20 @@ func ConvertDG2ImagesToPNG(dg2 *document.DG2) ([]string, error) {
 	return pngImages, nil
 }
 
+// RawDG2ImageBase64 returns the first DG2 portrait as a base64-encoded string of
+// its original chip bytes (JPEG/JPEG2000), without any re-encoding. This is used
+// for face matching against Regula, which expects the unaltered biometric image
+// rather than the display-optimised PNG produced by ConvertDG2ImagesToPNG.
+func RawDG2ImageBase64(dg2 *document.DG2) (string, error) {
+	if dg2 == nil {
+		return "", fmt.Errorf("DG2 is nil")
+	}
+	if len(dg2.Images) == 0 || len(dg2.Images[0].Image) == 0 {
+		return "", fmt.Errorf("no image data found in DG2")
+	}
+	return base64.StdEncoding.EncodeToString(dg2.Images[0].Image), nil
+}
+
 // decodeImage attempts to decode an image from bytes, trying multiple formats
 func decodeImage(data []byte) (image.Image, error) {
 	// Try JPEG first (most common)

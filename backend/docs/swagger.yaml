@@ -1,5 +1,17 @@
 basePath: /api
 definitions:
+  main.FaceMatchResult:
+    properties:
+      matched:
+        description: True if the document portrait and live face match above the similarity
+          threshold
+        example: true
+        type: boolean
+      similarity:
+        description: Similarity score between the document portrait and live face
+        example: 0.92
+        type: number
+    type: object
   main.HealthResponse:
     properties:
       ok:
@@ -39,6 +51,10 @@ definitions:
         description: True if passive authentication (signature verification) succeeded
         example: true
         type: boolean
+      face_match:
+        allOf:
+        - $ref: '#/definitions/main.FaceMatchResult'
+        description: Optional face verification result
       is_expired:
         description: True if the document has expired
         example: false
@@ -58,6 +74,13 @@ definitions:
       ef_sod:
         description: Hex-encoded Security Object (EF.SOD) containing document signature
         example: 778201ab...
+        type: string
+      liveness_transaction_id:
+        description: |-
+          Identifier of a completed Regula liveness transaction. The live face
+          captured during that session is compared against the document chip
+          portrait for face verification (optional).
+        example: a1b2c3d4-5678-90ab-cdef-1234567890ab
         type: string
       nonce:
         description: Nonce obtained from /start-validation

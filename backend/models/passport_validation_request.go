@@ -12,6 +12,8 @@ type ValidationRequest struct {
 	EFSOD string `json:"ef_sod" example:"778201ab..."`
 	// Hex-encoded active authentication signature (optional)
 	ActiveAuthSignature string `json:"aa_signature,omitempty" example:"304502..."`
-	// Base64 encoded selfie for face verification (optional)
-	SelfieImage string `json:"selfie_image,omitempty"`
+	// Identifier of a completed Regula liveness transaction. The live face
+	// captured during that session is compared against the document chip
+	// portrait for face verification (optional).
+	LivenessTransactionId string `json:"liveness_transaction_id,omitempty" example:"a1b2c3d4-5678-90ab-cdef-1234567890ab"`
 }
