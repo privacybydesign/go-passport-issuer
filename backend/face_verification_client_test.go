@@ -109,7 +109,7 @@ func TestRegulaFaceClient_GetLivenessStatus(t *testing.T) {
 func TestRegulaFaceClient_GetLivenessStatus_NotConfirmed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]any{"code": 0, "status": 1})
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "status": 1})
 	}))
 	defer server.Close()
 
