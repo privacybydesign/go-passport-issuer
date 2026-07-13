@@ -14,7 +14,7 @@ func TestRegulaFaceClient_HealthCheck(t *testing.T) {
 			t.Errorf("Expected path /api/healthz, got %s", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}))
 	defer server.Close()
 
@@ -63,7 +63,7 @@ func TestRegulaFaceClient_MatchFaceWithLiveness_Success(t *testing.T) {
 			},
 		}
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -92,7 +92,7 @@ func TestRegulaFaceClient_GetLivenessStatus(t *testing.T) {
 			t.Errorf("Expected transactionId txn-123, got %s", got)
 		}
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]any{"code": 0, "status": 0})
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "status": 0})
 	}))
 	defer server.Close()
 

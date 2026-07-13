@@ -112,7 +112,7 @@ func (c *RegulaFaceClient) MatchFaceWithLiveness(documentImage, livenessTransact
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute match request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -159,7 +159,7 @@ func (c *RegulaFaceClient) GetLivenessStatus(livenessTransactionID string) (*Liv
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute liveness status request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -197,7 +197,7 @@ func (c *RegulaFaceClient) DeleteLivenessTransaction(livenessTransactionID strin
 	if err != nil {
 		return fmt.Errorf("failed to execute liveness delete request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Regula returns 204 No Content on success; tolerate 200 as well.
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
@@ -222,7 +222,7 @@ func (c *RegulaFaceClient) HealthCheck() error {
 	if err != nil {
 		return fmt.Errorf("failed to execute health check request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
