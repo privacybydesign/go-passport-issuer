@@ -880,18 +880,20 @@ func performFaceMatch(state *ServerState, documentImageBase64, livenessTransacti
 		return nil, nil // No liveness transaction, skip face matching
 	}
 
-	if documentImageBase64 == "" {
-		slog.Warn("Document photo not available for face matching")
-		return nil, fmt.Errorf("document photo not available")
-	}
-
 	// Regula stores the live portrait and session video against the transaction;
 	// remove it once we are done regardless of the outcome (data retention/GDPR).
+	// Registered before the checks below so the transaction is always cleaned up
+	// on every path that has a transaction ID, even when matching cannot proceed.
 	defer func() {
 		if err := state.faceVerificationClient.DeleteLivenessTransaction(livenessTransactionID); err != nil {
 			slog.Warn("Failed to delete liveness transaction", "error", err)
 		}
 	}()
+
+	if documentImageBase64 == "" {
+		slog.Warn("Document photo not available for face matching")
+		return nil, fmt.Errorf("document photo not available")
+	}
 
 	// Confirm the liveness verdict server-side before trusting the transaction.
 	slog.Debug("Confirming liveness status")

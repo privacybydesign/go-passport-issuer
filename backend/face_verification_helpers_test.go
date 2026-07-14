@@ -51,10 +51,14 @@ func TestPerformFaceMatch_NoLivenessTransactionSkips(t *testing.T) {
 }
 
 func TestPerformFaceMatch_MissingDocumentImage(t *testing.T) {
-	state := &ServerState{faceVerificationClient: &fakeFaceClient{}}
+	fake := &fakeFaceClient{}
+	state := &ServerState{faceVerificationClient: fake}
 	result, err := performFaceMatch(state, "", "txn-1")
 	require.Error(t, err)
 	require.Nil(t, result)
+	// The liveness transaction must still be deleted for retention/GDPR even
+	// when the document image is missing and matching cannot proceed.
+	require.True(t, fake.deleteCalled, "liveness transaction must be deleted when a transaction ID is supplied")
 }
 
 func TestPerformFaceMatch_LivenessStatusError(t *testing.T) {
