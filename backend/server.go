@@ -732,6 +732,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 		return err
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 	_, err = w.Write(payload)
 	if err != nil {
 		slog.Error("failed to write body to http response", "error", err)
