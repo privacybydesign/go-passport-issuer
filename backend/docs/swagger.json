@@ -292,6 +292,21 @@
         }
     },
     "definitions": {
+        "main.FaceMatchResult": {
+            "type": "object",
+            "properties": {
+                "matched": {
+                    "description": "True if the document portrait and live face match above the similarity threshold",
+                    "type": "boolean",
+                    "example": true
+                },
+                "similarity": {
+                    "description": "Similarity score between the document portrait and live face",
+                    "type": "number",
+                    "example": 0.92
+                }
+            }
+        },
         "main.HealthResponse": {
             "type": "object",
             "properties": {
@@ -345,6 +360,14 @@
                     "type": "boolean",
                     "example": true
                 },
+                "face_match": {
+                    "description": "Optional face verification result",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/main.FaceMatchResult"
+                        }
+                    ]
+                },
                 "is_expired": {
                     "description": "True if the document has expired",
                     "type": "boolean",
@@ -371,6 +394,11 @@
                     "description": "Hex-encoded Security Object (EF.SOD) containing document signature",
                     "type": "string",
                     "example": "778201ab..."
+                },
+                "liveness_transaction_id": {
+                    "description": "Identifier of a completed Regula liveness transaction. The live face\ncaptured during that session is compared against the document chip\nportrait for face verification (optional).",
+                    "type": "string",
+                    "example": "a1b2c3d4-5678-90ab-cdef-1234567890ab"
                 },
                 "nonce": {
                     "description": "Nonce obtained from /start-validation",

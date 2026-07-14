@@ -39,6 +39,10 @@ type Config struct {
 	RedisConfig             redis.RedisConfig         `json:"redis_config"`
 	RedisSentinelConfig     redis.RedisSentinelConfig `json:"redis_sentinel_config"`
 	LogLevel                string                    `json:"log_level"`
+	RegulaFaceApiUrl        string                    `json:"regula_face_api_url,omitempty"`
+	// Similarity threshold (0-1) above which the live face is considered a match
+	// for the document portrait. Defaults to DefaultFaceMatchThreshold when unset.
+	RegulaFaceMatchThreshold float64 `json:"regula_face_match_threshold,omitempty"`
 }
 
 type CredentialConfig struct {
@@ -139,6 +143,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	var faceVerificationClient FaceVerificationClient
+	if config.RegulaFaceApiUrl != "" {
+		slog.Info("Initializing Regula Face API client", "url", config.RegulaFaceApiUrl, "match_threshold", config.RegulaFaceMatchThreshold)
+		faceVerificationClient = NewRegulaFaceClient(config.RegulaFaceApiUrl, config.RegulaFaceMatchThreshold)
+		if err := faceVerificationClient.HealthCheck(); err != nil {
+			slog.Warn("Regula Face API health check failed, service may not be available", "error", err)
+		}
+	} else {
+		slog.Info("Regula Face API URL not configured, face verification will be disabled")
+	}
+
 	serverState := ServerState{
 		irmaServerURL:          config.IrmaServerUrl,
 		jwtCreators:            jwtCreators,
@@ -148,6 +163,7 @@ func main() {
 		documentValidator:      DocumentValidatorImpl{},
 		converter:              IssuanceRequestConverterImpl{},
 		drivingLicenceParser:   DrivingLicenceParserImpl{},
+		faceVerificationClient: faceVerificationClient,
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)
