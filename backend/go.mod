@@ -6,7 +6,7 @@ require (
 	github.com/gmrtd/gmrtd v0.46.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/gorilla/mux v1.8.1
-	github.com/privacybydesign/irmago v1.0.0
+	github.com/privacybydesign/irmago v1.1.0
 	github.com/redis/go-redis/v9 v9.21.0
 	github.com/swaggo/swag v1.16.6
 )
