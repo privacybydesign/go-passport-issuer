@@ -44,7 +44,7 @@ Reference: <https://dev.regulaforensics.com/FaceSDK-web-openapi/> (spec v7.2.0).
 |---|---|---|
 | `/api/v2/liveness` | GET | Retrieve a liveness transaction by `transactionId`: `status` (0 confirmed / 1 not), `portrait`, `video`, `age`. |
 | `/api/v2/liveness` | DELETE | Delete a liveness transaction by `tag` or `transactionId` (GDPR / retention cleanup). |
-| `/api/match` | POST | 1:1 face comparison. Body = `images[]` each `{index, type, data(base64)}`; **or** pass a `livenessTransactionId` in place of one image. Returns `results[].similarity` (%) and `score`. |
+| `/api/match` | POST | 1:1 face comparison. Body = `images[]` each `{index, type, data(base64)}`; **or** pass a `livenessTransactionId` in place of one image. Returns `results[].similarity` (0–1 scale) and `score`. |
 | `/api/detect` | POST | Face detection + image-quality assessment. |
 | `/api/healthz` | GET | Liveness/readiness probe (backend calls at startup). |
 
@@ -58,11 +58,9 @@ Reference: <https://dev.regulaforensics.com/FaceSDK-web-openapi/> (spec v7.2.0).
 | 4 | `DOCUMENT_WITH_LIVE` | — |
 | 5 | `EXTERNAL` | — |
 
-> ⚠️ **Type-tag mismatch in the current code.** `face_verification_client.go` sends the
-> chip portrait as `type: 1` (`DOCUMENT_PRINTED`) and the live face as `type: 2`
-> (`DOCUMENT_RFID`). Semantically these should be `type: 2` (chip) and `type: 3` (live).
-> The `type` field is optional and only influences internal scoring/quality heuristics,
-> so matching still works — but the labels are wrong and should be corrected.
+`face_verification_client.go` sends the chip portrait as `type: 2` (`DOCUMENT_RFID`,
+`regulaImageSourceDocumentRFID`) and the live face as `type: 3` (`LIVE`,
+`regulaImageSourceLive`), matching the semantics above.
 
 ---
 
@@ -148,7 +146,8 @@ Key behaviours worth noting:
   came back below threshold. **Decide the policy** for the missing-liveness / Regula-error
   case explicitly (fail-open vs fail-closed) — see §6.
 - **Threshold** `0.75` is hardcoded in `face_verification_client.go` (the comment marks
-  it as "can be made configurable").
+  it as "can be made configurable"). Regula returns `similarity` on a 0–1 scale, so the
+  `similarity >= 0.75` comparison is on the same scale (no percentage conversion needed).
 
 ---
 
@@ -174,7 +173,7 @@ flowchart LR
 
     DG2 --> NFC --> |data_groups + ef_sod| CONV --> |image A: chip portrait| MATCH
     CAM --> LIV --> |liveness_transaction_id| MATCH
-    MATCH --> |image A + livenessTransactionId| API --> |similarity %| MATCH
+    MATCH --> |image A + livenessTransactionId| API --> |similarity 0–1| MATCH
 ```
 
 - Chip portrait (image A) is always derived server-side from the authenticated chip
