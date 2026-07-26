@@ -174,11 +174,11 @@ func (f fakeJwtCreator) CreateEDLJwt(_ models.EDLData) (string, error) {
 
 type fakeValidator struct{}
 
-func (v fakeValidator) PassiveEDL(request models.ValidationRequest, pool *cms.CertPool) error {
-	return nil
+func (v fakeValidator) PassiveEDL(request models.ValidationRequest, pool *cms.CertPool) (*document.SOD, error) {
+	return nil, nil
 }
 
-func (v fakeValidator) ActiveEDL(request models.ValidationRequest) (bool, error) {
+func (v fakeValidator) ActiveEDL(request models.ValidationRequest, sod *document.SOD) (bool, error) {
 	return true, nil
 }
 

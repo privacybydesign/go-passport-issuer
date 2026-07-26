@@ -631,13 +631,13 @@ func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.
 	}
 
 	slog.Debug("Performing passive authentication for driving license", "session_id", request.SessionId)
-	err = state.documentValidator.PassiveEDL(request, state.drivingLicenceCertPool)
+	sod, err := state.documentValidator.PassiveEDL(request, state.drivingLicenceCertPool)
 	if err != nil {
 		return doc, request, false, fmt.Errorf("%s: %w", ERR_PASSIVE_FAILED, err)
 	}
 
 	slog.Debug("Passive authentication successful, performing active authentication", "session_id", request.SessionId)
-	result, err := state.documentValidator.ActiveEDL(request)
+	result, err := state.documentValidator.ActiveEDL(request, sod)
 	if err != nil {
 		return doc, request, false, fmt.Errorf("%s: %w", ERR_ACTIVE_FAILED, err)
 	}

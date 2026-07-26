@@ -176,16 +176,27 @@ func PassiveAuthenticationPassport(data models.ValidationRequest, certPool cms.C
 }
 
 func ActiveAuthentication(data models.ValidationRequest, doc document.Document) (bool, error) {
-	// No AA public key on the chip (no DG15) means Active Authentication is
-	// genuinely unsupported for this document: issue without it.
+	// Whether the chip supports Active Authentication is taken from the signed
+	// EF.SOD, which lists a hash for DG15 when an AA key is present. The SOD is
+	// the authenticated record of the chip's contents, so it is the authority
+	// here.
+	sodRequiresAA := doc.Mf.Lds1.Sod != nil && doc.Mf.Lds1.Sod.HasDgHash(15)
+
+	// The SOD says the chip carries an AA key but DG15 is absent, so chip
+	// liveness cannot be established. Reject issuance.
+	if sodRequiresAA && doc.Mf.Lds1.Dg15 == nil {
+		return false, mrtdDoc.ErrActiveAuthRequired
+	}
+
+	// No AA public key available (neither DG15 nor a DG15 hash in the signed
+	// SOD) means Active Authentication is genuinely unsupported for this
+	// document: issue without it.
 	if doc.Mf.Lds1.Dg15 == nil {
 		return false, nil
 	}
 
-	// The chip advertises an AA key, so Active Authentication is mandatory. A
-	// client that omits the nonce/signature cannot prove chip liveness, so
-	// reject issuance instead of silently issuing a credential a cloned chip
-	// could obtain.
+	// The chip advertises an AA key, so Active Authentication is mandatory and
+	// needs both a nonce and a signature to complete.
 	if data.Nonce == "" || data.ActiveAuthSignature == "" {
 		return false, mrtdDoc.ErrActiveAuthRequired
 	}

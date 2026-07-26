@@ -14,8 +14,8 @@ import (
 type DocumentValidator interface {
 	PassivePassport(models.ValidationRequest, *cms.CombinedCertPool) (document.Document, error)
 	ActivePassport(models.ValidationRequest, document.Document) (bool, error)
-	PassiveEDL(models.ValidationRequest, *cms.CertPool) error
-	ActiveEDL(models.ValidationRequest) (bool, error)
+	PassiveEDL(models.ValidationRequest, *cms.CertPool) (*document.SOD, error)
+	ActiveEDL(models.ValidationRequest, *document.SOD) (bool, error)
 }
 
 type DrivingLicenceParser interface {
@@ -45,11 +45,11 @@ func (DocumentValidatorImpl) ActivePassport(req models.ValidationRequest, doc do
 	return passport.ActiveAuthentication(req, doc)
 }
 
-func (DocumentValidatorImpl) PassiveEDL(req models.ValidationRequest, pool *cms.CertPool) error {
+func (DocumentValidatorImpl) PassiveEDL(req models.ValidationRequest, pool *cms.CertPool) (*document.SOD, error) {
 	return edl.PassiveAuthenticationEDL(req, pool)
 }
-func (DocumentValidatorImpl) ActiveEDL(req models.ValidationRequest) (bool, error) {
-	return edl.ActiveAuthenticationEDL(req)
+func (DocumentValidatorImpl) ActiveEDL(req models.ValidationRequest, sod *document.SOD) (bool, error) {
+	return edl.ActiveAuthenticationEDL(req, sod)
 }
 
 type IssuanceRequestConverterImpl struct{}
