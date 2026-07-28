@@ -232,6 +232,31 @@ For local development without Docker, use:
 
 When `regula_face_api_url` is omitted, face verification is disabled and issuance proceeds without it.
 
+#### 4. Enable the Liveness Capture Page (F-Droid builds)
+
+The Play Store and App Store builds of the Yivi app run the liveness session with Regula's **native** Face SDK. The F-Droid build ships no proprietary binaries, so it opens a **web** liveness page in a WebView instead — served by this service at [`/capture`](frontend/src/pages/FaceCapture.tsx). See privacybydesign/irmamobile#665.
+
+The page runs Regula's web face component against the Face API **directly**, exactly as the native SDK does; this service only hosts the page and tells it which Face API to use. That needs a *browser-reachable* Face API origin, which is generally not the `regula_face_api_url` above (that one is an internal address):
+
+```json
+{
+  ...
+  "regula_face_api_url": "http://regula-face-api:41101",
+  "regula_face_api_public_url": "https://faceapi.staging.yivi.app"
+}
+```
+
+`GET /api/face-capture-config` serves this value to the page, so one static frontend build works across environments. When `regula_face_api_public_url` is omitted the endpoint returns 404 and the capture page reports an error instead of falling back to Regula's cloud — set it only in environments where the F-Droid build should work.
+
+> **Both URLs must address the same Face API instance.** The page opens the liveness transaction through `regula_face_api_public_url`; the backend then resolves and matches that same transaction ID through `regula_face_api_url`. Point them at different instances and every issuance fails with a transaction the backend cannot find.
+
+Two requirements on the Face API deployment:
+
+- **CORS** must allow this service's web origin, since the page and the Face API are different origins. The `cors` block in `facesdk-config.sample.yml` already does (`origins: "*"`); verify it in the actual deployment.
+- **HTTPS**, because the page uses `getUserMedia`, which browsers only grant in a secure context.
+
+Note that the component fetches its WASM liveness engine from `https://wasm.regulaforensics.com` at runtime. That is consistent with the F-Droid trade-off — the proprietary code runs remotely rather than shipping in the APK — but it does mean the page needs egress to that host. It can be self-hosted via the component's `workerPath` setting if that is not acceptable.
+
 ### Usage with Existing Endpoints
 
 Face verification is integrated into the existing verification and issuance endpoints. Add the `liveness_transaction_id` field (obtained from a completed Regula liveness session) to your requests:

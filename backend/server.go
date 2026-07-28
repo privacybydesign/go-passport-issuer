@@ -58,6 +58,10 @@ type ServerState struct {
 	drivingLicenceParser   DrivingLicenceParser
 	converter              DocumentDataConverter
 	faceVerificationClient FaceVerificationClient
+	// regulaFaceApiPublicUrl is the browser-reachable origin of the Regula Face
+	// API, handed to the /capture page by handleFaceCaptureConfig. Empty when the
+	// capture page is not deployed for this environment.
+	regulaFaceApiPublicUrl string
 }
 
 type SpaHandler struct {
@@ -162,6 +166,10 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/api/issue-driving-licence", func(w http.ResponseWriter, r *http.Request) {
 		handleIssueEDL(state, w, r)
 	})
+	router.HandleFunc("/api/face-capture-config", func(w http.ResponseWriter, r *http.Request) {
+		handleFaceCaptureConfig(state, w, r)
+	}).Methods(http.MethodGet)
+
 	router.HandleFunc("/.well-known/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/apple-app-site-association", HandleAssaRequest).Methods(http.MethodGet)
 	router.HandleFunc("/.well-known/assetlinks.json", HandleAssetLinksRequest).Methods(http.MethodGet)
@@ -224,6 +232,39 @@ type FaceMatchResult struct {
 type HealthResponse struct {
 	// True if the service is healthy
 	Ok bool `json:"ok" example:"true"`
+}
+
+// FaceCaptureConfigResponse tells the /capture page which Regula Face API to run
+// the liveness session against.
+type FaceCaptureConfigResponse struct {
+	// Browser-reachable origin of the Regula Face API
+	FaceApiUrl string `json:"face_api_url" example:"https://faceapi.staging.yivi.app"`
+}
+
+// handleFaceCaptureConfig serves the configuration the liveness capture page
+// needs
+// @Summary Face capture page configuration
+// @Description Returns the browser-reachable Regula Face API origin used by the /capture liveness page. The page runs the liveness session directly against that service, the same way the native Regula SDK does in the Play Store and App Store builds; only the resulting transaction ID is passed back to the app.
+// @Tags Face Verification
+// @Produce json
+// @Success 200 {object} FaceCaptureConfigResponse
+// @Failure 404 {string} string "face capture not configured"
+// @Router /face-capture-config [get]
+func handleFaceCaptureConfig(state *ServerState, w http.ResponseWriter, r *http.Request) {
+	// The page cannot derive this itself: it is served from the issuer origin
+	// while the Face API lives on its own host, and the backend's own
+	// regula_face_api_url is an internal address the browser cannot resolve.
+	// Serving it at runtime keeps one static frontend build valid across
+	// environments.
+	if state.regulaFaceApiPublicUrl == "" {
+		http.Error(w, "face capture not configured", http.StatusNotFound)
+		return
+	}
+
+	response := FaceCaptureConfigResponse{FaceApiUrl: state.regulaFaceApiPublicUrl}
+	if err := writeJSON(w, http.StatusOK, response); err != nil {
+		slog.Error("failed to write face capture config response", "error", err)
+	}
 }
 
 // handleHealth returns the health status of the service

@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@privacybydesign/yivi-css": "^1.0.1",
+    "@regulaforensics/vp-frontend-face-components": "^8.2.2126",
     "@privacybydesign/yivi-frontend": "^1.0.4",
     "i18next": "^26.3.3",
     "i18next-browser-languagedetector": "^8.1.0",

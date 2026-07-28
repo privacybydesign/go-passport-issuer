@@ -43,6 +43,11 @@ type Config struct {
 	// Similarity threshold (0-1) above which the live face is considered a match
 	// for the document portrait. Defaults to DefaultFaceMatchThreshold when unset.
 	RegulaFaceMatchThreshold float64 `json:"regula_face_match_threshold,omitempty"`
+	// Browser-reachable origin of the Regula Face API, served to the /capture
+	// liveness page. Distinct from RegulaFaceApiUrl, which the backend uses over
+	// the internal network and which a browser generally cannot resolve. Leave
+	// empty to disable the capture page.
+	RegulaFaceApiPublicUrl string `json:"regula_face_api_public_url,omitempty"`
 }
 
 type CredentialConfig struct {
@@ -164,6 +169,7 @@ func main() {
 		converter:              IssuanceRequestConverterImpl{},
 		drivingLicenceParser:   DrivingLicenceParserImpl{},
 		faceVerificationClient: faceVerificationClient,
+		regulaFaceApiPublicUrl: config.RegulaFaceApiPublicUrl,
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)
