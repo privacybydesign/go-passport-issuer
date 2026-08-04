@@ -201,6 +201,50 @@ func TestActiveAuthentication_NoKeyIssuesWithoutAA(t *testing.T) {
 	require.False(t, result)
 }
 
+// sodReferencingDG builds a signed-object view whose LDS security object lists a
+// hash for the given data group. This is the object passive authentication
+// verifies, and it drives whether Active Authentication is mandatory.
+func sodReferencingDG(dgNumber int) *document.SOD {
+	return &document.SOD{
+		LdsSecurityObject: &document.LDSSecurityObject{
+			DataGroupHashValues: []document.DataGroupHash{
+				{DataGroupNumber: dgNumber, DataGroupHashValue: make([]byte, 32)},
+			},
+		},
+	}
+}
+
+func TestActiveAuthentication_SodRequiresDG15(t *testing.T) {
+	// The signed SOD lists a DG15 hash, so Active Authentication is mandatory.
+	// A request without DG15 must be rejected even when a nonce and signature
+	// are supplied.
+	doc := document.Document{}
+	doc.Mf.Lds1.Sod = sodReferencingDG(15)
+	require.Nil(t, doc.Mf.Lds1.Dg15)
+
+	data := models.ValidationRequest{
+		Nonce:               "AABBCCDD",
+		ActiveAuthSignature: "DEADBEEF",
+	}
+
+	result, err := ActiveAuthentication(data, doc)
+	require.ErrorIs(t, err, mrtdDoc.ErrActiveAuthRequired)
+	require.False(t, result)
+}
+
+func TestActiveAuthentication_SodWithoutDG15IssuesWithoutAA(t *testing.T) {
+	// A signed SOD that does not reference DG15 genuinely has no AA key, so
+	// issuance without Active Authentication is allowed.
+	doc := document.Document{}
+	doc.Mf.Lds1.Sod = sodReferencingDG(2)
+
+	data := models.ValidationRequest{}
+
+	result, err := ActiveAuthentication(data, doc)
+	require.NoError(t, err)
+	require.False(t, result)
+}
+
 func TestActiveAuthentication_InvalidSignature(t *testing.T) {
 	// Test with DG15 present but invalid Signature
 	var dg15Hex = "6F81A130819E300D06092A864886F70D010101050003818C00308188028180CF9A8BA6EAD230E592AA6B5DA04558CC005A5291B295418575D68D637F41AF105813293D1D43F3685F014FFF3007730E6A15B7801558C6911F1084B7B8553BEE577F84EA7B8BF346128DA380D57E500FAF5AB70971DD9B25F387343E0B6CFA1316B3F58F6B9D3E93A72DD6BE3C7A79D960CE8CBAF8726F5E4FBF289287941FD70203010001"

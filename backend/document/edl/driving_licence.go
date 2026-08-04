@@ -49,14 +49,14 @@ func parseDgNumber(dgName string) (int, error) {
 
 	return num, nil
 }
-func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertPool) (err error) {
+func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertPool) (sod *document.SOD, err error) {
 
 	if len(data.DataGroups) == 0 {
-		return fmt.Errorf("no data groups found")
+		return nil, fmt.Errorf("no data groups found")
 	}
 
 	if data.EFSOD == "" {
-		return fmt.Errorf("EF_SOD is missing in the validation request")
+		return nil, fmt.Errorf("EF_SOD is missing in the validation request")
 	}
 
 	var doc document.Document
@@ -88,13 +88,13 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 			"session_id", data.SessionId,
 			"efsod_sha256", sodSha,
 		)
-		return fmt.Errorf("failed to create SOD: %w", err)
+		return nil, fmt.Errorf("failed to create SOD: %w", err)
 	}
 
 	// Check if hash alg not null
 	if doc.Mf.Lds1.Sod.LdsSecurityObject == nil ||
 		doc.Mf.Lds1.Sod.LdsSecurityObject.HashAlgorithm.Algorithm == nil {
-		return fmt.Errorf("SOD LDS security object hash algorithm not found")
+		return nil, fmt.Errorf("SOD LDS security object hash algorithm not found")
 	}
 	hashAlgo := doc.Mf.Lds1.Sod.LdsSecurityObject.HashAlgorithm.Algorithm
 
@@ -106,21 +106,21 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 		dgBytes := utils.HexToBytes(dgHex)
 		dgNum, err := parseDgNumber(dgName) // DgHash function requires dg number
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		computedHash, err := cryptoutils.CryptoHashByOid(hashAlgo, dgBytes)
 		if err != nil {
-			return fmt.Errorf("failed to hash %s: %w", dgName, err)
+			return nil, fmt.Errorf("failed to hash %s: %w", dgName, err)
 		}
 
 		expectedHash := doc.Mf.Lds1.Sod.DgHash(dgNum)
 		if len(expectedHash) == 0 {
-			return fmt.Errorf("%s not in SOD", dgName)
+			return nil, fmt.Errorf("%s not in SOD", dgName)
 		}
 
 		if !bytes.Equal(computedHash, expectedHash) {
-			return fmt.Errorf("%s hash mismatch", dgName)
+			return nil, fmt.Errorf("%s hash mismatch", dgName)
 		}
 	}
 
@@ -129,25 +129,39 @@ func PassiveAuthenticationEDL(data models.ValidationRequest, certPool *cms.CertP
 	)
 	_, err = doc.Mf.Lds1.Sod.SD.Verify(*certPool)
 	if err != nil {
-		return fmt.Errorf("SOD signature verification failed: %w", err)
+		return nil, fmt.Errorf("SOD signature verification failed: %w", err)
 	}
 
-	return nil
+	// Return the verified SOD so Active Authentication can read the chip's
+	// capabilities from the signed object.
+	return doc.Mf.Lds1.Sod, nil
 }
 
-func ActiveAuthenticationEDL(data models.ValidationRequest) (result bool, err error) {
-	// No DG13 means there is no AA public key on the chip, so Active
-	// Authentication is genuinely unsupported for this document: issue without it.
+func ActiveAuthenticationEDL(data models.ValidationRequest, sod *document.SOD) (result bool, err error) {
+	// Whether the chip supports Active Authentication is taken from the signed
+	// EF.SOD, which lists a hash for DG13 when AA key material is present. The
+	// SOD is the authenticated record of the chip's contents, so it is the
+	// authority here.
+	sodRequiresAA := sod != nil && sod.HasDgHash(13)
 	dg13Hex, exists := data.DataGroups["DG13"]
+
+	// The SOD says the chip carries AA key material but DG13 is absent, so chip
+	// liveness cannot be established. Reject issuance.
+	if sodRequiresAA && !exists {
+		return false, mrtdDoc.ErrActiveAuthRequired
+	}
+
+	// No AA key material available (neither DG13 nor a DG13 hash in the signed
+	// SOD) means Active Authentication is genuinely unsupported for this
+	// document: issue without it.
 	if !exists {
 		return false, nil
 	}
 
 	// The chip carries a DG13 (AA key material), so Active Authentication is
-	// mandatory. A client that omits the nonce/signature cannot prove chip
-	// liveness, so reject issuance instead of silently issuing a credential a
-	// cloned chip could obtain. A DG13 that is present but unparseable is
-	// likewise rejected below (ExtractDG13PublicKeyInfo returns an error).
+	// mandatory and needs both a nonce and a signature to complete. A DG13 that
+	// is present but unparseable is likewise rejected below
+	// (ExtractDG13PublicKeyInfo returns an error).
 	if data.Nonce == "" || data.ActiveAuthSignature == "" {
 		return false, mrtdDoc.ErrActiveAuthRequired
 	}

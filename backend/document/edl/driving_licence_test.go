@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gmrtd/gmrtd/cms"
+	"github.com/gmrtd/gmrtd/document"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,7 +41,7 @@ func TestPassiveAuthenticationEDLInvalidInputs(t *testing.T) {
 				DataGroups: tt.DataGroups,
 				EFSOD:      tt.Efsod,
 			}
-			err := edl.PassiveAuthenticationEDL(data, &trustedCerts)
+			_, err := edl.PassiveAuthenticationEDL(data, &trustedCerts)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tt.ExpectedError)
 		})
@@ -54,7 +55,7 @@ func TestActiveAuthenticationEDL(t *testing.T) {
 				Nonce:               tt.Nonce,
 				ActiveAuthSignature: tt.Signature,
 			}
-			result, err := edl.ActiveAuthenticationEDL(data)
+			result, err := edl.ActiveAuthenticationEDL(data, nil)
 			require.NoError(t, err)
 			require.False(t, result)
 		})
@@ -83,7 +84,7 @@ func TestActiveAuthenticationEDL_KeyPresentButNoSignature(t *testing.T) {
 				ActiveAuthSignature: tc.signature,
 				DataGroups:          map[string]string{"DG13": dg13Hex},
 			}
-			result, err := edl.ActiveAuthenticationEDL(data)
+			result, err := edl.ActiveAuthenticationEDL(data, nil)
 			require.ErrorIs(t, err, mrtdDoc.ErrActiveAuthRequired)
 			require.False(t, result)
 		})
@@ -98,7 +99,49 @@ func TestActiveAuthenticationEDL_NoKeyIssuesWithoutAA(t *testing.T) {
 		ActiveAuthSignature: "DEADBEEF",
 		DataGroups:          map[string]string{"DG2": passport.Dg2Hex},
 	}
-	result, err := edl.ActiveAuthenticationEDL(data)
+	result, err := edl.ActiveAuthenticationEDL(data, nil)
+	require.NoError(t, err)
+	require.False(t, result)
+}
+
+// sodReferencingDG builds a signed-object view whose LDS security object lists a
+// hash for the given data group. This is the object passive authentication
+// verifies, and it drives whether Active Authentication is mandatory.
+func sodReferencingDG(dgNumber int) *document.SOD {
+	return &document.SOD{
+		LdsSecurityObject: &document.LDSSecurityObject{
+			DataGroupHashValues: []document.DataGroupHash{
+				{DataGroupNumber: dgNumber, DataGroupHashValue: make([]byte, 32)},
+			},
+		},
+	}
+}
+
+func TestActiveAuthenticationEDL_SodRequiresDG13(t *testing.T) {
+	// The signed SOD lists a DG13 hash, so Active Authentication is mandatory.
+	// A request without DG13 must be rejected even when a nonce and signature
+	// are supplied.
+	sod := sodReferencingDG(13)
+	data := models.ValidationRequest{
+		Nonce:               "AABBCCDD",
+		ActiveAuthSignature: "DEADBEEF",
+		DataGroups:          map[string]string{"DG2": passport.Dg2Hex},
+	}
+
+	result, err := edl.ActiveAuthenticationEDL(data, sod)
+	require.ErrorIs(t, err, mrtdDoc.ErrActiveAuthRequired)
+	require.False(t, result)
+}
+
+func TestActiveAuthenticationEDL_SodWithoutDG13IssuesWithoutAA(t *testing.T) {
+	// A signed SOD that does not reference DG13 genuinely has no AA key material,
+	// so issuance without Active Authentication is allowed.
+	sod := sodReferencingDG(2)
+	data := models.ValidationRequest{
+		DataGroups: map[string]string{"DG2": passport.Dg2Hex},
+	}
+
+	result, err := edl.ActiveAuthenticationEDL(data, sod)
 	require.NoError(t, err)
 	require.False(t, result)
 }
@@ -111,7 +154,7 @@ func TestActiveAuthenticationEDLInvalidSignature(t *testing.T) {
 		DataGroups:          map[string]string{"DG13": dg13Hex},
 	}
 
-	result, err := edl.ActiveAuthenticationEDL(data)
+	result, err := edl.ActiveAuthenticationEDL(data, nil)
 	require.Error(t, err)
 	require.False(t, result)
 	require.Contains(t, err.Error(), "failed to validate active authentication signature")
@@ -130,7 +173,7 @@ func TestActiveAuthenticationEDL_ValidationHashMismatch(t *testing.T) {
 		DataGroups:          map[string]string{"DG13": dg13Hex},
 	}
 
-	result, err := edl.ActiveAuthenticationEDL(data)
+	result, err := edl.ActiveAuthenticationEDL(data, nil)
 	require.Error(t, err)
 	require.False(t, result)
 	// The error is from ValidateActiveAuthSignature, which returns an error on validation failure
@@ -140,7 +183,7 @@ func TestActiveAuthenticationEDL_ValidationHashMismatch(t *testing.T) {
 func TestPassiveAuthenticationEDLWithRealSOD(t *testing.T) {
 	data, trustedCerts := setupEdlVerifyTest(t, createTestEDLRequest, passport.TestSodHex)
 
-	err := edl.PassiveAuthenticationEDL(data, &trustedCerts)
+	_, err := edl.PassiveAuthenticationEDL(data, &trustedCerts)
 	require.NoError(t, err)
 }
 
@@ -150,6 +193,6 @@ var badSOD = "778207853082078106092A864886F70D010702A08207723082076E020103310D30
 func TestPassiveAuthenticationEDLWithBadSOD(t *testing.T) {
 	data, trustedCerts := setupEdlVerifyTest(t, createTestEDLRequest, badSOD)
 
-	err := edl.PassiveAuthenticationEDL(data, &trustedCerts)
+	_, err := edl.PassiveAuthenticationEDL(data, &trustedCerts)
 	require.ErrorContains(t, err, "SOD signature verification failed")
 }
