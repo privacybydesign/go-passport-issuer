@@ -97,14 +97,14 @@ func decodeImage(data []byte) (image.Image, error) {
 	}
 
 	// Try JPEG 2000 (JP2/J2K)
-	if img, err := jpeg2000.Parse(data); err == nil {
+	img, jp2Err := jpeg2000.Parse(data)
+	if jp2Err == nil {
 		return img, nil
-	} else {
-		slog.Warn("JPEG2000 decode failed",
-			"detected_format", detected,
-			"prefix", fmt.Sprintf("%x", utils.SafePrefix(data, 12)),
-			"error", err)
 	}
+	slog.Warn("JPEG2000 decode failed",
+		"detected_format", detected,
+		"prefix", fmt.Sprintf("%x", utils.SafePrefix(data, 12)),
+		"error", jp2Err)
 
 	// Try generic image decode as fallback
 	if img, _, err := image.Decode(bytes.NewReader(data)); err == nil {
