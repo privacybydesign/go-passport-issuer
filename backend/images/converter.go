@@ -13,6 +13,7 @@ import (
 	"math"
 
 	"github.com/gmrtd/gmrtd/document"
+	"github.com/gmrtd/gmrtd/utils"
 	xdraw "golang.org/x/image/draw"
 	"pault.ag/go/cbeff/jpeg2000"
 )
@@ -80,6 +81,16 @@ func RawDG2ImageBase64(dg2 *document.DG2) (string, error) {
 
 // decodeImage attempts to decode an image from bytes, trying multiple formats
 func decodeImage(data []byte) (image.Image, error) {
+	// Detect the on-wire format from magic bytes before attempting to decode, so
+	// failures below can report *which* format arrived instead of an opaque error.
+	// gmrtd's detector recognizes both JP2 container (00 00 00 0C 6A 50 20 20)
+	// and raw J2K codestream (FF 4F FF 51) encodings.
+	detected, known := utils.DetectImageFormat(data)
+	slog.Debug("Detected DG2 image format",
+		"detected_format", detected,
+		"recognized", known,
+		"prefix", fmt.Sprintf("%x", utils.SafePrefix(data, 12)))
+
 	// Try JPEG first (most common)
 	if img, err := jpeg.Decode(bytes.NewReader(data)); err == nil {
 		return img, nil
@@ -88,6 +99,11 @@ func decodeImage(data []byte) (image.Image, error) {
 	// Try JPEG 2000 (JP2/J2K)
 	if img, err := jpeg2000.Parse(data); err == nil {
 		return img, nil
+	} else {
+		slog.Warn("JPEG2000 decode failed",
+			"detected_format", detected,
+			"prefix", fmt.Sprintf("%x", utils.SafePrefix(data, 12)),
+			"error", err)
 	}
 
 	// Try generic image decode as fallback
@@ -95,7 +111,8 @@ func decodeImage(data []byte) (image.Image, error) {
 		return img, nil
 	}
 
-	return nil, fmt.Errorf("unsupported or invalid image format")
+	return nil, fmt.Errorf("unsupported or invalid image format (detected:%q recognized:%t prefix:%x)",
+		detected, known, utils.SafePrefix(data, 12))
 }
 
 // convertImageToPNGBase64 encodes an image to base64 PNG with optional resize and quantization
