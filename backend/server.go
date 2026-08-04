@@ -46,6 +46,9 @@ type ServerConfig struct {
 	UseTls         bool   `json:"use_tls,omitempty"`
 	TlsPrivKeyPath string `json:"tls_priv_key_path,omitempty"`
 	TlsCertPath    string `json:"tls_cert_path,omitempty"`
+	// Serve the API documentation on /api/docs and /api/docs/swagger.yaml.
+	// Disabled unless explicitly enabled, so the docs stay off in production.
+	EnableApiDocs bool `json:"enable_api_docs,omitempty"`
 }
 
 type ServerState struct {
@@ -167,8 +170,13 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/.well-known/assetlinks.json", HandleAssetLinksRequest).Methods(http.MethodGet)
 
 	// API Documentation
-	router.HandleFunc("/api/docs", HandleRedocRequest).Methods(http.MethodGet)
-	router.HandleFunc("/api/docs/swagger.yaml", HandleSwaggerRequest).Methods(http.MethodGet)
+	if config.EnableApiDocs {
+		router.HandleFunc("/api/docs", HandleRedocRequest).Methods(http.MethodGet)
+		router.HandleFunc("/api/docs/swagger.yaml", HandleSwaggerRequest).Methods(http.MethodGet)
+		slog.Info("API documentation enabled", "path", "/api/docs")
+	} else {
+		slog.Info("API documentation disabled")
+	}
 
 	slog.Debug("Registered all API routes")
 
