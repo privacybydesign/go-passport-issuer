@@ -18,8 +18,6 @@ The Go Passport Issuer repository implements a digital passport issuance system 
 
 **Go**: Version 1.24.0 or later
 
-**Node.js**: Version 16 or later (for frontend)
-
 **ImageMagick 6**: Required for image processing
 
 - **macOS**:
@@ -106,13 +104,6 @@ cd backend
 go test ./...
 ```
 
-**Run the frontend**:
-```bash
-cd frontend
-npm install
-npm start
-```
-
 ### Authentication and issuance policy
 
 Before a credential is issued, the document undergoes two checks:
@@ -158,7 +149,7 @@ The swag annotations are located in:
 
 #### Using Docker Compose
 
-To run both the backend and frontend using Docker Compose, ensure you have Docker and Docker Compose installed. Then, from the root directory of the project, execute:
+To run the backend and its dependencies using Docker Compose, ensure you have Docker and Docker Compose installed. Then, from the root directory of the project, execute:
 ```bash
 docker-compose up --build
 ```

@@ -1,7 +1,5 @@
 .secrets
 .DS_Store
-frontend/build
-frontend/node_modules
 info.log
 error.log
 

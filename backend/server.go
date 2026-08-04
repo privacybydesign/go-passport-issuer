@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"time"
 
 	"go-passport-issuer/document/edl"
@@ -60,11 +58,6 @@ type ServerState struct {
 	faceVerificationClient FaceVerificationClient
 }
 
-type SpaHandler struct {
-	staticPath string
-	indexPath  string
-}
-
 type Server struct {
 	server *http.Server
 	config ServerConfig
@@ -91,46 +84,6 @@ func (s *Server) Stop() error {
 		slog.Info("Server shut down successfully")
 	}
 	return err
-}
-
-// ServeHTTP inspects the URL path to locate a file within the static dir
-// on the SPA handler. If a file is found, it will be served. If not, the
-// file located at the index path on the SPA handler will be served. This
-// is suitable behavior for serving an SPA (single page application).
-// https://github.com/gorilla/mux?tab=readme-ov-file#serving-single-page-applications
-func (h SpaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	slog.Debug("SPA handler serving request", "path", r.URL.Path)
-	// Join internally call path.Clean to prevent directory traversal
-	path := filepath.Join(h.staticPath, r.URL.Path)
-	// check whether a file exists or is a directory at the given path
-	fi, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		// file does not exist, serve index.html
-		slog.Debug("Serving index.html for path", "path", r.URL.Path)
-		http.ServeFile(w, r, filepath.Join(h.staticPath, h.indexPath))
-		return
-	}
-
-	if err != nil {
-		// if we got an error (that wasn't that the file doesn't exist) stating the
-		// file, log it server-side and return a generic 500 so we don't leak
-		// filesystem paths or OS internals to the client. This must be checked
-		// before dereferencing fi, which is nil whenever os.Stat returns an error.
-		slog.Error("static file error", "error", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	if fi.IsDir() {
-		// path is a directory, serve index.html
-		slog.Debug("Serving index.html for directory path", "path", r.URL.Path)
-		http.ServeFile(w, r, filepath.Join(h.staticPath, h.indexPath))
-		return
-	}
-
-	// otherwise, use http.FileServer to serve the static file
-	slog.Debug("Serving static file", "path", path)
-	http.FileServer(http.Dir(h.staticPath)).ServeHTTP(w, r)
 }
 
 func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
@@ -172,8 +125,8 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 
 	slog.Debug("Registered all API routes")
 
-	spa := SpaHandler{staticPath: "../frontend/build", indexPath: "index.html"}
-	router.PathPrefix("/").Handler(spa)
+	// This service is API-only. Anything that is not a registered route gets
+	// the router's 404, there is no static file or SPA fallback.
 
 	addr := fmt.Sprintf("%v:%v", config.Host, config.Port)
 	srv := &http.Server{
