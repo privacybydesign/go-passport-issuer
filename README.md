@@ -41,7 +41,8 @@ It should look like this:
 {
   "server_config": {
     "host": "0.0.0.0",
-    "port": 8080
+    "port": 8080,
+    "enable_api_docs": true
   },
   "irma_server_url": "https://is.staging.yivi.app",
   "issuer_id": "passport_issuer",
@@ -139,7 +140,9 @@ succeeded; `No` only ever means the chip does not support AA.
 
 The backend serves interactive API documentation using ReDoc at `/api/docs`. The OpenAPI specification is generated from Go code annotations using [swaggo/swag](https://github.com/swaggo/swag).
 
-**View documentation**: Navigate to `http://localhost:8080/api/docs` when the server is running.
+The documentation endpoints (`/api/docs` and `/api/docs/swagger.yaml`) are only registered when `enable_api_docs` is `true` in `server_config`. It defaults to `false`, so a production deployment does not expose them unless it opts in.
+
+**View documentation**: Set `enable_api_docs` to `true` and navigate to `http://localhost:8080/api/docs` when the server is running.
 
 **Regenerate documentation** (after modifying API handlers or models):
 ```bash
