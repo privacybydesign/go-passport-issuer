@@ -4,54 +4,64 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/require"
 )
 
-// TestSpaHandlerStatErrorReturnsGenericMessage verifies that when os.Stat
-// returns an unexpected error (here ENOTDIR, by treating a regular file as a
-// directory component), the handler responds with a generic 500 and does not
-// leak the raw OS error string (which may contain filesystem paths / internals).
-func TestSpaHandlerStatErrorReturnsGenericMessage(t *testing.T) {
-	dir := t.TempDir()
-	// Create a regular file; requesting a path *below* it makes os.Stat fail
-	// with ENOTDIR, which is not os.IsNotExist.
-	regularFile := filepath.Join(dir, "afile")
-	require.NoError(t, os.WriteFile(regularFile, []byte("data"), 0o600))
+// TestUnmatchedRoutesReturnNotFound verifies that this service is API-only:
+// paths that are not registered routes get a 404 and are not swallowed by a
+// catch-all handler such as the removed SPA handler, which served index.html.
+// The docs are enabled here so the router carries every route it can, which
+// makes the assertion about the paths and not about the configuration.
+func TestUnmatchedRoutesReturnNotFound(t *testing.T) {
+	router := docsRouter(t, true)
 
-	h := SpaHandler{staticPath: dir, indexPath: "index.html"}
+	for _, path := range []string{"/", "/index.html", "/some/spa/route", "/assets/main.js"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/afile/child", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
+			// A catch-all (such as the removed SPA handler) matches and leaves
+			// MatchErr nil, so asserting on MatchErr rejects one while still
+			// allowing a custom NotFoundHandler.
+			var match mux.RouteMatch
+			router.Match(req, &match)
+			require.ErrorIs(t, match.MatchErr, mux.ErrNotFound)
 
-	require.Equal(t, http.StatusInternalServerError, rec.Code)
-	body := rec.Body.String()
-	require.Equal(t, "internal server error", strings.TrimSpace(body))
-	// The response must not leak the server-side filesystem path.
-	require.NotContains(t, body, dir)
-	require.NotContains(t, body, "afile")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusNotFound, rec.Code)
+		})
+	}
 }
 
-// TestSpaHandlerMissingFileServesIndex verifies the SPA fallback: a request for
-// a path that does not exist serves index.html.
-func TestSpaHandlerMissingFileServesIndex(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.html"), []byte("<html>spa</html>"), 0o600))
+// TestRegisteredRoutesStillMatch guards against removing too much: the API and
+// app-association routes must keep matching now that the catch-all is gone.
+func TestRegisteredRoutesStillMatch(t *testing.T) {
+	router := docsRouter(t, true)
 
-	h := SpaHandler{staticPath: dir, indexPath: "index.html"}
-
-	req := httptest.NewRequest(http.MethodGet, "/does/not/exist", nil)
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.Contains(t, rec.Body.String(), "spa")
+	for _, path := range []string{
+		"/api/health",
+		"/api/start-validation",
+		"/api/verify-and-issue",
+		"/api/issue-passport",
+		"/api/issue-id-card",
+		"/api/verify-passport",
+		"/api/verify-driving-licence",
+		"/api/issue-driving-licence",
+		"/api/docs",
+		"/api/docs/swagger.yaml",
+		"/.well-known/apple-app-site-association",
+		"/apple-app-site-association",
+		"/.well-known/assetlinks.json",
+	} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			var match mux.RouteMatch
+			require.True(t, router.Match(req, &match), "route %s should match", path)
+		})
+	}
 }
 
 // docsRouter builds the server's router with the API docs flag set as given,
@@ -97,8 +107,9 @@ func TestApiDocsAbsentWhenDisabled(t *testing.T) {
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 
-		// The SPA catch-all takes the request, so the paths behave like any other
+		// The paths are not registered at all, so they behave like any other
 		// unknown path. What matters is that the docs themselves are not served.
+		require.Equal(t, http.StatusNotFound, rec.Code, "docs path %s should not be routed", path)
 		require.NotEqual(t, redocHTML, rec.Body.Bytes(), "redoc html served for %s", path)
 		require.NotEqual(t, swaggerSpec, rec.Body.Bytes(), "swagger spec served for %s", path)
 		require.NotEqual(t, "application/x-yaml", rec.Header().Get("Content-Type"))

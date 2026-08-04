@@ -1,10 +1,3 @@
-# ---------- Frontend ----------
-FROM node:24-slim AS frontend-build
-WORKDIR /app/frontend
-COPY frontend .
-RUN npm ci
-RUN npm run build
-
 # ---------- Backend build (needs CGO + IM6 dev headers) ----------
 FROM golang:1.26-bookworm AS backend-build
 WORKDIR /app/backend
@@ -30,9 +23,8 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     ca-certificates imagemagick libmagickwand-6.q16-6 libopenjp2-7 \
   && rm -rf /var/lib/apt/lists/*
 
-# Copy artifacts (only built output, not node_modules)
+# Copy artifacts (only built output)
 COPY --from=backend-build /app/backend/server /app/backend/server
-COPY --from=frontend-build /app/frontend/build /app/frontend/build
 
 WORKDIR /app/backend
 EXPOSE 8080

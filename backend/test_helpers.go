@@ -52,7 +52,7 @@ func startTestServer(t *testing.T, storage TokenStorage) *Server {
 		}
 	}()
 
-	waitUntilHealthy(t, "http://localhost:8081/")
+	waitUntilHealthy(t, "http://localhost:8081/api/health")
 	t.Cleanup(func() {
 		if err := srv.Stop(); err != nil {
 			t.Logf("error shutting down server: %v", err)

@@ -1,16 +1,9 @@
 .secrets
 .DS_Store
-frontend/build
-frontend/node_modules
 info.log
 error.log
 
 vendor
-
-.vite
-# Node files
-node_modules/
-build/
 
 secrets/
 local-secrets/
