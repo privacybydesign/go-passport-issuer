@@ -107,12 +107,12 @@ func decodeImage(data []byte) (image.Image, error) {
 	if detected == utils.ImageFormatJPEG2000 {
 		slog.Warn("JPEG2000 decode failed",
 			"detected_format", detected,
-			"prefix", fmt.Sprintf("%x", utils.SafePrefix(data, 12)),
+			"prefix", prefix,
 			"error", jp2Err)
 	} else {
 		slog.Debug("imagick decode failed and payload is not JPEG2000",
 			"detected_format", detected,
-			"prefix", fmt.Sprintf("%x", utils.SafePrefix(data, 12)),
+			"prefix", prefix,
 			"error", jp2Err)
 	}
 
@@ -122,7 +122,7 @@ func decodeImage(data []byte) (image.Image, error) {
 	}
 
 	return nil, fmt.Errorf("unsupported or invalid image format (detected:%q recognized:%t prefix:%x)",
-		detected, known, utils.SafePrefix(data, 12))
+		detected, known, prefix)
 }
 
 // convertImageToPNGBase64 encodes an image to base64 PNG with optional resize and quantization
