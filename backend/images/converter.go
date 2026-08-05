@@ -86,10 +86,11 @@ func decodeImage(data []byte) (image.Image, error) {
 	// gmrtd's detector recognizes both the JP2 container (00 00 00 0C 6A 50 20 20 0D 0A —
 	// note it requires the 0D 0A too) and the raw J2K codestream (FF 4F FF 51) encodings.
 	detected, known := utils.DetectImageFormat(data)
+	prefix := fmt.Sprintf("%x", utils.SafePrefix(data, 12))
 	slog.Debug("Detected DG2 image format",
 		"detected_format", detected,
 		"recognized", known,
-		"prefix", fmt.Sprintf("%x", utils.SafePrefix(data, 12)))
+		"prefix", prefix)
 
 	// Try JPEG first (most common)
 	if img, err := jpeg.Decode(bytes.NewReader(data)); err == nil {
