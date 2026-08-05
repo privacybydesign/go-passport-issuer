@@ -101,10 +101,19 @@ func decodeImage(data []byte) (image.Image, error) {
 	if jp2Err == nil {
 		return img, nil
 	}
-	slog.Warn("JPEG2000 decode failed",
-		"detected_format", detected,
-		"prefix", fmt.Sprintf("%x", utils.SafePrefix(data, 12)),
-		"error", jp2Err)
+	// imagick sniffs the blob rather than trusting the caller, so this branch also
+	// swallows non-JPEG2000 payloads; only blame JPEG2000 when the magic bytes did.
+	if detected == utils.ImageFormatJPEG2000 {
+		slog.Warn("JPEG2000 decode failed",
+			"detected_format", detected,
+			"prefix", fmt.Sprintf("%x", utils.SafePrefix(data, 12)),
+			"error", jp2Err)
+	} else {
+		slog.Debug("imagick decode failed and payload is not JPEG2000",
+			"detected_format", detected,
+			"prefix", fmt.Sprintf("%x", utils.SafePrefix(data, 12)),
+			"error", jp2Err)
+	}
 
 	// Try generic image decode as fallback
 	if img, _, err := image.Decode(bytes.NewReader(data)); err == nil {
