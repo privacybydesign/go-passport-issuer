@@ -19,5 +19,12 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: "build",
     },
+    test: {
+      // Regula's face components register their custom elements and read
+      // `location` at import time, so even a pure-logic test that imports their
+      // enums needs a DOM.
+      environment: 'jsdom',
+      setupFiles: ['./src/setupTests.ts'],
+    },
   }
 });

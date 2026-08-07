@@ -21,6 +21,32 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/face-capture-config": {
+            "get": {
+                "description": "Returns the browser-reachable Regula Face API origin used by the /capture liveness page. The page runs the liveness session directly against that service, the same way the native Regula SDK does in the Play Store and App Store builds; only the resulting transaction ID is passed back to the app. Responds 404 when the face verification policy is \"disabled\", so the capture page cannot run liveness sessions no issuance will consume.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Face Verification"
+                ],
+                "summary": "Face capture page configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.FaceCaptureConfigResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "face capture not configured",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "description": "Returns the health status of the API service",
@@ -181,7 +207,7 @@ const docTemplate = `{
         },
         "/start-validation": {
             "post": {
-                "description": "Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests.",
+                "description": "Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests. When face verification applies to this environment (policy \"optional\" or \"required\"), the response carries a face_verification object naming the Face API the liveness session must run against; the app skips the face verification step when the object is absent.",
                 "produces": [
                     "application/json"
                 ],
@@ -299,6 +325,16 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "main.FaceCaptureConfigResponse": {
+            "type": "object",
+            "properties": {
+                "face_api_url": {
+                    "description": "Browser-reachable origin of the Regula Face API",
+                    "type": "string",
+                    "example": "https://faceapi.staging.yivi.app"
+                }
+            }
+        },
         "main.FaceMatchResult": {
             "type": "object",
             "properties": {
@@ -311,6 +347,16 @@ const docTemplate = `{
                     "description": "Similarity score between the document portrait and live face",
                     "type": "number",
                     "example": 0.92
+                }
+            }
+        },
+        "main.FaceVerificationAnnouncement": {
+            "type": "object",
+            "properties": {
+                "face_api_url": {
+                    "description": "Browser/app-reachable origin of the Regula Face API the liveness session\nmust run against — the same service this issuer matches against.",
+                    "type": "string",
+                    "example": "https://faceapi.staging.yivi.app"
                 }
             }
         },
@@ -342,6 +388,14 @@ const docTemplate = `{
         "main.ValidatePassportResponse": {
             "type": "object",
             "properties": {
+                "face_verification": {
+                    "description": "Present iff face verification applies to this session (policy is not\n\"disabled\"). Absent means the app skips the face verification step.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/main.FaceVerificationAnnouncement"
+                        }
+                    ]
+                },
                 "nonce": {
                     "description": "Random nonce for active authentication (16 hex characters)",
                     "type": "string",
