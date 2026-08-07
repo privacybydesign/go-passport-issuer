@@ -42,7 +42,18 @@ Face API is configured in `local-secrets/facesdk-config.yml`:
 
 Enable face verification by setting these keys in the issuer `config.json`:
 
-- `regula_face_api_url` — Regula Face API base URL (e.g. `http://regula-face-api:41101`). When omitted, face verification is disabled.
+- `regula_face_api_url` — Regula Face API base URL the backend matches against
+  over the internal network (e.g. `http://regula-face-api:41101`).
+- `regula_face_api_public_url` — browser/app-reachable origin of the same Face
+  API (e.g. `https://faceapi.staging.yivi.app`), announced to the app in
+  `/api/start-validation` and served to the `/capture` page.
+- `face_verification_policy` — `disabled`, `optional` or `required`. `optional`
+  is the transitional stance: apps that provide a liveness transaction are
+  fully enforced, apps that provide none (old versions) are tolerated and
+  logged (`issuance without face verification`). `required` rejects issuance
+  without a liveness transaction. When omitted, derived from
+  `regula_face_api_url` (set → `required`, unset → `disabled`). A
+  non-`disabled` policy requires both URLs above; startup fails otherwise.
 - `regula_face_match_threshold` — similarity threshold (0-1) above which the live face is considered a match. Defaults to `0.75`.
 
 ## Implementation

@@ -142,6 +142,85 @@ func TestVerifyFaceBeforeIssuance_NotMatched(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+// Policy matrix: the policy only decides what an issuance WITHOUT a liveness
+// transaction id means; a provided id is always fully enforced.
+
+// optional + no id → tolerated (the transitional stance for app versions
+// without face verification built in).
+func TestVerifyFaceBeforeIssuance_OptionalWithoutTransactionProceeds(t *testing.T) {
+	fake := &fakeFaceClient{}
+	state := &ServerState{
+		faceVerificationClient: fake,
+		faceVerificationPolicy: FaceVerificationOptional,
+	}
+	rec := httptest.NewRecorder()
+	ok := verifyFaceBeforeIssuance(state, rec, "img", "", "passport")
+	require.True(t, ok)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.False(t, fake.deleteCalled, "no transaction to touch")
+}
+
+// optional + provided id → the same fail-closed path as required.
+func TestVerifyFaceBeforeIssuance_OptionalEnforcesProvidedTransaction(t *testing.T) {
+	fake := &fakeFaceClient{
+		livenessResp: &LivenessStatus{Confirmed: true},
+		matchResp:    &FaceMatchResponse{Matched: false, Similarity: 0.1},
+	}
+	state := &ServerState{
+		faceVerificationClient: fake,
+		faceVerificationPolicy: FaceVerificationOptional,
+	}
+	rec := httptest.NewRecorder()
+	ok := verifyFaceBeforeIssuance(state, rec, "img", "txn-1", "passport")
+	require.False(t, ok, "a failed match must reject even in optional mode")
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.True(t, fake.deleteCalled)
+}
+
+func TestVerifyFaceBeforeIssuance_OptionalPassesOnMatch(t *testing.T) {
+	fake := &fakeFaceClient{
+		livenessResp: &LivenessStatus{Confirmed: true},
+		matchResp:    &FaceMatchResponse{Matched: true, Similarity: 0.95},
+	}
+	state := &ServerState{
+		faceVerificationClient: fake,
+		faceVerificationPolicy: FaceVerificationOptional,
+	}
+	rec := httptest.NewRecorder()
+	ok := verifyFaceBeforeIssuance(state, rec, "img", "txn-1", "passport")
+	require.True(t, ok)
+}
+
+// required + no id → rejected with a body that old apps' error-details dialog
+// can show verbatim.
+func TestVerifyFaceBeforeIssuance_RequiredWithoutTransactionRejects(t *testing.T) {
+	state := &ServerState{
+		faceVerificationClient: &fakeFaceClient{},
+		faceVerificationPolicy: FaceVerificationRequired,
+	}
+	rec := httptest.NewRecorder()
+	ok := verifyFaceBeforeIssuance(state, rec, "img", "", "passport")
+	require.False(t, ok)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "face verification required")
+	require.Contains(t, rec.Body.String(), "update the Yivi app")
+}
+
+// disabled (explicitly, client still configured) → the whole step is skipped;
+// a provided id is ignored and the client never touched.
+func TestVerifyFaceBeforeIssuance_DisabledIgnoresProvidedTransaction(t *testing.T) {
+	fake := &fakeFaceClient{}
+	state := &ServerState{
+		faceVerificationClient: fake,
+		faceVerificationPolicy: FaceVerificationDisabled,
+	}
+	rec := httptest.NewRecorder()
+	ok := verifyFaceBeforeIssuance(state, rec, "img", "txn-1", "passport")
+	require.True(t, ok)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.False(t, fake.deleteCalled, "disabled must never touch the Regula client")
+}
+
 func TestVerifyFaceBeforeIssuance_Passes(t *testing.T) {
 	fake := &fakeFaceClient{
 		livenessResp: &LivenessStatus{Confirmed: true},

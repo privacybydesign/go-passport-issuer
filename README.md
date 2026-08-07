@@ -176,7 +176,8 @@ See [docs/face-verification-design.md](docs/face-verification-design.md) for the
 - **Retention Cleanup**: The liveness transaction (portrait, video, metadata) is deleted (`DELETE /api/v2/liveness`) after the match.
 - **Original Chip Image**: Matching uses the unaltered DG2/DG6 chip image, not the display-optimised PNG.
 - **Configurable Threshold**: Similarity threshold (default 0.75) via `regula_face_match_threshold`.
-- **Feature Flag + Fail-Closed**: Face verification is enabled only when `regula_face_api_url` is set. When enabled, issuance is fail-closed — it is rejected unless a confirmed liveness transaction matches the document portrait.
+- **Policy Switch**: `face_verification_policy` (`disabled` / `optional` / `required`) decides per environment whether the step applies, whether apps without face verification built in are still tolerated (transitional), or whether issuance without it is rejected. A *provided* liveness transaction is always fully enforced (fail-closed) under any non-disabled policy.
+- **Issuer-Announced**: `/api/start-validation` announces face verification to the app (with the Face API origin) whenever the policy is not `disabled`; the app skips the whole step when the announcement is absent.
 
 ### How It Works
 
@@ -212,25 +213,36 @@ regula-face-api:
 
 #### 3. Enable in Configuration
 
-Add the `regula_face_api_url` (and optionally `regula_face_match_threshold`) to your `config.json`:
+Add the `regula_face_api_url` and `face_verification_policy` (and optionally
+`regula_face_match_threshold`) to your `config.json`:
 
 ```json
 {
   ...
   "regula_face_api_url": "http://regula-face-api:41101",
-  "regula_face_match_threshold": 0.75
+  "regula_face_api_public_url": "https://faceapi.staging.yivi.app",
+  "regula_face_match_threshold": 0.75,
+  "face_verification_policy": "optional"
 }
 ```
 
-For local development without Docker, use:
-```json
-{
-  ...
-  "regula_face_api_url": "http://localhost:41101"
-}
-```
+For local development without Docker, use `"regula_face_api_url": "http://localhost:41101"`.
 
-When `regula_face_api_url` is omitted, face verification is disabled and issuance proceeds without it.
+`face_verification_policy` decides what an issuance **without** a liveness
+transaction id means; a provided id is always fully enforced:
+
+| policy | no liveness transaction id | id provided |
+|---|---|---|
+| `disabled` | proceed — the step does not exist; `/api/start-validation` carries no announcement (apps skip the step) and `/capture` is off | id ignored, no matching |
+| `optional` | proceed + one structured log line (`issuance without face verification`) — the transitional stance while app versions without face verification drain out; count the log line to time the flip to `required` | fully enforced (400 on any failure) |
+| `required` | 400 (self-explanatory message asking to update the app) | fully enforced (400 on any failure) |
+
+When the key is omitted, the policy is derived from `regula_face_api_url` to
+preserve pre-policy behaviour exactly: URL set → `required`, unset →
+`disabled`. A non-`disabled` policy requires both `regula_face_api_url` and
+`regula_face_api_public_url` (startup fails otherwise): the public URL is
+announced to the app and served to the capture page, and the liveness
+transaction must be created on the same Face API this issuer matches against.
 
 #### 4. Enable the Liveness Capture Page (F-Droid builds)
 

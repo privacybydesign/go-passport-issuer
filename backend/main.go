@@ -44,10 +44,15 @@ type Config struct {
 	// for the document portrait. Defaults to DefaultFaceMatchThreshold when unset.
 	RegulaFaceMatchThreshold float64 `json:"regula_face_match_threshold,omitempty"`
 	// Browser-reachable origin of the Regula Face API, served to the /capture
-	// liveness page. Distinct from RegulaFaceApiUrl, which the backend uses over
-	// the internal network and which a browser generally cannot resolve. Leave
-	// empty to disable the capture page.
+	// liveness page and announced to the app in /api/start-validation. Distinct
+	// from RegulaFaceApiUrl, which the backend uses over the internal network
+	// and which a browser generally cannot resolve.
 	RegulaFaceApiPublicUrl string `json:"regula_face_api_public_url,omitempty"`
+	// Face verification policy: "disabled", "optional" or "required". When
+	// absent, derived from RegulaFaceApiUrl (set → "required", unset →
+	// "disabled") so old configs keep their exact pre-policy behaviour. See
+	// resolveFaceVerificationPolicy.
+	FaceVerificationPolicy string `json:"face_verification_policy,omitempty"`
 }
 
 type CredentialConfig struct {
@@ -148,15 +153,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	facePolicy, err := resolveFaceVerificationPolicy(&config)
+	if err != nil {
+		slog.Error("invalid face verification configuration", "error", err)
+		os.Exit(1)
+	}
+
 	var faceVerificationClient FaceVerificationClient
-	if config.RegulaFaceApiUrl != "" {
-		slog.Info("Initializing Regula Face API client", "url", config.RegulaFaceApiUrl, "match_threshold", config.RegulaFaceMatchThreshold)
+	if facePolicy != FaceVerificationDisabled {
+		slog.Info("Initializing Regula Face API client",
+			"url", config.RegulaFaceApiUrl,
+			"policy", facePolicy,
+			"match_threshold", config.RegulaFaceMatchThreshold)
 		faceVerificationClient = NewRegulaFaceClient(config.RegulaFaceApiUrl, config.RegulaFaceMatchThreshold)
 		if err := faceVerificationClient.HealthCheck(); err != nil {
 			slog.Warn("Regula Face API health check failed, service may not be available", "error", err)
 		}
 	} else {
-		slog.Info("Regula Face API URL not configured, face verification will be disabled")
+		slog.Info("Face verification disabled")
 	}
 
 	serverState := ServerState{
@@ -169,6 +183,7 @@ func main() {
 		converter:              IssuanceRequestConverterImpl{},
 		drivingLicenceParser:   DrivingLicenceParserImpl{},
 		faceVerificationClient: faceVerificationClient,
+		faceVerificationPolicy: facePolicy,
 		regulaFaceApiPublicUrl: config.RegulaFaceApiPublicUrl,
 	}
 
