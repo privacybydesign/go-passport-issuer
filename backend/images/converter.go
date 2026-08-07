@@ -13,6 +13,7 @@ import (
 	"math"
 
 	"github.com/gmrtd/gmrtd/document"
+	"github.com/gmrtd/gmrtd/utils"
 	xdraw "golang.org/x/image/draw"
 	"pault.ag/go/cbeff/jpeg2000"
 )
@@ -80,14 +81,39 @@ func RawDG2ImageBase64(dg2 *document.DG2) (string, error) {
 
 // decodeImage attempts to decode an image from bytes, trying multiple formats
 func decodeImage(data []byte) (image.Image, error) {
+	// Detect the on-wire format from magic bytes before attempting to decode, so
+	// failures below can report *which* format arrived instead of an opaque error.
+	// gmrtd's detector recognizes both the JP2 container (00 00 00 0C 6A 50 20 20 0D 0A —
+	// note it requires the 0D 0A too) and the raw J2K codestream (FF 4F FF 51) encodings.
+	detected, known := utils.DetectImageFormat(data)
+	prefix := fmt.Sprintf("%x", utils.SafePrefix(data, 12))
+	slog.Debug("Detected DG2 image format",
+		"detected_format", detected,
+		"recognized", known,
+		"prefix", prefix)
+
 	// Try JPEG first (most common)
 	if img, err := jpeg.Decode(bytes.NewReader(data)); err == nil {
 		return img, nil
 	}
 
 	// Try JPEG 2000 (JP2/J2K)
-	if img, err := jpeg2000.Parse(data); err == nil {
+	img, jp2Err := jpeg2000.Parse(data)
+	if jp2Err == nil {
 		return img, nil
+	}
+	// imagick sniffs the blob rather than trusting the caller, so this branch also
+	// swallows non-JPEG2000 payloads; only blame JPEG2000 when the magic bytes did.
+	if detected == utils.ImageFormatJPEG2000 {
+		slog.Warn("JPEG2000 decode failed",
+			"detected_format", detected,
+			"prefix", prefix,
+			"error", jp2Err)
+	} else {
+		slog.Debug("imagick decode failed and payload is not JPEG2000",
+			"detected_format", detected,
+			"prefix", prefix,
+			"error", jp2Err)
 	}
 
 	// Try generic image decode as fallback
@@ -95,7 +121,8 @@ func decodeImage(data []byte) (image.Image, error) {
 		return img, nil
 	}
 
-	return nil, fmt.Errorf("unsupported or invalid image format")
+	return nil, fmt.Errorf("unsupported or invalid image format (detected:%q recognized:%t prefix:%s)",
+		detected, known, prefix)
 }
 
 // convertImageToPNGBase64 encodes an image to base64 PNG with optional resize and quantization

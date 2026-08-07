@@ -3,6 +3,7 @@ package images
 import (
 	"image"
 	"image/png"
+	"strings"
 	"testing"
 
 	"github.com/gmrtd/gmrtd/document"
@@ -102,11 +103,20 @@ func TestDecodeImage_InvalidData(t *testing.T) {
 	invalidData := []byte{0x00, 0x01, 0x02, 0x03}
 	_, err := decodeImage(invalidData)
 	if err == nil {
-		t.Error("Expected error with invalid image data, got nil")
+		t.Fatal("Expected error with invalid image data, got nil")
 	}
-	expectedMsg := "unsupported or invalid image format"
-	if err.Error() != expectedMsg {
-		t.Errorf("Expected error '%s', got '%s'", expectedMsg, err.Error())
+	// The diagnostic fields are the point of this path: an unrecognized payload
+	// must surface its (empty) detected format and magic-byte prefix to the caller.
+	msg := err.Error()
+	for _, want := range []string{
+		"unsupported or invalid image format",
+		`detected:""`,
+		"recognized:false",
+		"prefix:00010203",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("Expected error to contain %q, got %q", want, msg)
+		}
 	}
 }
 
