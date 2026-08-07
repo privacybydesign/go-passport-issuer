@@ -121,12 +121,18 @@ export default function FaceCapturePage() {
                 customization: yiviCustomization,
             };
 
-            // Custom elements read their settings on connect, so assign before
-            // appending.
+            // The component's connectedCallback re-reads url/startScreen/etc. from
+            // element *attributes* and writes them into its store, so settings
+            // assigned before the element is attached are clobbered back to
+            // defaults — for `url` that means silently falling back to Regula's
+            // cloud Face API (https://faceapi.regulaforensics.com) instead of the
+            // configured one. Per the package README, `settings` must be assigned
+            // only after the element is in the DOM. Listener first so no early
+            // event is missed.
             element = document.createElement('face-liveness') as FaceLivenessWebComponent;
-            element.settings = settings;
             element.addEventListener('face-liveness', onLiveness);
             container.appendChild(element);
+            element.settings = settings;
         };
 
         void start();
