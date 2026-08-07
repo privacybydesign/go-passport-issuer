@@ -125,4 +125,4 @@ require (
 // against future v2.7.x releases. Remove once cbeff is updated.
 replace gopkg.in/gographics/imagick.v2 => gopkg.in/gographics/imagick.v2 v2.6.4
 
-replace github.com/gmrtd/gmrtd => github.com/privacybydesign/gmrtd v1.0.1-0.20260805100725-2a69bd85e976
+replace github.com/gmrtd/gmrtd => github.com/privacybydesign/gmrtd v1.0.1
