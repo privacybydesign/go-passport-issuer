@@ -121,7 +121,7 @@ func decodeImage(data []byte) (image.Image, error) {
 		return img, nil
 	}
 
-	return nil, fmt.Errorf("unsupported or invalid image format (detected:%q recognized:%t prefix:%x)",
+	return nil, fmt.Errorf("unsupported or invalid image format (detected:%q recognized:%t prefix:%s)",
 		detected, known, prefix)
 }
 
