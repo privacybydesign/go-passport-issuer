@@ -124,3 +124,5 @@ require (
 // subpackage typecheck. A `replace` (rather than `exclude`) keeps the pin solid
 // against future v2.7.x releases. Remove once cbeff is updated.
 replace gopkg.in/gographics/imagick.v2 => gopkg.in/gographics/imagick.v2 v2.6.4
+
+replace github.com/gmrtd/gmrtd => github.com/privacybydesign/gmrtd v1.0.1
