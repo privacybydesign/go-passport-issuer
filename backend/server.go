@@ -57,11 +57,10 @@ type ServerState struct {
 	documentValidator      DocumentValidator
 	drivingLicenceParser   DrivingLicenceParser
 	converter              DocumentDataConverter
+	// faceVerificationClient is nil when face verification is disabled for this
+	// environment; its presence doubles as the enabled flag (see
+	// ServerState.faceVerificationEnabled).
 	faceVerificationClient FaceVerificationClient
-	// faceVerificationPolicy is the resolved policy (disabled/optional/required)
-	// for this environment. Read through facePolicy(), which normalizes the zero
-	// value. See face_verification_policy.go.
-	faceVerificationPolicy FaceVerificationPolicy
 	// regulaFaceApiPublicUrl is the browser-reachable origin of the Regula Face
 	// API, handed to the /capture page by handleFaceCaptureConfig and announced
 	// to the app by handleStartValidatePassport. Empty only when face
@@ -249,7 +248,7 @@ type FaceCaptureConfigResponse struct {
 // handleFaceCaptureConfig serves the configuration the liveness capture page
 // needs
 // @Summary Face capture page configuration
-// @Description Returns the browser-reachable Regula Face API origin used by the /capture liveness page. The page runs the liveness session directly against that service, the same way the native Regula SDK does in the Play Store and App Store builds; only the resulting transaction ID is passed back to the app. Responds 404 when the face verification policy is "disabled", so the capture page cannot run liveness sessions no issuance will consume.
+// @Description Returns the browser-reachable Regula Face API origin used by the /capture liveness page. The page runs the liveness session directly against that service, the same way the native Regula SDK does in the Play Store and App Store builds; only the resulting transaction ID is passed back to the app. Responds 404 when face verification is disabled, so the capture page cannot run liveness sessions no issuance will consume.
 // @Tags Face Verification
 // @Produce json
 // @Success 200 {object} FaceCaptureConfigResponse
@@ -262,10 +261,11 @@ func handleFaceCaptureConfig(state *ServerState, w http.ResponseWriter, r *http.
 	// Serving it at runtime keeps one static frontend build valid across
 	// environments.
 	//
-	// A disabled policy 404s even with the URL configured, so the capture page
-	// and the policy cannot disagree: no liveness session gets captured that
-	// issuance will never consume (and that nothing would delete).
-	if state.facePolicy() == FaceVerificationDisabled || state.regulaFaceApiPublicUrl == "" {
+	// Disabled face verification 404s even with the URL configured, so the
+	// capture page and the flag cannot disagree: no liveness session gets
+	// captured that issuance will never consume (and that nothing would
+	// delete).
+	if !state.faceVerificationEnabled() || state.regulaFaceApiPublicUrl == "" {
 		http.Error(w, "face capture not configured", http.StatusNotFound)
 		return
 	}
@@ -324,10 +324,10 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 	slog.Debug("Checking expiry", "is_expired", isExpired, "expiry_date", doc.Dg1.DateOfExpiry)
 
 	// Optional face matching against the live face from the liveness session.
-	// Advisory only for verification; skipped entirely when the policy is
-	// disabled (no Regula client to match — or delete — with).
+	// Advisory only for verification; skipped entirely when face verification
+	// is disabled (no Regula client to match — or delete — with).
 	var faceMatch *FaceMatchResult
-	if request.LivenessTransactionId != "" && doc.Dg6 != nil && state.facePolicy() != FaceVerificationDisabled {
+	if request.LivenessTransactionId != "" && doc.Dg6 != nil && state.faceVerificationEnabled() {
 		slog.Info("Performing face verification for driving license")
 		// Use the original DG6 chip image (not the display PNG) for matching.
 		docImage, imgErr := doc.Dg6.RawBase64()
@@ -466,10 +466,10 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 	slog.Debug("Checking passport expiry", "is_expired", isExpired, "expiry_date", passportData.DateOfExpiry)
 
 	// Optional face matching against the live face from the liveness session.
-	// Advisory only for verification; skipped entirely when the policy is
-	// disabled (no Regula client to match — or delete — with).
+	// Advisory only for verification; skipped entirely when face verification
+	// is disabled (no Regula client to match — or delete — with).
 	var faceMatch *FaceMatchResult
-	if request.LivenessTransactionId != "" && state.facePolicy() != FaceVerificationDisabled {
+	if request.LivenessTransactionId != "" && state.faceVerificationEnabled() {
 		slog.Info("Performing face verification")
 		// Use the original DG2 chip image (not the display PNG) for matching.
 		docImage, imgErr := images.RawDG2ImageBase64(doc.Mf.Lds1.Dg2)
@@ -754,9 +754,7 @@ func decodeValidationRequest(r *http.Request) (models.ValidationRequest, error) 
 // FaceVerificationAnnouncement tells the app that face verification applies to
 // this document session. Its *presence* is the signal — there is no enabled
 // flag inside it, and the app treats an absent announcement as "skip the whole
-// step". The policy behind it (optional vs required) is deliberately not
-// announced: an app that can verify must always verify; the optional tolerance
-// exists only for app versions that cannot.
+// step".
 type FaceVerificationAnnouncement struct {
 	// Browser/app-reachable origin of the Regula Face API the liveness session
 	// must run against — the same service this issuer matches against.
@@ -769,14 +767,14 @@ type ValidatePassportResponse struct {
 	SessionId string `json:"session_id" example:"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"`
 	// Random nonce for active authentication (16 hex characters)
 	Nonce string `json:"nonce" example:"1234567890abcdef"`
-	// Present iff face verification applies to this session (policy is not
-	// "disabled"). Absent means the app skips the face verification step.
+	// Present iff face verification is enabled for this environment. Absent
+	// means the app skips the face verification step.
 	FaceVerification *FaceVerificationAnnouncement `json:"face_verification,omitempty"`
 }
 
 // handleStartValidatePassport starts a document validation session
 // @Summary Start document validation session
-// @Description Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests. When face verification applies to this environment (policy "optional" or "required"), the response carries a face_verification object naming the Face API the liveness session must run against; the app skips the face verification step when the object is absent.
+// @Description Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests. When face verification is enabled for this environment, the response carries a face_verification object naming the Face API the liveness session must run against; the app skips the face verification step when the object is absent.
 // @Tags Session
 // @Produce json
 // @Success 200 {object} ValidatePassportResponse
@@ -824,8 +822,8 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 	}
 	// Announce face verification when it applies. The app runs or skips the
 	// whole step on the presence of this field, for every flavor; startup
-	// validation guarantees a non-empty public URL for non-disabled policies.
-	if state.facePolicy() != FaceVerificationDisabled {
+	// validation guarantees a non-empty public URL when enabled.
+	if state.faceVerificationEnabled() {
 		response.FaceVerification = &FaceVerificationAnnouncement{
 			FaceApiUrl: state.regulaFaceApiPublicUrl,
 		}
@@ -1013,33 +1011,25 @@ func performFaceMatch(state *ServerState, documentImageBase64, livenessTransacti
 	}, nil
 }
 
-// verifyFaceBeforeIssuance enforces the face verification policy before
-// credential issuance. It returns true when issuance may proceed.
+// verifyFaceBeforeIssuance enforces face verification before credential
+// issuance. It returns true when issuance may proceed.
 //
-// The policy only decides what an issuance *without* a liveness transaction id
-// means: disabled skips verification entirely, optional tolerates it (old app
-// versions without face verification built in — the transitional stance), and
-// required rejects it. A *provided* id is always fully enforced, fail-closed,
-// under every non-disabled policy: anything softer would let a failed match be
-// downgraded into a pass by withholding it.
+// When disabled (no Regula client), the step does not exist and issuance
+// proceeds. When enabled, verification is fail-closed: issuance is rejected
+// unless a confirmed liveness transaction is provided and the live face
+// matches the document portrait above the threshold — anything softer would
+// let a failed match be downgraded into a pass by withholding the id.
 func verifyFaceBeforeIssuance(state *ServerState, w http.ResponseWriter, documentImage, livenessTransactionID, documentType string) bool {
-	policy := state.facePolicy()
-	if policy == FaceVerificationDisabled {
+	if !state.faceVerificationEnabled() {
 		slog.Debug("Face verification disabled, skipping", "document_type", documentType)
 		return true
 	}
 
 	if livenessTransactionID == "" {
-		if policy == FaceVerificationOptional {
-			// Counted in log aggregation to time the flip to "required": once
-			// this line flatlines, the old apps have drained out. Nothing
-			// user-identifying is logged.
-			slog.Info("issuance without face verification", "policy", policy, "document_type", documentType)
-			return true
-		}
 		slog.Warn("Liveness transaction required for issuance", "document_type", documentType)
-		// The body reaches old apps' error-details dialog and support tickets
-		// verbatim; make it self-explanatory.
+		// App versions without face verification built in land here once an
+		// issuer enables it. The body reaches their error-details dialog and
+		// support tickets verbatim; make it self-explanatory.
 		respondWithErr(w, http.StatusBadRequest,
 			"face verification required: this version of the app does not support face verification, please update the Yivi app to add this document",
 			"no liveness transaction provided for issuance", nil, "document_type", documentType)

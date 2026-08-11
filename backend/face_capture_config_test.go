@@ -41,13 +41,13 @@ func TestFaceCaptureConfigNotFoundWhenUnconfigured(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-// TestFaceCaptureConfigNotFoundWhenPolicyDisabled verifies a disabled policy
-// 404s the capture page even with the public URL still configured, so the page
-// and the policy cannot disagree: no liveness session gets captured that
-// issuance will never consume.
-func TestFaceCaptureConfigNotFoundWhenPolicyDisabled(t *testing.T) {
+// TestFaceCaptureConfigNotFoundWhenDisabled verifies disabled face
+// verification 404s the capture page even with the public URL still
+// configured, so the page and the flag cannot disagree: no liveness session
+// gets captured that issuance will never consume.
+func TestFaceCaptureConfigNotFoundWhenDisabled(t *testing.T) {
 	state := &ServerState{
-		faceVerificationPolicy: FaceVerificationDisabled,
+		// No faceVerificationClient → face verification disabled.
 		regulaFaceApiPublicUrl: "https://faceapi.staging.yivi.app",
 	}
 
@@ -61,7 +61,7 @@ func TestFaceCaptureConfigNotFoundWhenPolicyDisabled(t *testing.T) {
 // answers GET.
 func TestFaceCaptureConfigRouteIsGetOnly(t *testing.T) {
 	srv, err := NewServer(&ServerState{
-		faceVerificationPolicy: FaceVerificationRequired,
+		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", 0),
 		regulaFaceApiPublicUrl: "https://faceapi.example",
 	}, ServerConfig{})
 	require.NoError(t, err)

@@ -20,34 +20,29 @@ func startValidationWith(t *testing.T, state *ServerState) ValidatePassportRespo
 	return response
 }
 
-// TestStartValidationAnnouncesFaceVerification verifies a non-disabled policy
-// announces face verification with the browser/app-reachable Face API origin —
+// TestStartValidationAnnouncesFaceVerification verifies enabled face
+// verification is announced with the browser/app-reachable Face API origin —
 // never the internal one the backend itself matches against.
 func TestStartValidationAnnouncesFaceVerification(t *testing.T) {
-	for _, policy := range []FaceVerificationPolicy{
-		FaceVerificationOptional, FaceVerificationRequired,
-	} {
-		state := &ServerState{
-			tokenStorage:           NewInMemoryTokenStorage(),
-			faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", 0),
-			faceVerificationPolicy: policy,
-			regulaFaceApiPublicUrl: "https://faceapi.staging.yivi.app",
-		}
-
-		response := startValidationWith(t, state)
-		require.NotNil(t, response.FaceVerification, policy)
-		require.Equal(t, "https://faceapi.staging.yivi.app", response.FaceVerification.FaceApiUrl)
+	state := &ServerState{
+		tokenStorage:           NewInMemoryTokenStorage(),
+		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", 0),
+		regulaFaceApiPublicUrl: "https://faceapi.staging.yivi.app",
 	}
+
+	response := startValidationWith(t, state)
+	require.NotNil(t, response.FaceVerification)
+	require.Equal(t, "https://faceapi.staging.yivi.app", response.FaceVerification.FaceApiUrl)
 }
 
 // TestStartValidationOmitsAnnouncementWhenDisabled verifies the field is absent
-// under a disabled policy — absence is the app's signal to skip the whole face
-// verification step, so it must not be present-but-empty.
+// when face verification is disabled — absence is the app's signal to skip the
+// whole face verification step, so it must not be present-but-empty.
 func TestStartValidationOmitsAnnouncementWhenDisabled(t *testing.T) {
 	state := &ServerState{
-		tokenStorage:           NewInMemoryTokenStorage(),
-		faceVerificationPolicy: FaceVerificationDisabled,
-		// Leftover URL must not resurrect the announcement.
+		tokenStorage: NewInMemoryTokenStorage(),
+		// No faceVerificationClient → disabled; a leftover URL must not
+		// resurrect the announcement.
 		regulaFaceApiPublicUrl: "https://faceapi.staging.yivi.app",
 	}
 
@@ -70,7 +65,6 @@ func TestStartValidationAnnouncementNeverLeaksInternalUrl(t *testing.T) {
 	state := &ServerState{
 		tokenStorage:           NewInMemoryTokenStorage(),
 		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", 0),
-		faceVerificationPolicy: FaceVerificationRequired,
 		regulaFaceApiPublicUrl: "https://faceapi.staging.yivi.app",
 	}
 

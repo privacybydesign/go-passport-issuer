@@ -48,11 +48,12 @@ type Config struct {
 	// from RegulaFaceApiUrl, which the backend uses over the internal network
 	// and which a browser generally cannot resolve.
 	RegulaFaceApiPublicUrl string `json:"regula_face_api_public_url,omitempty"`
-	// Face verification policy: "disabled", "optional" or "required". When
-	// absent, derived from RegulaFaceApiUrl (set → "required", unset →
-	// "disabled") so old configs keep their exact pre-policy behaviour. See
-	// resolveFaceVerificationPolicy.
-	FaceVerificationPolicy string `json:"face_verification_policy,omitempty"`
+	// Whether face verification applies in this environment. Enabled is
+	// fail-closed: issuance without a matching liveness transaction is
+	// rejected. When absent, derived from RegulaFaceApiUrl (set → enabled) so
+	// old configs keep their exact behaviour. See
+	// resolveFaceVerificationEnabled.
+	FaceVerificationEnabled *bool `json:"face_verification_enabled,omitempty"`
 }
 
 type CredentialConfig struct {
@@ -153,17 +154,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	facePolicy, err := resolveFaceVerificationPolicy(&config)
+	faceVerification, err := resolveFaceVerificationEnabled(&config)
 	if err != nil {
 		slog.Error("invalid face verification configuration", "error", err)
 		os.Exit(1)
 	}
 
 	var faceVerificationClient FaceVerificationClient
-	if facePolicy != FaceVerificationDisabled {
+	if faceVerification {
 		slog.Info("Initializing Regula Face API client",
 			"url", config.RegulaFaceApiUrl,
-			"policy", facePolicy,
 			"match_threshold", config.RegulaFaceMatchThreshold)
 		faceVerificationClient = NewRegulaFaceClient(config.RegulaFaceApiUrl, config.RegulaFaceMatchThreshold)
 		if err := faceVerificationClient.HealthCheck(); err != nil {
@@ -183,7 +183,6 @@ func main() {
 		converter:              IssuanceRequestConverterImpl{},
 		drivingLicenceParser:   DrivingLicenceParserImpl{},
 		faceVerificationClient: faceVerificationClient,
-		faceVerificationPolicy: facePolicy,
 		regulaFaceApiPublicUrl: config.RegulaFaceApiPublicUrl,
 	}
 
