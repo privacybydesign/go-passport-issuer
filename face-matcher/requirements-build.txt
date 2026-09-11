@@ -1,0 +1,5 @@
+# Build tools for the hash-verified InsightFace source distribution.
+setuptools
+wheel
+cython
+numpy>=1.26,<3

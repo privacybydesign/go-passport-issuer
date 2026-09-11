@@ -24,7 +24,6 @@ configured threshold); this service only reports what it saw.
 from __future__ import annotations
 
 import base64
-import binascii
 import io
 import logging
 import os
@@ -32,7 +31,7 @@ from typing import Protocol, Sequence
 
 import numpy as np
 from fastapi import FastAPI, HTTPException
-from PIL import Image, UnidentifiedImageError
+from PIL import Image
 from pydantic import BaseModel
 
 log = logging.getLogger("face-matcher")
@@ -79,7 +78,7 @@ def decode_image(field: str, encoded: str) -> np.ndarray:
     """Base64 -> BGR uint8 array, or a 422 naming the offending field."""
     try:
         data = base64.b64decode(encoded, validate=True)
-    except (binascii.Error, ValueError):
+    except ValueError:
         raise HTTPException(status_code=422, detail=f"{field} is not valid base64")
     if not data:
         raise HTTPException(status_code=422, detail=f"{field} is empty")
@@ -89,7 +88,7 @@ def decode_image(field: str, encoded: str) -> np.ndarray:
     try:
         with Image.open(io.BytesIO(data)) as img:
             rgb = np.asarray(img.convert("RGB"))
-    except (UnidentifiedImageError, OSError, ValueError):
+    except (OSError, ValueError):
         raise HTTPException(status_code=422, detail=f"{field} could not be decoded as an image")
 
     # InsightFace, like OpenCV, expects BGR channel order.
@@ -98,7 +97,7 @@ def decode_image(field: str, encoded: str) -> np.ndarray:
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     denominator = float(np.linalg.norm(a) * np.linalg.norm(b))
-    if denominator == 0.0:
+    if denominator <= 0.0:
         return 0.0
     return float(np.dot(a, b) / denominator)
 
@@ -121,7 +120,7 @@ def create_app(engine: Engine) -> FastAPI:
     def healthz() -> dict[str, str]:
         return {"status": "ok", "model": engine.name}
 
-    @app.post("/match", response_model=MatchResponse)
+    @app.post("/match", responses={422: {"description": "Invalid request or empty, oversized, or undecodable image"}})
     def match(request: MatchRequest) -> MatchResponse:
         document = decode_image("document_image", request.document_image)
         live = decode_image("live_image", request.live_image)

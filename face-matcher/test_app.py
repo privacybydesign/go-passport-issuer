@@ -123,3 +123,6 @@ def test_cosine_similarity():
     assert cosine_similarity(a, np.array([0.0, 1.0])) == pytest.approx(0.0)
     assert cosine_similarity(a, np.array([-1.0, 0.0])) == pytest.approx(-1.0)
     assert cosine_similarity(a, np.zeros(2)) == 0.0
+    # Small nonzero embeddings still have a well-defined cosine similarity.
+    tiny = np.array([1e-12, 0.0])
+    assert cosine_similarity(tiny, tiny) == pytest.approx(1.0)

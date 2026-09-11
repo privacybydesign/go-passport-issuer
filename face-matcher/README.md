@@ -42,7 +42,7 @@ the container makes no network calls at runtime.
 ### Base image
 
 The image is built on Chainguard's Wolfi-based Python images
-(`cgr.dev/chainguard/python:latest-dev` to build, `:latest` to run). The
+(`cgr.dev/chainguard/python`, with build and runtime digests pinned). The
 runtime variant has no shell or package manager and runs as a non-root user,
 and Chainguard rebuilds it daily against upstream fixes. This was chosen after
 scanning the alternatives with Trivy (September 2026):
@@ -54,9 +54,30 @@ scanning the alternatives with Trivy (September 2026):
 | `cgr.dev/chainguard/python:latest` | not measured here (scan blocked by a full disk); Chainguard publishes per-image counts at images.chainguard.dev |
 
 Most Debian findings are unfixed upstream, so no Debian tag removes them. The
-trade-off: the free Chainguard tier only publishes `latest`, so the Python
-minor version follows Chainguard rather than being pinned here. Pin a digest
-in production (`cgr.dev/chainguard/python@sha256:…`) and bump it deliberately.
+free Chainguard tier only publishes moving tags, so the Dockerfile pins both
+images by digest. Update both digests together and regenerate the dependency
+locks with the new build image's Python version.
+
+### Dependency locks
+
+The image installs `requirements.lock` and `requirements-build.lock`, which
+pin all resolved versions and verify distribution hashes. All dependencies
+must have wheels except InsightFace 0.7.3, whose hash-verified source release
+compiles a Cython extension in the build stage. Build isolation is disabled
+so its build tools come exclusively from the build lock. Source builds for
+other packages fail instead of silently executing their setup scripts.
+
+To regenerate the locks, run these commands from this directory inside the
+pinned build image with uv 0.12.13 installed in a temporary virtual environment:
+
+```bash
+uv pip compile requirements.txt --generate-hashes --output-file requirements.lock
+uv pip compile requirements-build.txt --constraint requirements.lock --generate-hashes --output-file requirements-build.lock
+```
+
+Rebuild the image after each update to verify wheel availability and the
+InsightFace extension. Runtime code, dependencies, and models are root-owned
+and cannot be modified by the non-root service user.
 
 The remaining vulnerability surface is the Python dependency set
 (onnxruntime, OpenCV, InsightFace); scan the built image, not just the base:
@@ -88,3 +109,4 @@ pytest
 - `app.py`: FastAPI app, `Engine` protocol, `InsightFaceEngine`, image decoding.
 - `test_app.py`: HTTP tests against `FakeEngine`.
 - `requirements.txt` / `requirements-dev.txt`: runtime vs test dependencies.
+- `requirements-build.txt`: source-build tools; `*.lock`: hashed deployment dependencies.

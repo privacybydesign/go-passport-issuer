@@ -101,8 +101,8 @@ func TestDecodeLiveFacePng_TooSmall(t *testing.T) {
 func TestDecodeLiveFacePng_TooLargeDimensions(t *testing.T) {
 	// Only the header is read, so a huge declared size is cheap to test: hand
 	// craft a PNG header claiming 5000x5000 on top of a real small image.
-	real := pngBytes(t, 64, 64)
-	forged := append([]byte{}, real...)
+	originalPNG := pngBytes(t, 64, 64)
+	forged := append([]byte{}, originalPNG...)
 	// IHDR width/height are big-endian at offsets 16 and 20.
 	forged[16], forged[17], forged[18], forged[19] = 0, 0, 0x13, 0x88 // 5000
 	forged[20], forged[21], forged[22], forged[23] = 0, 0, 0x13, 0x88 // 5000
