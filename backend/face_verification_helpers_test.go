@@ -108,7 +108,7 @@ func TestPerformFaceMatch_Success(t *testing.T) {
 func TestVerifyFaceBeforeIssuance_Disabled(t *testing.T) {
 	state := &ServerState{}
 	rec := httptest.NewRecorder()
-	ok := verifyFaceBeforeIssuance(state, rec, "img", "txn-1", "passport")
+	ok := verifyFaceBeforeIssuance(state, rec, "img", regulaEvidence("txn-1"), "passport")
 	require.True(t, ok)
 	require.Equal(t, http.StatusOK, rec.Code)
 }
@@ -116,7 +116,7 @@ func TestVerifyFaceBeforeIssuance_Disabled(t *testing.T) {
 func TestVerifyFaceBeforeIssuance_MissingLivenessTransaction(t *testing.T) {
 	state := &ServerState{faceVerificationClient: &fakeFaceClient{}}
 	rec := httptest.NewRecorder()
-	ok := verifyFaceBeforeIssuance(state, rec, "img", "", "passport")
+	ok := verifyFaceBeforeIssuance(state, rec, "img", faceEvidence{}, "passport")
 	require.False(t, ok)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
@@ -125,7 +125,7 @@ func TestVerifyFaceBeforeIssuance_MatchError(t *testing.T) {
 	fake := &fakeFaceClient{livenessErr: errors.New("boom")}
 	state := &ServerState{faceVerificationClient: fake}
 	rec := httptest.NewRecorder()
-	ok := verifyFaceBeforeIssuance(state, rec, "img", "txn-1", "passport")
+	ok := verifyFaceBeforeIssuance(state, rec, "img", regulaEvidence("txn-1"), "passport")
 	require.False(t, ok)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
@@ -137,7 +137,7 @@ func TestVerifyFaceBeforeIssuance_NotMatched(t *testing.T) {
 	}
 	state := &ServerState{faceVerificationClient: fake}
 	rec := httptest.NewRecorder()
-	ok := verifyFaceBeforeIssuance(state, rec, "img", "txn-1", "passport")
+	ok := verifyFaceBeforeIssuance(state, rec, "img", regulaEvidence("txn-1"), "passport")
 	require.False(t, ok)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
@@ -148,7 +148,7 @@ func TestVerifyFaceBeforeIssuance_NotMatched(t *testing.T) {
 func TestVerifyFaceBeforeIssuance_MissingTransactionBodyExplainsItself(t *testing.T) {
 	state := &ServerState{faceVerificationClient: &fakeFaceClient{}}
 	rec := httptest.NewRecorder()
-	ok := verifyFaceBeforeIssuance(state, rec, "img", "", "passport")
+	ok := verifyFaceBeforeIssuance(state, rec, "img", faceEvidence{}, "passport")
 	require.False(t, ok)
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.Contains(t, rec.Body.String(), "face verification required")
@@ -158,7 +158,7 @@ func TestVerifyFaceBeforeIssuance_MissingTransactionBodyExplainsItself(t *testin
 // disabled → the whole step is skipped; a provided id is simply ignored.
 func TestVerifyFaceBeforeIssuance_DisabledIgnoresProvidedTransaction(t *testing.T) {
 	rec := httptest.NewRecorder()
-	ok := verifyFaceBeforeIssuance(&ServerState{}, rec, "img", "txn-1", "passport")
+	ok := verifyFaceBeforeIssuance(&ServerState{}, rec, "img", regulaEvidence("txn-1"), "passport")
 	require.True(t, ok)
 	require.Equal(t, http.StatusOK, rec.Code)
 }
@@ -170,7 +170,7 @@ func TestVerifyFaceBeforeIssuance_Passes(t *testing.T) {
 	}
 	state := &ServerState{faceVerificationClient: fake}
 	rec := httptest.NewRecorder()
-	ok := verifyFaceBeforeIssuance(state, rec, "img", "txn-1", "passport")
+	ok := verifyFaceBeforeIssuance(state, rec, "img", regulaEvidence("txn-1"), "passport")
 	require.True(t, ok)
 	require.Equal(t, http.StatusOK, rec.Code)
 }

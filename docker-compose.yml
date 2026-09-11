@@ -16,6 +16,7 @@ services:
     depends_on:
       - redis
       - regula-face-api
+      - face-matcher
 
   redis:
     image: 'bitnami/redis:latest'
@@ -42,6 +43,19 @@ services:
       - app_network
     depends_on:
       - db-postgres
+    restart: unless-stopped
+
+  # Self-hosted open-source face matcher behind on-device face verification
+  # (variant B). Internal network only; the issuer reaches it as
+  # http://face-matcher:8000. See face-matcher/README.md.
+  face-matcher:
+    build:
+      context: ./face-matcher
+    container_name: face-matcher
+    expose:
+      - 8000
+    networks:
+      - app_network
     restart: unless-stopped
 
   db-postgres:

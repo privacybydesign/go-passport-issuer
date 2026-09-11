@@ -54,6 +54,17 @@ type Config struct {
 	// old configs keep their exact behaviour. See
 	// resolveFaceVerificationEnabled.
 	FaceVerificationEnabled *bool `json:"face_verification_enabled,omitempty"`
+	// Base URL of the self-hosted face-matcher sidecar (see face-matcher/),
+	// e.g. http://face-matcher:8000. Set means on-device face verification
+	// (variant B) is offered: the app's live face crop is re-matched here
+	// against the chip portrait. Independent of the Regula settings; a
+	// deployment may configure only this.
+	FaceMatcherUrl string `json:"face_matcher_url,omitempty"`
+	// Cosine similarity above which the face matcher considers the live face
+	// and the chip portrait the same person. Required (positive) when
+	// FaceMatcherUrl is set; there is no default because the scale differs
+	// from Regula's and has to be calibrated per deployment.
+	FaceMatcherThreshold float64 `json:"face_matcher_threshold,omitempty"`
 }
 
 type CredentialConfig struct {
@@ -161,13 +172,25 @@ func main() {
 	}
 
 	var faceVerificationClient FaceVerificationClient
+	var faceMatcher FaceMatcher
 	if faceVerification {
-		slog.Info("Initializing Regula Face API client",
-			"url", config.RegulaFaceApiUrl,
-			"match_threshold", config.RegulaFaceMatchThreshold)
-		faceVerificationClient = NewRegulaFaceClient(config.RegulaFaceApiUrl, config.RegulaFaceMatchThreshold)
-		if err := faceVerificationClient.HealthCheck(); err != nil {
-			slog.Warn("Regula Face API health check failed, service may not be available", "error", err)
+		if config.RegulaFaceApiUrl != "" {
+			slog.Info("Initializing Regula Face API client",
+				"url", config.RegulaFaceApiUrl,
+				"match_threshold", config.RegulaFaceMatchThreshold)
+			faceVerificationClient = NewRegulaFaceClient(config.RegulaFaceApiUrl, config.RegulaFaceMatchThreshold)
+			if err := faceVerificationClient.HealthCheck(); err != nil {
+				slog.Warn("Regula Face API health check failed, service may not be available", "error", err)
+			}
+		}
+		if config.FaceMatcherUrl != "" {
+			slog.Info("Initializing face matcher client (on-device face verification)",
+				"url", config.FaceMatcherUrl,
+				"match_threshold", config.FaceMatcherThreshold)
+			faceMatcher = NewSidecarFaceMatcher(config.FaceMatcherUrl, config.FaceMatcherThreshold)
+			if err := faceMatcher.HealthCheck(); err != nil {
+				slog.Warn("Face matcher health check failed, service may not be available", "error", err)
+			}
 		}
 	} else {
 		slog.Info("Face verification disabled")
@@ -183,6 +206,7 @@ func main() {
 		converter:              IssuanceRequestConverterImpl{},
 		drivingLicenceParser:   DrivingLicenceParserImpl{},
 		faceVerificationClient: faceVerificationClient,
+		faceMatcher:            faceMatcher,
 		regulaFaceApiPublicUrl: config.RegulaFaceApiPublicUrl,
 	}
 

@@ -276,7 +276,7 @@ Note that the component fetches its WASM liveness engine from `https://wasm.regu
 
 ### Usage with Existing Endpoints
 
-Face verification is integrated into the existing verification and issuance endpoints. Add the `liveness_transaction_id` field (obtained from a completed Regula liveness session) to your requests:
+Face verification is integrated into the existing verification and issuance endpoints. Add the `liveness_transaction_id` field (obtained from a completed Regula liveness session) to your requests. Apps that ran on-device face verification (the Iris SDK, variant B) send a `face_verification` object with the live face crop instead; the backend re-matches it with the self-hosted [face-matcher](face-matcher/README.md) sidecar (`face_matcher_url`, `face_matcher_threshold`). See [docs/FACE-VERIFICATION.md](docs/FACE-VERIFICATION.md#on-device-face-verification-variant-b).
 
 #### Passport/ID Card/Driving Licence Verification
 ```bash

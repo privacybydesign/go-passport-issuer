@@ -1,0 +1,11 @@
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+pydantic>=2,<3
+# numpy 1.x has no wheels for Python 3.13+; the Chainguard base tracks the
+# current Python, and insightface 0.7.3, onnxruntime>=1.19 and
+# opencv-python-headless>=4.10 all support numpy 2.
+numpy>=1.26,<3
+pillow>=10,<12
+insightface==0.7.3
+onnxruntime>=1.19,<2
+opencv-python-headless>=4.10,<5

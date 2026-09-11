@@ -64,6 +64,10 @@ type ServerState struct {
 	// environment; its presence doubles as the enabled flag (see
 	// ServerState.faceVerificationEnabled).
 	faceVerificationClient FaceVerificationClient
+	// faceMatcher re-matches the live face crop submitted by on-device face
+	// verification (variant B) against the chip portrait. nil when variant B
+	// is not offered. Either client being present enables face verification.
+	faceMatcher FaceMatcher
 	// regulaFaceApiPublicUrl is the browser-reachable origin of the Regula Face
 	// API, handed to the /capture page by handleFaceCaptureConfig and announced
 	// to the app by handleStartValidatePassport. Empty only when face
@@ -234,6 +238,8 @@ type VerificationResponse struct {
 // FaceMatchResult contains the result of comparing the document chip portrait
 // with the live face captured during a Regula liveness session.
 type FaceMatchResult struct {
+	// Which method produced the live face: "regula" or "iris"
+	Method string `json:"method,omitempty" example:"regula"`
 	// True if the document portrait and live face match above the similarity threshold
 	Matched bool `json:"matched" example:"true"`
 	// Similarity score between the document portrait and live face
@@ -415,7 +421,7 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 			edlImage = img
 		}
 	}
-	if !verifyFaceBeforeIssuance(state, w, edlImage, request.LivenessTransactionId, "driving-licence") {
+	if !verifyFaceBeforeIssuance(state, w, edlImage, faceEvidenceFrom(&request), "driving-licence") {
 		return
 	}
 
@@ -556,7 +562,7 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 	if imgErr != nil {
 		slog.Warn("Failed to extract DG2 image for face matching", "error", imgErr)
 	}
-	if !verifyFaceBeforeIssuance(state, w, idCardImage, request.LivenessTransactionId, "id-card") {
+	if !verifyFaceBeforeIssuance(state, w, idCardImage, faceEvidenceFrom(&request), "id-card") {
 		return
 	}
 
@@ -616,7 +622,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	if imgErr != nil {
 		slog.Warn("Failed to extract DG2 image for face matching", "error", imgErr)
 	}
-	if !verifyFaceBeforeIssuance(state, w, passportImage, request.LivenessTransactionId, "passport") {
+	if !verifyFaceBeforeIssuance(state, w, passportImage, faceEvidenceFrom(&request), "passport") {
 		return
 	}
 
@@ -765,8 +771,12 @@ func decodeValidationRequest(r *http.Request) (models.ValidationRequest, error) 
 // step".
 type FaceVerificationAnnouncement struct {
 	// Browser/app-reachable origin of the Regula Face API the liveness session
-	// must run against — the same service this issuer matches against.
-	FaceApiUrl string `json:"face_api_url" example:"https://faceapi.staging.yivi.app"`
+	// must run against. Present iff the "regula" method is offered.
+	FaceApiUrl string `json:"face_api_url,omitempty" example:"https://faceapi.staging.yivi.app"`
+	// Face verification methods this issuer accepts evidence for: "regula"
+	// (variant A, liveness transaction) and/or "iris" (variant B, on-device
+	// verification re-matched server-side).
+	Methods []string `json:"methods" example:"regula,iris"`
 }
 
 // ValidatePassportResponse contains the session ID and nonce for document validation
@@ -834,6 +844,7 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 	if state.faceVerificationEnabled() {
 		response.FaceVerification = &FaceVerificationAnnouncement{
 			FaceApiUrl: state.regulaFaceApiPublicUrl,
+			Methods:    state.faceVerificationMethods(),
 		}
 	}
 
@@ -1014,6 +1025,7 @@ func performFaceMatch(state *ServerState, documentImageBase64, livenessTransacti
 
 	slog.Info("Face matching completed", "matched", response.Matched, "similarity", response.Similarity)
 	return &FaceMatchResult{
+		Method:     FaceVerificationMethodRegula,
 		Matched:    response.Matched,
 		Similarity: response.Similarity,
 	}, nil
@@ -1022,17 +1034,35 @@ func performFaceMatch(state *ServerState, documentImageBase64, livenessTransacti
 // verifyFaceBeforeIssuance enforces face verification before credential
 // issuance. It returns true when issuance may proceed.
 //
-// When disabled (no Regula client), the step does not exist and issuance
-// proceeds. When enabled, verification is fail-closed: issuance is rejected
-// unless a confirmed liveness transaction is provided and the live face
-// matches the document portrait above the threshold — anything softer would
-// let a failed match be downgraded into a pass by withholding the id.
-func verifyFaceBeforeIssuance(state *ServerState, w http.ResponseWriter, documentImage, livenessTransactionID, documentType string) bool {
+// When disabled (neither a Regula client nor a face matcher), the step does
+// not exist and issuance proceeds. When enabled, verification is fail-closed:
+// issuance is rejected unless the request carries evidence for exactly one
+// method that this issuer offers, and that evidence verifies: for variant A
+// a confirmed liveness transaction whose live face matches the portrait, for
+// variant B a live face crop that the issuer's own matcher confirms against
+// the portrait. Anything softer would let a failed match be downgraded into a
+// pass by withholding or swapping the evidence.
+func verifyFaceBeforeIssuance(state *ServerState, w http.ResponseWriter, documentImage string, evidence faceEvidence, documentType string) bool {
 	if !state.faceVerificationEnabled() {
 		slog.Debug("Face verification disabled, skipping", "document_type", documentType)
 		return true
 	}
 
+	if evidence.mixed() {
+		slog.Warn("Request carries evidence for more than one face verification method", "document_type", documentType)
+		respondWithErr(w, http.StatusBadRequest,
+			"face verification failed: provide either a liveness transaction or on-device face verification evidence, not both",
+			"mixed face verification evidence", nil, "document_type", documentType)
+		return false
+	}
+
+	// Variant B: the app verified on the device, we re-match its live crop.
+	if evidence.OnDevice != nil {
+		return verifyOnDeviceFaceBeforeIssuance(state, w, documentImage, evidence.OnDevice, documentType)
+	}
+
+	// Variant A from here on.
+	livenessTransactionID := evidence.LivenessTransactionID
 	if livenessTransactionID == "" {
 		slog.Warn("Liveness transaction required for issuance", "document_type", documentType)
 		// App versions without face verification built in land here once an
@@ -1041,6 +1071,14 @@ func verifyFaceBeforeIssuance(state *ServerState, w http.ResponseWriter, documen
 		respondWithErr(w, http.StatusBadRequest,
 			"face verification required: this version of the app does not support face verification, please update the Yivi app to add this document",
 			"no liveness transaction provided for issuance", nil, "document_type", documentType)
+		return false
+	}
+
+	if state.faceVerificationClient == nil {
+		slog.Warn("Liveness transaction submitted but Regula is not configured", "document_type", documentType)
+		respondWithErr(w, http.StatusBadRequest,
+			"face verification failed: Regula liveness is not supported by this issuer",
+			"liveness transaction without a configured Regula client", nil, "document_type", documentType)
 		return false
 	}
 

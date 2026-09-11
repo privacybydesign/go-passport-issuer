@@ -20,8 +20,15 @@ import "fmt"
 // app. Enabled without the public URL would send apps into the step with
 // nowhere to run liveness (a dead end at runtime), so it fails at startup
 // instead.
+//
+// Two methods can back the step, independently of each other: Regula
+// (variant A, regula_face_api_url + regula_face_api_public_url) and the
+// self-hosted face matcher behind on-device verification (variant B,
+// face_matcher_url + face_matcher_threshold). Enabled requires at least one
+// of them to be fully configured. A deployment may run variant B with no
+// Regula at all.
 func resolveFaceVerificationEnabled(config *Config) (bool, error) {
-	enabled := config.RegulaFaceApiUrl != ""
+	enabled := config.RegulaFaceApiUrl != "" || config.FaceMatcherUrl != ""
 	if config.FaceVerificationEnabled != nil {
 		enabled = *config.FaceVerificationEnabled
 	}
@@ -29,18 +36,46 @@ func resolveFaceVerificationEnabled(config *Config) (bool, error) {
 		return false, nil
 	}
 
-	if config.RegulaFaceApiUrl == "" {
-		return false, fmt.Errorf("face_verification_enabled requires regula_face_api_url")
+	regulaConfigured := config.RegulaFaceApiUrl != "" || config.RegulaFaceApiPublicUrl != ""
+	matcherConfigured := config.FaceMatcherUrl != ""
+	if !regulaConfigured && !matcherConfigured {
+		return false, fmt.Errorf("face_verification_enabled requires regula_face_api_url or face_matcher_url")
 	}
-	if config.RegulaFaceApiPublicUrl == "" {
-		return false, fmt.Errorf("face verification requires regula_face_api_public_url")
+
+	if regulaConfigured {
+		if config.RegulaFaceApiUrl == "" {
+			return false, fmt.Errorf("face_verification_enabled requires regula_face_api_url")
+		}
+		if config.RegulaFaceApiPublicUrl == "" {
+			return false, fmt.Errorf("face verification requires regula_face_api_public_url")
+		}
+	}
+
+	if matcherConfigured && config.FaceMatcherThreshold <= 0 {
+		// No default on purpose: the matcher's similarity scale has to be
+		// calibrated per deployment, an unset threshold must not silently
+		// accept everything or nothing.
+		return false, fmt.Errorf("face_matcher_url requires a positive face_matcher_threshold")
 	}
 	return true, nil
 }
 
 // faceVerificationEnabled reports whether face verification is enabled for
-// this environment. The configured Regula client doubles as the flag: main()
-// only constructs one when resolveFaceVerificationEnabled says so.
+// this environment. The configured clients double as the flag: main() only
+// constructs them when resolveFaceVerificationEnabled says so.
 func (s *ServerState) faceVerificationEnabled() bool {
-	return s.faceVerificationClient != nil
+	return s.faceVerificationClient != nil || s.faceMatcher != nil
+}
+
+// faceVerificationMethods lists the methods this issuer accepts evidence for,
+// in the order they are announced to the app.
+func (s *ServerState) faceVerificationMethods() []string {
+	methods := []string{}
+	if s.faceVerificationClient != nil {
+		methods = append(methods, FaceVerificationMethodRegula)
+	}
+	if s.faceMatcher != nil {
+		methods = append(methods, FaceVerificationMethodIris)
+	}
+	return methods
 }

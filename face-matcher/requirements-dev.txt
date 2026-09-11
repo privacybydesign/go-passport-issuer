@@ -1,0 +1,7 @@
+# Enough to run test_app.py against the fake engine, without the model stack.
+fastapi>=0.115,<1
+httpx>=0.27,<1
+pydantic>=2,<3
+numpy>=1.26,<3
+pillow>=10,<12
+pytest>=8,<9

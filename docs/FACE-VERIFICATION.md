@@ -54,6 +54,51 @@ Enable face verification by setting these keys in the issuer `config.json`:
   unset → disabled). Enabled requires both URLs above; startup fails
   otherwise.
 - `regula_face_match_threshold` — similarity threshold (0-1) above which the live face is considered a match. Defaults to `0.75`.
+- `face_matcher_url` — base URL of the self-hosted [face-matcher](../face-matcher/README.md)
+  sidecar (e.g. `http://face-matcher:8000`). Set → on-device face verification
+  (variant B, the Iris SDK in the app) is offered: the app submits the live face
+  crop the SDK captured and the backend re-matches it against the chip portrait
+  here. Independent of the Regula keys; a deployment may configure only this and
+  run no Regula at all.
+- `face_matcher_threshold` — cosine similarity above which the face matcher
+  considers the live crop and the chip portrait the same person. Required
+  (positive) when `face_matcher_url` is set. No default: the scale differs from
+  Regula's and must be calibrated per deployment.
+
+`/api/start-validation` announces which methods the issuer accepts in
+`face_verification.methods` (`["regula"]`, `["iris"]` or both); `face_api_url`
+is only present when `regula` is among them.
+
+## On-device face verification (variant B)
+
+The app runs liveness and matching on the device with the Iris SDK and submits
+the resulting live face crop instead of a liveness transaction id:
+
+```json
+{
+  "session_id": "…",
+  "nonce": "…",
+  "data_groups": { … },
+  "ef_sod": "…",
+  "face_verification": {
+    "method": "iris",
+    "live_face_png": "<base64 PNG>",
+    "client_outcome": "matched"
+  }
+}
+```
+
+The backend validates the PNG (size and dimension bounds), decodes the raw DG2
+or DG6 chip image, and asks the face-matcher sidecar for the similarity between
+the two. Issuance is fail-closed exactly as for Regula: any error or a
+similarity below `face_matcher_threshold` is a `400`. `client_outcome` is
+informational only, logged next to the server-side result so client/server
+disagreement can be measured. The crop is request-scoped and never stored.
+
+A request may carry either `liveness_transaction_id` or `face_verification`,
+never both; mixed evidence is rejected. Evidence for a method the issuer does
+not offer (a transaction id at a matcher-only issuer, or a crop at a
+Regula-only issuer) is rejected as well rather than skipped.
 
 ## Implementation
 
