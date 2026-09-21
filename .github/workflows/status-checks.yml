@@ -97,26 +97,35 @@ jobs:
             CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
 
-    # The verifier links the proprietary Iris engine (LLVM bitcode, clang 14):
-    # it runs in the same golang:1.26-bookworm image the Dockerfile builds in,
-    # so the toolchain pin is identical. The engine archive is not in the repo:
-    # fetch.sh pulls it from its release and checks the pinned checksum.
+    # Lints the verifier, which binds the proprietary Iris engine through cgo.
+    # cgo translation runs the C compiler and validates the #cgo LDFLAGS in
+    # engine_cgo.go against the allow-list, so the job needs clang and
+    # CGO_LDFLAGS_ALLOW even though it only lints. The engine archive is not in
+    # the repo: fetch.sh pulls it from its release and checks the pinned
+    # checksum. This runs on the runner, not in a container, so the checkout is
+    # owned by the user running git and go's VCS stamping works; test-verifier
+    # keeps the golang:1.26-bookworm image, where it actually links and runs the
+    # engine against the same toolchain the Dockerfile pins.
     # Set the repository variable BUILD_IRIS_VERIFIER=false to skip the Iris arm.
     analyze-verifier:
       runs-on: ubuntu-latest
       if: ${{ vars.BUILD_IRIS_VERIFIER != 'false' }}
-      container: golang:1.26-bookworm
       env:
         CC: clang
         CGO_ENABLED: "1"
         CGO_LDFLAGS_ALLOW: "-fuse-ld=lld|-flto"
       steps:
+        - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+        - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+          with:
+            go-version-file: verifier/go.mod
+            cache-dependency-path: verifier/go.sum
+
         - name: Install clang and lld
           run: |
-            apt-get update
-            apt-get install -y --no-install-recommends clang lld
-
-        - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends clang lld
 
         - name: Fetch the Iris engine
           working-directory: verifier
