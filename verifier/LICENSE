@@ -1,0 +1,26 @@
+iris-verifier licence
+=====================
+
+This directory is NOT covered by the Apache 2.0 licence that applies to the
+rest of this repository.
+
+Yivi's own source code here (everything outside `third_party/`) is published so
+that the Iris face verification method can be read, reviewed and audited. You
+may do all of those things, and you may modify it.
+
+You may NOT run this service, or any image built from it, unless you hold your
+own licence with the manufacturer of the Iris library from
+https://passportreader.app. The service does nothing without that library: it
+is the face detection, matching and liveness engine. It is proprietary, it is
+owned by the manufacturer rather than by Yivi, and no rights to it are granted
+here by anyone.
+
+The archive is published as a release asset of this repository with the
+manufacturer's explicit permission. That permission covers publication only. It
+is not a licence to use the library, and downloading the archive does not give
+you one.
+
+Built images of this service contain the library statically linked, so the same
+restriction follows them wherever they go.
+
+For a licence, contact the manufacturer at https://passportreader.app.

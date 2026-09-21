@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
+	"go-passport-issuer/analytics"
 	"go-passport-issuer/logging"
 	"go-passport-issuer/redis"
 	"log/slog"
@@ -54,6 +55,22 @@ type Config struct {
 	// old configs keep their exact behaviour. See
 	// resolveFaceVerificationEnabled.
 	FaceVerificationEnabled *bool `json:"face_verification_enabled,omitempty"`
+	// Which face verification methods may be assigned, with their weights in
+	// the draw. Absent means Regula only, so existing configs keep their exact
+	// behaviour. See resolveFaceMethods.
+	FaceVerificationMethods *FaceMethodsConfig `json:"face_verification_methods,omitempty"`
+	// Whether a wallet's preferred_method is honoured. For staging testers;
+	// off in production.
+	AllowClientPreference bool `json:"allow_client_preference,omitempty"`
+	// Cluster-internal base URL of the Iris verifier, e.g.
+	// http://iris-verifier-svc:8081. Required when the iris method is enabled.
+	IrisVerifierUrl string `json:"iris_verifier_url,omitempty"`
+	// Wallet-reachable origin of the Iris verifier's stream endpoint, e.g.
+	// wss://iris-verifier.staging.yivi.app. Required when iris is enabled.
+	IrisVerifierPublicUrl string `json:"iris_verifier_public_url,omitempty"`
+	// Where face verification attempts are recorded: "stderr" (default, one
+	// JSON log line per event) or "none".
+	Recorder string `json:"face_recorder,omitempty"`
 }
 
 type CredentialConfig struct {
@@ -161,16 +178,40 @@ func main() {
 	}
 
 	var faceVerificationClient FaceVerificationClient
+	var irisClient IrisClient
+	var faceMethods FaceMethodPolicy
 	if faceVerification {
-		slog.Info("Initializing Regula Face API client",
-			"url", config.RegulaFaceApiUrl,
-			"match_threshold", config.RegulaFaceMatchThreshold)
-		faceVerificationClient = NewRegulaFaceClient(config.RegulaFaceApiUrl, config.RegulaFaceMatchThreshold)
-		if err := faceVerificationClient.HealthCheck(); err != nil {
-			slog.Warn("Regula Face API health check failed, service may not be available", "error", err)
+		// Validated already by resolveFaceVerificationEnabled.
+		methods, _ := resolveFaceMethods(&config)
+		faceMethods = NewFaceMethodPolicy(methods, config.AllowClientPreference)
+		slog.Info("Face verification enabled",
+			"regula_enabled", methods.Regula.Enabled, "regula_weight", methods.Regula.Weight,
+			"iris_enabled", methods.Iris.Enabled, "iris_weight", methods.Iris.Weight,
+			"allow_client_preference", config.AllowClientPreference)
+		if methods.Regula.Enabled {
+			slog.Info("Initializing Regula Face API client",
+				"url", config.RegulaFaceApiUrl,
+				"match_threshold", config.RegulaFaceMatchThreshold)
+			faceVerificationClient = NewRegulaFaceClient(config.RegulaFaceApiUrl, config.RegulaFaceMatchThreshold)
+			if err := faceVerificationClient.HealthCheck(); err != nil {
+				slog.Warn("Regula Face API health check failed, service may not be available", "error", err)
+			}
+		}
+		if methods.Iris.Enabled {
+			slog.Info("Initializing Iris verifier client", "url", config.IrisVerifierUrl)
+			irisClient = NewIrisClient(config.IrisVerifierUrl)
+			if err := irisClient.HealthCheck(); err != nil {
+				slog.Warn("Iris verifier health check failed, service may not be available", "error", err)
+			}
 		}
 	} else {
 		slog.Info("Face verification disabled")
+	}
+
+	recorder, err := createRecorder(config.Recorder)
+	if err != nil {
+		slog.Error("invalid face recorder configuration", "error", err)
+		os.Exit(1)
 	}
 
 	serverState := ServerState{
@@ -184,6 +225,10 @@ func main() {
 		drivingLicenceParser:   DrivingLicenceParserImpl{},
 		faceVerificationClient: faceVerificationClient,
 		regulaFaceApiPublicUrl: config.RegulaFaceApiPublicUrl,
+		faceMethods:            faceMethods,
+		irisClient:             irisClient,
+		irisVerifierPublicUrl:  config.IrisVerifierPublicUrl,
+		recorder:               recorder,
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)
@@ -197,6 +242,19 @@ func main() {
 		slog.Error("failed to listen and serve", "error", err)
 		os.Exit(1)
 	}
+}
+
+// createRecorder builds the recorder named by `face_recorder`. The default
+// writes one JSON log line per event; "none" discards them. A Prometheus
+// recorder is the planned next option and would be selected here.
+func createRecorder(name string) (analytics.Recorder, error) {
+	switch name {
+	case "", "stderr":
+		return analytics.NewStderrRecorder(nil), nil
+	case "none":
+		return analytics.Noop{}, nil
+	}
+	return nil, fmt.Errorf("%q is not a valid face_recorder (stderr, none)", name)
 }
 
 func readConfigFile(path string) (Config, error) {

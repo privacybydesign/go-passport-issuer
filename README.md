@@ -67,6 +67,8 @@ It should look like this:
   "regula_face_api_url": "http://regula-face-api:41101"
 }
 ```
+
+Face verification has more keys (`face_verification_enabled`, `face_verification_methods`, the Iris verifier URLs, `face_recorder`); see [Face Verification](#face-verification-with-liveness-detection). `storage_type` must be `redis` or `redis_sentinel` wherever more than one replica runs: the session's method assignment and the Iris face records must be visible to every replica.
 The `jwt_private_key_path` should point to a valid RSA private key in PEM format, which is used to sign JWT tokens for the IRMA server.
 
 ### Running the application
@@ -168,9 +170,12 @@ docker-compose up --build
 
 ## Face Verification with Liveness Detection
 
-The Go Passport Issuer integrates with Regula Forensics Face SDK to provide face verification with liveness detection during document verification and issuance. It compares the portrait read from the document chip (DG2 for passports/ID cards, DG6 for driving licences) with the live face captured during a Regula liveness session, referenced by its **liveness transaction ID**.
+The Go Passport Issuer runs a face verification step between the chip read and the credential: the portrait read from the document chip (DG2 for passports/ID cards, DG6 for driving licences) is compared with the holder's live face, with liveness. Two **methods** exist and the issuer assigns one per document session:
 
-See [docs/face-verification-design.md](docs/face-verification-design.md) for the full design and sequence diagram.
+- **Regula** (the default): the app runs a Regula liveness session and the issuer matches the chip portrait against the resulting **liveness transaction ID** through the Regula Face API. Described in the rest of this section.
+- **Iris**: the app streams camera frames to the Yivi-run [Iris verifier](verifier/README.md) (the vendor's `libpassportreader` engine on a server), which matches them against the portrait the issuer supplied and judges liveness across the sequence. See [Two methods: Regula and Iris](#two-methods-regula-and-iris) below. The `verifier/` directory is **not** under this repository's Apache 2.0 licence and cannot be used without a licence with the manufacturer of the Iris library; see [verifier/LICENSE](verifier/LICENSE).
+
+Both methods keep the verdict on the issuer side. See [docs/face-verification-design.md](docs/face-verification-design.md) for the Regula design and sequence diagram.
 
 ### Features
 
@@ -190,6 +195,69 @@ See [docs/face-verification-design.md](docs/face-verification-design.md) for the
 4. Backend confirms the liveness verdict, then compares the chip portrait against the live face via Regula `POST /api/match`.
 5. Backend deletes the liveness transaction.
 6. `verify-*` endpoints return the face match result (non-blocking). `issue-*` endpoints block issuance (fail-closed) when face verification is enabled and the match does not pass.
+
+### Two methods: Regula and Iris
+
+The app declares which methods it can run when it starts a session; the issuer picks one and remembers it with the session, so issuance can only be completed with that method's evidence and every outcome is counted against the method that was assigned.
+
+```bash
+POST /api/start-validation
+Content-Type: application/json
+
+{
+  "face_verification": {
+    "capabilities": ["regula", "iris"],
+    "previous_method": "iris",   // on a retry within one document flow
+    "attempt": 2,                // idem
+    "preferred_method": "iris"   // honoured only with allow_client_preference
+  },
+  "client": { "platform": "android", "flavor": "play", "app_version": "8.3.0" }
+}
+```
+
+The body is optional. Apps from before the declaration send none and are treated as Regula-only; they receive today's response plus a `method` key they ignore:
+
+```json
+{
+  "session_id": "…", "nonce": "…",
+  "face_verification": { "method": "regula", "face_api_url": "https://faceapi.staging.yivi.app" }
+}
+```
+
+An Iris assignment announces `{"method": "iris"}` without a Face API URL. When none of the app's methods is enabled here (only possible when Regula is switched off while Regula-only apps exist), the response is a 400 with the same self-explanatory "please update the Yivi app" body issuance uses.
+
+Assignment rules, in order: candidates are the declared methods that are enabled here; none → 400; `preferred_method` when allowed; `previous_method` (sticky retry); a single candidate regardless of weight; otherwise a weighted random draw in which weight 0 does not take part.
+
+Configuration (`config.json`):
+
+```json
+"face_verification_enabled": true,
+"face_verification_methods": {
+  "regula": { "enabled": true,  "weight": 50 },
+  "iris":   { "enabled": false, "weight": 0 }
+},
+"allow_client_preference": false,
+"iris_verifier_url": "http://iris-verifier-svc:8081",
+"iris_verifier_public_url": "wss://iris-verifier.staging.yivi.app",
+"face_recorder": "stderr"
+```
+
+An absent `face_verification_methods` means Regula only, so existing configs keep their exact behaviour. Iris can be switched off at three levels: `iris.enabled: false` here takes effect on the next session with no deploy, the ops repository runs the verifier at zero replicas, and the repository variable `BUILD_IRIS_VERIFIER=false` stops CI building or publishing the verifier image at all. Enabled face verification needs at least one enabled method; `regula.enabled` needs the two Regula URLs, `iris.enabled` the two verifier URLs (internal for the issuer, public `wss://` for the app). `iris.enabled: false` returns every session to Regula at once.
+
+**The Iris flow.** `verify-passport` / `verify-driving-licence` no longer consume the session: it lives until an `issue-*` call consumes it or its TTL expires. When the session's method is Iris, verify opens a face session at the verifier from the portrait it has just authenticated and answers with
+
+```json
+"face_session": {
+  "face_session_id": "fs_…",
+  "stream_url": "wss://iris-verifier.staging.yivi.app/stream/fs_…",
+  "token": "…",
+  "expires_in": 600
+}
+```
+
+The app streams frames to `stream_url`, then issues with `face_session_id` (plus `face_attempt` and `face_duration_ms` for the recordings). The issuer checks that the face session belongs to this document session, that the portrait in the issuance request is the one the face session was opened with, and that the verifier reports `completed` and `passed`; anything else is a 400 `face verification failed`. Evidence for the other method (a `liveness_transaction_id` on an Iris session or a `face_session_id` on a Regula one) is a 400 as well. On success the verifier session and the issuer's face record are deleted.
+
+**Recording.** Every assignment and every gated issuance is recorded through the `analytics` package as one JSON log line with `event=face_verification`: method, outcome (`passed`, `match_rejected`, `liveness_rejected`, `evidence_missing`, `assignment_mismatch`, `error`), score with its scale (`regula_similarity` or `iris_distance`), duration, attempt kind, document type and the app's coarse labels. Nothing identifying is recorded. `face_recorder: "none"` switches it off; a Prometheus recorder is the planned alternative. All logging is JSON now, so the lines are queryable by field in Loki.
 
 ### Setup
 
@@ -319,7 +387,7 @@ Content-Type: application/json
 }
 ```
 
-**Note**: When face verification is enabled (`regula_face_api_url` set), issuance is fail-closed: the request is rejected with status 400 unless a `liveness_transaction_id` is provided, its liveness is confirmed, and the live face matches the document portrait (similarity ≥ threshold). When face verification is disabled, issuance proceeds without it.
+**Note**: When face verification is enabled, issuance is fail-closed for whichever method the session was assigned. For Regula the request is rejected with status 400 unless a `liveness_transaction_id` is provided, its liveness is confirmed, and the live face matches the document portrait (similarity ≥ threshold). For Iris it is rejected unless `face_session_id` names a face session opened for this session and portrait that the verifier reports as passed. When face verification is disabled, issuance proceeds without it.
 
 ### Docker Deployment
 

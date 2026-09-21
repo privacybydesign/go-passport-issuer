@@ -207,7 +207,10 @@ const docTemplate = `{
         },
         "/start-validation": {
             "post": {
-                "description": "Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests. When face verification is enabled for this environment, the response carries a face_verification object naming the Face API the liveness session must run against; the app skips the face verification step when the object is absent.",
+                "description": "Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests. The body is optional: a wallet may declare which face verification methods it can run (and, on a retry, which it was assigned before); no body means Regula only. When face verification is enabled for this environment, the response carries a face_verification object naming the assigned method and, for regula, the Face API the liveness session must run against; the app skips the face verification step when the object is absent. Responds 400 when none of the wallet's methods is enabled here.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -215,11 +218,27 @@ const docTemplate = `{
                     "Session"
                 ],
                 "summary": "Start document validation session",
+                "parameters": [
+                    {
+                        "description": "Optional capability declaration",
+                        "name": "request",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/main.StartValidationRequest"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/main.ValidatePassportResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "face verification required: please update the Yivi app",
+                        "schema": {
+                            "type": "string"
                         }
                     },
                     "500": {
@@ -325,6 +344,20 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "analytics.Client": {
+            "type": "object",
+            "properties": {
+                "app_version": {
+                    "type": "string"
+                },
+                "flavor": {
+                    "type": "string"
+                },
+                "platform": {
+                    "type": "string"
+                }
+            }
+        },
         "main.FaceCaptureConfigResponse": {
             "type": "object",
             "properties": {
@@ -350,13 +383,80 @@ const docTemplate = `{
                 }
             }
         },
+        "main.FaceMethod": {
+            "type": "string",
+            "enum": [
+                "regula",
+                "iris"
+            ],
+            "x-enum-varnames": [
+                "MethodRegula",
+                "MethodIris"
+            ]
+        },
+        "main.FaceSessionAnnouncement": {
+            "type": "object",
+            "properties": {
+                "expires_in": {
+                    "description": "Seconds until the session expires when streaming has not started",
+                    "type": "integer",
+                    "example": 600
+                },
+                "face_session_id": {
+                    "type": "string",
+                    "example": "fs_1a2b3c"
+                },
+                "stream_url": {
+                    "description": "WebSocket endpoint of the verifier's stream for this session",
+                    "type": "string",
+                    "example": "wss://iris-verifier.staging.yivi.app/stream/fs_1a2b3c"
+                },
+                "token": {
+                    "description": "Presented by the wallet as the first message on the stream",
+                    "type": "string"
+                }
+            }
+        },
         "main.FaceVerificationAnnouncement": {
             "type": "object",
             "properties": {
                 "face_api_url": {
-                    "description": "Browser/app-reachable origin of the Regula Face API the liveness session\nmust run against — the same service this issuer matches against.",
+                    "description": "Browser/app-reachable origin of the Regula Face API the liveness session\nmust run against — the same service this issuer matches against. Present\nfor the regula method only.",
                     "type": "string",
                     "example": "https://faceapi.staging.yivi.app"
+                },
+                "method": {
+                    "description": "The face verification method assigned to this session: regula or iris.\nWallets from before methods existed ignore it and run Regula, which is\nthe only method they are ever assigned.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/main.FaceMethod"
+                        }
+                    ],
+                    "example": "regula"
+                }
+            }
+        },
+        "main.FaceVerificationDeclaration": {
+            "type": "object",
+            "properties": {
+                "attempt": {
+                    "description": "Set on a retry: the number of this attempt, starting at 2.",
+                    "type": "integer"
+                },
+                "capabilities": {
+                    "description": "Wire names of the methods this build can run. Absent or empty means\n[\"regula\"], the only method those wallets support. Unknown names are\nignored.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "preferred_method": {
+                    "description": "A tester's preference, honoured only when allow_client_preference is on.",
+                    "type": "string"
+                },
+                "previous_method": {
+                    "description": "Set on a retry within one document flow: the method assigned last time.",
+                    "type": "string"
                 }
             }
         },
@@ -382,6 +482,22 @@ const docTemplate = `{
                     "description": "Signed JWT containing the IRMA issuance request",
                     "type": "string",
                     "example": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+                }
+            }
+        },
+        "main.StartValidationRequest": {
+            "type": "object",
+            "properties": {
+                "client": {
+                    "description": "Coarse labels of the wallet build, for the recordings only.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/analytics.Client"
+                        }
+                    ]
+                },
+                "face_verification": {
+                    "$ref": "#/definitions/main.FaceVerificationDeclaration"
                 }
             }
         },
@@ -429,6 +545,14 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "face_session": {
+                    "description": "The Iris face session opened for this document; present only when the\nsession's assigned face verification method is iris",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/main.FaceSessionAnnouncement"
+                        }
+                    ]
+                },
                 "is_expired": {
                     "description": "True if the document has expired",
                     "type": "boolean",
@@ -455,6 +579,21 @@ const docTemplate = `{
                     "description": "Hex-encoded Security Object (EF.SOD) containing document signature",
                     "type": "string",
                     "example": "778201ab..."
+                },
+                "face_attempt": {
+                    "description": "Which attempt at the face verification step this issuance follows within\nthe wallet's document flow, starting at 1. Recording only (optional).",
+                    "type": "integer",
+                    "example": 1
+                },
+                "face_duration_ms": {
+                    "description": "Milliseconds from the user confirming the face verification intro to the\nevidence being in hand. Recording only (optional).",
+                    "type": "integer",
+                    "example": 4200
+                },
+                "face_session_id": {
+                    "description": "Identifier of the Iris face session the issuer opened at verification.\nRequired at issuance when the session's assigned face verification\nmethod is iris; the issuer pulls the verdict for it (optional).",
+                    "type": "string",
+                    "example": "fs_1a2b3c"
                 },
                 "liveness_transaction_id": {
                     "description": "Identifier of a completed Regula liveness transaction. The live face\ncaptured during that session is compared against the document chip\nportrait for face verification (optional).",

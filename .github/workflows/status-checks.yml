@@ -97,6 +97,68 @@ jobs:
             CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
 
+    # The verifier links the proprietary Iris engine (LLVM bitcode, clang 14):
+    # it runs in the same golang:1.26-bookworm image the Dockerfile builds in,
+    # so the toolchain pin is identical. The engine archive is not in the repo:
+    # fetch.sh pulls it from its release and checks the pinned checksum.
+    # Set the repository variable BUILD_IRIS_VERIFIER=false to skip the Iris arm.
+    analyze-verifier:
+      runs-on: ubuntu-latest
+      if: ${{ vars.BUILD_IRIS_VERIFIER != 'false' }}
+      container: golang:1.26-bookworm
+      env:
+        CC: clang
+        CGO_ENABLED: "1"
+        CGO_LDFLAGS_ALLOW: "-fuse-ld=lld|-flto"
+      steps:
+        - name: Install clang and lld
+          run: |
+            apt-get update
+            apt-get install -y --no-install-recommends clang lld
+
+        - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+        - name: Fetch the Iris engine
+          working-directory: verifier
+          run: ./third_party/libpassportreader/fetch.sh
+
+        - name: Install GolangCI-Lint
+          run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
+
+        - name: Run linter
+          working-directory: verifier
+          run: golangci-lint run --timeout 5m
+
+    test-verifier:
+      runs-on: ubuntu-latest
+      if: ${{ vars.BUILD_IRIS_VERIFIER != 'false' }}
+      container: golang:1.26-bookworm
+      env:
+        CC: clang
+        CGO_ENABLED: "1"
+        CGO_LDFLAGS_ALLOW: "-fuse-ld=lld|-flto"
+      steps:
+        - name: Install clang and lld
+          run: |
+            apt-get update
+            apt-get install -y --no-install-recommends clang lld
+
+        - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+        - name: Fetch the Iris engine
+          working-directory: verifier
+          run: ./third_party/libpassportreader/fetch.sh
+
+        - name: Vet
+          working-directory: verifier
+          run: go vet ./...
+
+        # Links the real library and runs the smoke test alongside the
+        # protocol tests.
+        - name: Test
+          working-directory: verifier
+          run: go test ./... -v
+
     build-docker-image:
       runs-on: ubuntu-latest
       steps:
