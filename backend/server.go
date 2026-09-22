@@ -266,12 +266,23 @@ type VerificationResponse struct {
 }
 
 // FaceMatchResult contains the result of comparing the document chip portrait
-// with the live face captured during a Regula liveness session.
+// with the live face captured during a Regula liveness session. It is the wire
+// shape of a FaceMatchVerdict; only the Regula method reports one, so the score
+// is named for that method's scale.
 type FaceMatchResult struct {
 	// True if the document portrait and live face match above the similarity threshold
 	Matched bool `json:"matched" example:"true"`
 	// Similarity score between the document portrait and live face
 	Similarity float64 `json:"similarity" example:"0.92"`
+}
+
+// result is the verdict in the shape a verify response carries, and nil for a
+// verdict that was never reached.
+func (v *FaceMatchVerdict) result() *FaceMatchResult {
+	if v == nil {
+		return nil
+	}
+	return &FaceMatchResult{Matched: v.Matched, Similarity: v.Score}
 }
 
 // HealthResponse contains the health status of the service
@@ -368,7 +379,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 	// Optional face matching against the live face from the liveness session.
 	// Advisory only for verification; skipped entirely when face verification
 	// is disabled (no Regula client to match — or delete — with).
-	var faceMatch *FaceMatchResult
+	var faceMatch *FaceMatchVerdict
 	if request.LivenessTransactionId != "" && doc.Dg6 != nil && state.faceVerificationEnabled() {
 		slog.Info("Performing face verification for driving license")
 		// Use the original DG6 chip image (not the display PNG) for matching.
@@ -380,7 +391,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 			if err != nil {
 				slog.Warn("Face matching failed", "error", err)
 			} else if faceMatch != nil {
-				slog.Debug("Face match completed", "matched", faceMatch.Matched, "similarity", faceMatch.Similarity)
+				slog.Debug("Face match completed", "matched", faceMatch.Matched, "similarity", faceMatch.Score)
 			}
 		}
 	}
@@ -389,7 +400,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 		AuthenticContent: true,
 		AuthenticChip:    activeRes,
 		IsExpired:        isExpired,
-		FaceMatch:        faceMatch,
+		FaceMatch:        faceMatch.result(),
 	}
 
 	// An Iris session gets its face session here, from the portrait this
@@ -520,7 +531,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 	// Optional face matching against the live face from the liveness session.
 	// Advisory only for verification; skipped entirely when face verification
 	// is disabled (no Regula client to match — or delete — with).
-	var faceMatch *FaceMatchResult
+	var faceMatch *FaceMatchVerdict
 	if request.LivenessTransactionId != "" && state.faceVerificationEnabled() {
 		slog.Info("Performing face verification")
 		// Use the original DG2 chip image (not the display PNG) for matching.
@@ -533,7 +544,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 				slog.Warn("Face matching failed", "error", err)
 				// Don't fail the entire verification if face matching fails
 			} else if faceMatch != nil {
-				slog.Debug("Face match completed", "matched", faceMatch.Matched, "similarity", faceMatch.Similarity)
+				slog.Debug("Face match completed", "matched", faceMatch.Matched, "similarity", faceMatch.Score)
 			}
 		}
 	}
@@ -543,7 +554,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 		AuthenticContent: true,
 		AuthenticChip:    activeAuth,
 		IsExpired:        isExpired,
-		FaceMatch:        faceMatch,
+		FaceMatch:        faceMatch.result(),
 	}
 
 	// An Iris session gets its face session here, from the portrait this
@@ -1102,7 +1113,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 // server-side before matching, and always deletes the liveness transaction
 // afterwards so biometric session data is not retained. It returns nil (with no
 // error) when no liveness transaction is provided, meaning matching is skipped.
-func performFaceMatch(state *ServerState, documentImageBase64, livenessTransactionID string) (*FaceMatchResult, error) {
+func performFaceMatch(state *ServerState, documentImageBase64, livenessTransactionID string) (*FaceMatchVerdict, error) {
 	slog.Debug("Starting face matching process")
 
 	if state.faceVerificationClient == nil {
@@ -1149,11 +1160,8 @@ func performFaceMatch(state *ServerState, documentImageBase64, livenessTransacti
 		return nil, fmt.Errorf("face matching failed: %w", err)
 	}
 
-	slog.Info("Face matching completed", "matched", response.Matched, "similarity", response.Similarity)
-	return &FaceMatchResult{
-		Matched:    response.Matched,
-		Similarity: response.Similarity,
-	}, nil
+	slog.Info("Face matching completed", "matched", response.Matched, "similarity", response.Score)
+	return response, nil
 }
 
 // verifyFaceBeforeIssuance enforces the Regula face verification before

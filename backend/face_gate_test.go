@@ -24,10 +24,14 @@ type fakeIrisClient struct {
 	getErr    error
 	deleted   []string
 	healthErr error
+	// threshold stands in for the one HTTPIrisClient applies to a completed
+	// session's distance; a test moves it to put the issuer's decision and the
+	// verifier's apart.
+	threshold float64
 }
 
 func newFakeIris() *fakeIrisClient {
-	return &fakeIrisClient{nextID: "fs_1", status: map[string]*IrisSessionStatus{}}
+	return &fakeIrisClient{nextID: "fs_1", status: map[string]*IrisSessionStatus{}, threshold: testIrisThreshold}
 }
 
 func (f *fakeIrisClient) CreateSession(_ context.Context, portraitBase64, portraitSha256, documentType string) (*IrisSession, error) {
@@ -65,11 +69,20 @@ func (f *fakeIrisClient) DeleteSession(_ context.Context, id string) error {
 
 func (f *fakeIrisClient) HealthCheck() error { return f.healthErr }
 
-// complete marks the verifier session with a verdict.
+// complete marks the verifier session with a verdict: passed is the
+// verifier's own decision, and Match is the issuer's, which the real client
+// derives from the distance the same way.
 func (f *fakeIrisClient) complete(id string, passed bool, distance float64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.status[id] = &IrisSessionStatus{Status: irisStatusCompleted, Passed: &passed, Distance: &distance, Frames: 60, DurationMs: 4000}
+	f.status[id] = &IrisSessionStatus{
+		Status:     irisStatusCompleted,
+		Passed:     &passed,
+		Distance:   &distance,
+		Match:      &FaceMatchVerdict{Score: distance, Matched: distance <= f.threshold},
+		Frames:     60,
+		DurationMs: 4000,
+	}
 }
 
 func (f *fakeIrisClient) fail(id string) {
@@ -112,7 +125,7 @@ func irisState(t *testing.T) (*ServerState, *fakeIrisClient, *capturingRecorder)
 		recorder:              rec,
 		faceVerificationClient: &fakeFaceClient{
 			livenessResp: &LivenessStatus{Confirmed: true},
-			matchResp:    &FaceMatchResponse{Matched: true, Similarity: 0.9},
+			matchResp:    &FaceMatchVerdict{Matched: true, Score: 0.9},
 		},
 	}
 	return state, iris, rec
@@ -271,6 +284,38 @@ func TestIrisGate(t *testing.T) {
 		require.Equal(t, analytics.ScoreIrisDistance, e.ScoreKind)
 	})
 
+	t.Run("a stricter issuer refuses what the verifier passed", func(t *testing.T) {
+		state, iris, rec := irisState(t)
+		// The verifier passed the session on its own threshold; this issuer is
+		// configured stricter, and its decision is the one that gates.
+		iris.threshold = 0.5
+		id := open(t, state, "s1")
+		iris.complete(id, true, 0.61)
+		req := base
+		req.FaceSessionId = id
+		w := httptest.NewRecorder()
+		require.False(t, gateFaceVerification(state, w, irisInput(session, req)))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		e := rec.last(t)
+		require.Equal(t, analytics.OutcomeMatchRejected, e.Outcome)
+		require.InDelta(t, 0.61, *e.Score, 1e-9)
+		// Nothing is deleted: the session was not spent on a pass.
+		require.Empty(t, iris.deleted)
+	})
+
+	t.Run("a laxer issuer accepts what the verifier did not pass", func(t *testing.T) {
+		state, iris, rec := irisState(t)
+		iris.threshold = 0.95
+		id := open(t, state, "s1")
+		iris.complete(id, false, 0.91)
+		req := base
+		req.FaceSessionId = id
+		w := httptest.NewRecorder()
+		require.True(t, gateFaceVerification(state, w, irisInput(session, req)))
+		require.Equal(t, http.StatusOK, w.Code)
+		require.Equal(t, analytics.OutcomePassed, rec.last(t).Outcome)
+	})
+
 	t.Run("verifier unreachable", func(t *testing.T) {
 		state, iris, rec := irisState(t)
 		id := open(t, state, "s1")
@@ -360,7 +405,7 @@ func TestRegulaGateThroughMethodDispatch(t *testing.T) {
 		state, _, rec := irisState(t)
 		state.faceVerificationClient = &fakeFaceClient{
 			livenessResp: &LivenessStatus{Confirmed: true},
-			matchResp:    &FaceMatchResponse{Matched: false, Similarity: 0.2},
+			matchResp:    &FaceMatchVerdict{Matched: false, Score: 0.2},
 		}
 		w := httptest.NewRecorder()
 		require.False(t, gateFaceVerification(state, w, irisInput(session, base)))

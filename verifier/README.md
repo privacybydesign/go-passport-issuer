@@ -65,7 +65,10 @@ ends the stream with `bad_frame`. `internal` is not in the plan's list: it
 means the verifier itself failed (no worker, store down, portrait on another
 replica); the wallet should treat it like any error and start a new session.
 
-`passed = state == COMPLETED && distance <= IRIS_DISTANCE_THRESHOLD`.
+`passed = state == COMPLETED && distance <= IRIS_DISTANCE_THRESHOLD`. It is
+what the wallet shows the user; the issuer applies its own
+`iris_face_match_threshold` to `distance` and gates issuance on that, so the
+two can disagree without the issuer's decision moving.
 
 ### Issuer → `/internal/sessions` (HTTP, cluster-only; the ingress exposes `/stream` only)
 
@@ -98,7 +101,7 @@ its flag. Redis settings are environment-only because they carry a secret.
 |---|---|---|
 | `IRIS_LISTEN_ADDR` | `:8081` | listen address |
 | `IRIS_PUBLIC_STREAM_URL` | | public `wss://` origin of this service, e.g. `wss://iris-verifier.staging.yivi.app`; reported in logs and `/readyz` only, the issuer builds each session's stream URL itself |
-| `IRIS_DISTANCE_THRESHOLD` | `0.75` | a completed session passes when distance ≤ this |
+| `IRIS_DISTANCE_THRESHOLD` | `0.75` | a completed session passes when distance ≤ this, for the verdict reported to the wallet; issuance is gated on the issuer's own threshold |
 | `IRIS_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `IRIS_MAX_FRAMES` | `900` | processed frames per session |
 | `IRIS_MAX_SECONDS` | `60` | seconds per session from its start |

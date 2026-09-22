@@ -129,8 +129,8 @@ func TestMethodPolicyDefaultsToRegulaWhenClientPresent(t *testing.T) {
 
 // Startup validation of the methods block.
 func TestResolveFaceMethods(t *testing.T) {
-	regulaUrls := Config{RegulaFaceApiUrl: "http://regula:41101", RegulaFaceApiPublicUrl: "https://faceapi.example"}
-	irisUrls := Config{IrisVerifierUrl: "http://iris-verifier-svc:8081", IrisVerifierPublicUrl: "wss://iris-verifier.example"}
+	regulaUrls := Config{Regula: validRegula()}
+	irisUrls := Config{Iris: validIris()}
 
 	t.Run("absent block means regula only", func(t *testing.T) {
 		methods, err := resolveFaceMethods(&regulaUrls)
@@ -143,23 +143,47 @@ func TestResolveFaceMethods(t *testing.T) {
 		_, err := resolveFaceMethods(&cfg)
 		require.ErrorContains(t, err, "at least one enabled method")
 	})
-	t.Run("regula enabled needs its urls", func(t *testing.T) {
+	// An enabled method needs its block, and the block needs every field: the
+	// config states each one rather than inheriting it from a release.
+	t.Run("regula enabled needs a complete block", func(t *testing.T) {
 		cfg := Config{FaceVerificationMethods: &FaceMethodsConfig{Regula: on}}
 		_, err := resolveFaceMethods(&cfg)
-		require.ErrorContains(t, err, "regula_face_api_url")
-		cfg.RegulaFaceApiUrl = "http://regula:41101"
+		require.ErrorContains(t, err, "requires a regula config block")
+
+		cfg.Regula = &RegulaConfig{FaceApiUrl: "http://regula:41101"}
 		_, err = resolveFaceMethods(&cfg)
-		require.ErrorContains(t, err, "regula_face_api_public_url")
+		require.ErrorContains(t, err, "regula.face_api_public_url is required")
+
+		cfg.Regula.FaceApiPublicUrl = "https://faceapi.example"
+		_, err = resolveFaceMethods(&cfg)
+		require.ErrorContains(t, err, "regula.face_match_threshold is required")
+
+		cfg.Regula.FaceMatchThreshold = 1.5
+		_, err = resolveFaceMethods(&cfg)
+		require.ErrorContains(t, err, "regula.face_match_threshold must be in (0, 1]")
+
+		cfg.Regula.FaceMatchThreshold = testRegulaThreshold
+		_, err = resolveFaceMethods(&cfg)
+		require.NoError(t, err)
 	})
-	t.Run("iris enabled needs its urls", func(t *testing.T) {
+	t.Run("iris enabled needs a complete block", func(t *testing.T) {
 		cfg := Config{FaceVerificationMethods: &FaceMethodsConfig{Iris: on}}
 		_, err := resolveFaceMethods(&cfg)
-		require.ErrorContains(t, err, "iris_verifier_url")
-		cfg.IrisVerifierUrl = "http://iris-verifier-svc:8081"
+		require.ErrorContains(t, err, "requires an iris config block")
+
+		cfg.Iris = &IrisConfig{VerifierUrl: "http://iris-verifier-svc:8081"}
 		_, err = resolveFaceMethods(&cfg)
-		require.ErrorContains(t, err, "iris_verifier_public_url")
+		require.ErrorContains(t, err, "iris.verifier_public_url is required")
+
+		cfg.Iris.VerifierPublicUrl = "wss://iris-verifier.example"
+		_, err = resolveFaceMethods(&cfg)
+		require.ErrorContains(t, err, "iris.face_match_threshold is required")
+
+		cfg.Iris.FaceMatchThreshold = testIrisThreshold
+		_, err = resolveFaceMethods(&cfg)
+		require.NoError(t, err)
 	})
-	t.Run("iris only needs no regula urls", func(t *testing.T) {
+	t.Run("iris only needs no regula block", func(t *testing.T) {
 		cfg := irisUrls
 		cfg.FaceVerificationMethods = &FaceMethodsConfig{Iris: on}
 		methods, err := resolveFaceMethods(&cfg)
@@ -169,8 +193,7 @@ func TestResolveFaceMethods(t *testing.T) {
 		// And face verification as a whole is then enabled.
 		enabled, err := resolveFaceVerificationEnabled(&Config{
 			FaceVerificationEnabled: boolPtr(true),
-			IrisVerifierUrl:         cfg.IrisVerifierUrl,
-			IrisVerifierPublicUrl:   cfg.IrisVerifierPublicUrl,
+			Iris:                    cfg.Iris,
 			FaceVerificationMethods: cfg.FaceVerificationMethods,
 		})
 		require.NoError(t, err)

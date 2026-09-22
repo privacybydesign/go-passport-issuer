@@ -21,8 +21,8 @@ services:
   # library is bitcode for that target), so it is built for that platform; on
   # Apple Silicon it runs under emulation. Uses the in-memory session store
   # here; set the REDIS_* variables to use Redis. Point the issuer at it with
-  # "iris_verifier_url": "http://iris-verifier:8081" and enable the iris
-  # method in config.json.
+  # "iris": { "verifier_url": "http://iris-verifier:8081", ... } and enable the
+  # iris method in config.json.
   iris-verifier:
     build:
       context: .

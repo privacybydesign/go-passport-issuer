@@ -44,7 +44,7 @@ func twoMethodState(allowPreference bool) (*ServerState, *capturingRecorder) {
 	recorder := &capturingRecorder{}
 	return &ServerState{
 		tokenStorage:           NewInMemoryTokenStorage(),
-		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", 0),
+		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", testRegulaThreshold),
 		regulaFaceApiPublicUrl: "https://faceapi.staging.yivi.app",
 		faceMethods:            policy(on, on, allowPreference),
 		irisClient:             newFakeIris(),
@@ -59,7 +59,7 @@ func twoMethodState(allowPreference bool) (*ServerState, *capturingRecorder) {
 func TestStartValidationAnnouncesFaceVerification(t *testing.T) {
 	state := &ServerState{
 		tokenStorage:           NewInMemoryTokenStorage(),
-		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", 0),
+		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", testRegulaThreshold),
 		regulaFaceApiPublicUrl: "https://faceapi.staging.yivi.app",
 	}
 
@@ -198,7 +198,7 @@ func TestStartValidationOmitsAnnouncementWhenDisabled(t *testing.T) {
 func TestStartValidationAnnouncementNeverLeaksInternalUrl(t *testing.T) {
 	state := &ServerState{
 		tokenStorage:           NewInMemoryTokenStorage(),
-		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", 0),
+		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", testRegulaThreshold),
 		regulaFaceApiPublicUrl: "https://faceapi.staging.yivi.app",
 	}
 

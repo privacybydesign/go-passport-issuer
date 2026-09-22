@@ -35,13 +35,20 @@ const (
 type IrisSessionStatus struct {
 	Status string `json:"status"`
 	// Passed and Distance are set once the status is completed. Passed is the
-	// verifier's decision (distance at or under its threshold); the issuer gates
-	// on it rather than re-deciding.
+	// verifier's own decision, which it also sends the wallet so the capture
+	// screen can show an outcome; the issuer records it but does not gate on
+	// it, because its threshold belongs to the verifier's deployment rather
+	// than to this issuer's config. See Match.
 	Passed         *bool    `json:"passed,omitempty"`
 	Distance       *float64 `json:"distance,omitempty"`
 	PortraitSha256 string   `json:"portrait_sha256"`
 	Frames         int      `json:"frames"`
 	DurationMs     int64    `json:"duration_ms"`
+	// Match is this issuer's verdict on Distance, filled in by the client the
+	// way RegulaFaceClient decides a similarity, and nil until the engine has
+	// completed. It is what the gate reads, so one config governs how strict
+	// both methods are.
+	Match *FaceMatchVerdict `json:"-"`
 }
 
 // IrisClient talks to the Iris verifier's cluster-internal API. Mirrors the
@@ -63,14 +70,18 @@ type IrisClient interface {
 // HTTPIrisClient implements IrisClient over the verifier's internal HTTP API.
 type HTTPIrisClient struct {
 	baseURL    string
+	threshold  float64
 	httpClient *http.Client
 }
 
 // NewIrisClient creates a client for the verifier at baseURL (cluster-internal,
-// e.g. http://iris-verifier-svc:8081).
-func NewIrisClient(baseURL string) *HTTPIrisClient {
+// e.g. http://iris-verifier-svc:8081). The threshold is the configured
+// iris.face_match_threshold; there is no default to fall back on, and the
+// config validation rejects an absent one.
+func NewIrisClient(baseURL string, threshold float64) *HTTPIrisClient {
 	return &HTTPIrisClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
+		threshold:  threshold,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -110,6 +121,16 @@ func (c *HTTPIrisClient) GetSession(ctx context.Context, faceSessionID string) (
 	var status IrisSessionStatus
 	if err := json.Unmarshal(respBody, &status); err != nil {
 		return nil, fmt.Errorf("failed to decode iris session status: %w", err)
+	}
+	// The distance is meaningful only once the engine completed; before that
+	// there is nothing to judge.
+	if status.Status == irisStatusCompleted && status.Distance != nil {
+		matched := *status.Distance <= c.threshold
+		status.Match = &FaceMatchVerdict{Score: *status.Distance, Matched: matched}
+		// verifier_passed is logged beside the decision so the two thresholds
+		// drifting apart is visible rather than silent.
+		slog.Info("Face match completed", "distance", *status.Distance, "threshold", c.threshold,
+			"matched", matched, "verifier_passed", status.Passed != nil && *status.Passed)
 	}
 	return &status, nil
 }

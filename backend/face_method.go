@@ -212,11 +212,12 @@ func (p FaceMethodPolicy) Assign(decl *FaceVerificationDeclaration) (FaceMethod,
 }
 
 // resolveFaceMethods validates the method configuration for an environment in
-// which face verification is enabled and returns the effective configuration.
-// An absent block means Regula only, as before methods existed. Each enabled
-// method needs its connection settings: Regula the two Face API URLs (as
-// before), Iris the two verifier URLs. Enabled face verification without a
-// single enabled method is a configuration error, not a way to disable it.
+// which face verification is enabled and returns the effective configuration:
+// every enabled method must be one this issuer could actually run. An absent
+// block means Regula only, as before methods existed. Each enabled method
+// needs its own config block, whose completeness the block itself checks (see
+// RegulaConfig.validate). Enabled face verification without a single enabled
+// method is a configuration error, not a way to disable it.
 func resolveFaceMethods(config *Config) (FaceMethodsConfig, error) {
 	methods := defaultFaceMethods
 	if config.FaceVerificationMethods != nil {
@@ -228,21 +229,17 @@ func resolveFaceMethods(config *Config) (FaceMethodsConfig, error) {
 	if methods.Regula.Weight < 0 || methods.Iris.Weight < 0 {
 		return methods, fmt.Errorf("face_verification_methods weights must not be negative")
 	}
-	if methods.Regula.Enabled {
-		if config.RegulaFaceApiUrl == "" {
-			return methods, fmt.Errorf("face_verification_enabled requires regula_face_api_url")
-		}
-		if config.RegulaFaceApiPublicUrl == "" {
-			return methods, fmt.Errorf("face verification requires regula_face_api_public_url")
-		}
+	if methods.Regula.Enabled && config.Regula == nil {
+		return methods, fmt.Errorf("face_verification_methods.regula.enabled requires a regula config block")
 	}
-	if methods.Iris.Enabled {
-		if config.IrisVerifierUrl == "" {
-			return methods, fmt.Errorf("face_verification_methods.iris.enabled requires iris_verifier_url")
-		}
-		if config.IrisVerifierPublicUrl == "" {
-			return methods, fmt.Errorf("face_verification_methods.iris.enabled requires iris_verifier_public_url")
-		}
+	if methods.Iris.Enabled && config.Iris == nil {
+		return methods, fmt.Errorf("face_verification_methods.iris.enabled requires an iris config block")
+	}
+	if err := config.Regula.validate(); err != nil {
+		return methods, err
+	}
+	if err := config.Iris.validate(); err != nil {
+		return methods, err
 	}
 	return methods, nil
 }

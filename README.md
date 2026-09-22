@@ -64,11 +64,15 @@ It should look like this:
     "./certificates/v2/CSCA NL eDL-02.cer",
     "./certificates/v3/CSCA NL eDL-03.cer"
   ],
-  "regula_face_api_url": "http://regula-face-api:41101"
+  "regula": {
+    "face_api_url": "http://regula-face-api:41101",
+    "face_api_public_url": "https://faceapi.staging.yivi.app",
+    "face_match_threshold": 0.75
+  }
 }
 ```
 
-Face verification has more keys (`face_verification_enabled`, `face_verification_methods`, the Iris verifier URLs, `face_recorder`); see [Face Verification](#face-verification-with-liveness-detection). `storage_type` must be `redis` or `redis_sentinel` wherever more than one replica runs: the session's method assignment and the Iris face records must be visible to every replica.
+Face verification has more keys (`face_verification_enabled`, `face_verification_methods`, the `iris` block, `face_recorder`); see [Face Verification](#face-verification-with-liveness-detection). `storage_type` must be `redis` or `redis_sentinel` wherever more than one replica runs: the session's method assignment and the Iris face records must be visible to every replica.
 The `jwt_private_key_path` should point to a valid RSA private key in PEM format, which is used to sign JWT tokens for the IRMA server.
 
 ### Running the application
@@ -183,7 +187,7 @@ Both methods keep the verdict on the issuer side. See [docs/face-verification-de
 - **Server-Side Liveness Confirmation**: The backend confirms the liveness verdict (`GET /api/v2/liveness`) before trusting the transaction.
 - **Retention Cleanup**: The liveness transaction (portrait, video, metadata) is deleted (`DELETE /api/v2/liveness`) after the match.
 - **Original Chip Image**: Matching uses the unaltered DG2/DG6 chip image, not the display-optimised PNG.
-- **Configurable Threshold**: Similarity threshold (default 0.75) via `regula_face_match_threshold`.
+- **Configurable Threshold**: Similarity threshold via `regula.face_match_threshold`. Iris has the same knob on its own scale, `iris.face_match_threshold`; both are decided by the issuer, and neither has a default — every environment states its own.
 - **Remote Switch + Fail-Closed**: `face_verification_enabled` decides per environment whether the step applies. Enabled is fail-closed — issuance is rejected unless a confirmed liveness transaction matches the document portrait.
 - **Issuer-Announced**: `/api/start-validation` announces face verification to the app (with the Face API origin) whenever it is enabled; the app skips the whole step when the announcement is absent.
 
@@ -237,12 +241,20 @@ Configuration (`config.json`):
   "iris":   { "enabled": false, "weight": 0 }
 },
 "allow_client_preference": false,
-"iris_verifier_url": "http://iris-verifier-svc:8081",
-"iris_verifier_public_url": "wss://iris-verifier.staging.yivi.app",
+"regula": {
+  "face_api_url": "http://regula-face-api:41101",
+  "face_api_public_url": "https://faceapi.staging.yivi.app",
+  "face_match_threshold": 0.75
+},
+"iris": {
+  "verifier_url": "http://iris-verifier-svc:8081",
+  "verifier_public_url": "wss://iris-verifier.staging.yivi.app",
+  "face_match_threshold": 0.75
+},
 "face_recorder": "stderr"
 ```
 
-An absent `face_verification_methods` means Regula only, so existing configs keep their exact behaviour. Iris can be switched off at three levels: `iris.enabled: false` here takes effect on the next session with no deploy, the ops repository runs the verifier at zero replicas, and the repository variable `BUILD_IRIS_VERIFIER=false` stops CI building or publishing the verifier image at all. Enabled face verification needs at least one enabled method; `regula.enabled` needs the two Regula URLs, `iris.enabled` the two verifier URLs (internal for the issuer, public `wss://` for the app). `iris.enabled: false` returns every session to Regula at once.
+An absent `face_verification_methods` means Regula only, so existing configs keep their exact behaviour. Iris can be switched off at three levels: `iris.enabled: false` here takes effect on the next session with no deploy, the ops repository runs the verifier at zero replicas, and the repository variable `BUILD_IRIS_VERIFIER=false` stops CI building or publishing the verifier image at all. Enabled face verification needs at least one enabled method, and every enabled method needs its own block: `regula.enabled` the `regula` block, `iris.enabled` the `iris` block. Each block is all-or-nothing — the internal URL, the public one (browser for Regula, `wss://` for the app for Iris) and the threshold are all required, with no defaults, and a block that is present but incomplete fails startup even when its method is off. `iris.enabled: false` returns every session to Regula at once.
 
 **The Iris flow.** `verify-passport` / `verify-driving-licence` no longer consume the session: it lives until an `issue-*` call consumes it or its TTL expires. When the session's method is Iris, verify opens a face session at the verifier from the portrait it has just authenticated and answers with
 
@@ -255,7 +267,7 @@ An absent `face_verification_methods` means Regula only, so existing configs kee
 }
 ```
 
-The app streams frames to `stream_url`, then issues with `face_session_id` (plus `face_attempt` and `face_duration_ms` for the recordings). The issuer checks that the face session belongs to this document session, that the portrait in the issuance request is the one the face session was opened with, and that the verifier reports `completed` and `passed`; anything else is a 400 `face verification failed`. Evidence for the other method (a `liveness_transaction_id` on an Iris session or a `face_session_id` on a Regula one) is a 400 as well. On success the verifier session and the issuer's face record are deleted.
+The app streams frames to `stream_url`, then issues with `face_session_id` (plus `face_attempt` and `face_duration_ms` for the recordings). The issuer checks that the face session belongs to this document session, that the portrait in the issuance request is the one the face session was opened with, and that the verifier reports `completed` with a distance at or under `iris.face_match_threshold`; anything else is a 400 `face verification failed`. The verifier applies a threshold of its own to the verdict it sends the wallet, so the capture screen can show an outcome, but issuance is decided here — the same way `regula.face_match_threshold` decides a Regula similarity. Evidence for the other method (a `liveness_transaction_id` on an Iris session or a `face_session_id` on a Regula one) is a 400 as well. On success the verifier session and the issuer's face record are deleted.
 
 **Recording.** Every assignment and every gated issuance is recorded through the `analytics` package as one JSON log line with `event=face_verification`: method, outcome (`passed`, `match_rejected`, `liveness_rejected`, `evidence_missing`, `assignment_mismatch`, `error`), score with its scale (`regula_similarity` or `iris_distance`), duration, attempt kind, document type and the app's coarse labels. Nothing identifying is recorded. `face_recorder: "none"` switches it off; a Prometheus recorder is the planned alternative. All logging is JSON now, so the lines are queryable by field in Loki.
 
@@ -284,21 +296,22 @@ regula-face-api:
 
 #### 3. Enable in Configuration
 
-Add the `regula_face_api_url`, `regula_face_api_public_url` and
-`face_verification_enabled` (and optionally `regula_face_match_threshold`) to
-your `config.json`:
+Add the `regula` block and `face_verification_enabled` to your `config.json`.
+Every field of the block is required:
 
 ```json
 {
   ...
-  "regula_face_api_url": "http://regula-face-api:41101",
-  "regula_face_api_public_url": "https://faceapi.staging.yivi.app",
-  "regula_face_match_threshold": 0.75,
+  "regula": {
+    "face_api_url": "http://regula-face-api:41101",
+    "face_api_public_url": "https://faceapi.staging.yivi.app",
+    "face_match_threshold": 0.75
+  },
   "face_verification_enabled": true
 }
 ```
 
-For local development without Docker, use `"regula_face_api_url": "http://localhost:41101"`.
+For local development without Docker, use `"face_api_url": "http://localhost:41101"`.
 
 Face verification has exactly two states:
 
@@ -310,30 +323,36 @@ Face verification has exactly two states:
   verification built in are asked to update); a provided id must resolve to a
   confirmed liveness and a face match above the threshold.
 
-When the key is omitted, the state is derived from `regula_face_api_url` to
-preserve historical behaviour exactly: URL set → enabled, unset → disabled.
-Enabled requires both `regula_face_api_url` and `regula_face_api_public_url`
-(startup fails otherwise): the public URL is announced to the app and served to
-the capture page, and the liveness transaction must be created on the same Face
-API this issuer matches against.
+When the key is omitted the step is disabled. Enabled requires a complete
+`regula` block (startup fails otherwise): the public URL is announced to the app
+and served to the capture page, and the liveness transaction must be created on
+the same Face API this issuer matches against.
+
+These settings used to be flat keys (`regula_face_api_url`,
+`iris_verifier_url`, …). A config that still carries one is refused at startup,
+naming its replacement, so an issuer cannot lose the step by having a key
+silently ignored.
 
 #### 4. Enable the Liveness Capture Page (F-Droid builds)
 
 The Play Store and App Store builds of the Yivi app run the liveness session with Regula's **native** Face SDK. The F-Droid build ships no proprietary binaries, so it opens a **web** liveness page in a WebView instead — served by this service at [`/capture`](frontend/src/pages/FaceCapture.tsx). See privacybydesign/irmamobile#665.
 
-The page runs Regula's web face component against the Face API **directly**, exactly as the native SDK does; this service only hosts the page and tells it which Face API to use. That needs a *browser-reachable* Face API origin, which is generally not the `regula_face_api_url` above (that one is an internal address):
+The page runs Regula's web face component against the Face API **directly**, exactly as the native SDK does; this service only hosts the page and tells it which Face API to use. That needs a *browser-reachable* Face API origin, which is generally not the `face_api_url` above (that one is an internal address):
 
 ```json
 {
   ...
-  "regula_face_api_url": "http://regula-face-api:41101",
-  "regula_face_api_public_url": "https://faceapi.staging.yivi.app"
+  "regula": {
+    "face_api_url": "http://regula-face-api:41101",
+    "face_api_public_url": "https://faceapi.staging.yivi.app",
+    "face_match_threshold": 0.75
+  }
 }
 ```
 
-`GET /api/face-capture-config` serves this value to the page, so one static frontend build works across environments. When `regula_face_api_public_url` is omitted the endpoint returns 404 and the capture page reports an error instead of falling back to Regula's cloud — set it only in environments where the F-Droid build should work.
+`GET /api/face-capture-config` serves this value to the page, so one static frontend build works across environments. The endpoint returns 404 wherever the Regula method is not enabled, so the capture page reports an error instead of falling back to Regula's cloud.
 
-> **Both URLs must address the same Face API instance.** The page opens the liveness transaction through `regula_face_api_public_url`; the backend then resolves and matches that same transaction ID through `regula_face_api_url`. Point them at different instances and every issuance fails with a transaction the backend cannot find.
+> **Both URLs must address the same Face API instance.** The page opens the liveness transaction through `regula.face_api_public_url`; the backend then resolves and matches that same transaction ID through `regula.face_api_url`. Point them at different instances and every issuance fails with a transaction the backend cannot find.
 
 Two requirements on the Face API deployment:
 
@@ -426,7 +445,7 @@ pkg-config --cflags --libs MagickWand
 
 **Issue**: Issuance returns "face verification failed" or "face verification required"
 
-**Solution**: When face verification is enabled, issuance requires a confirmed `liveness_transaction_id` that matches the document portrait. Ensure the client completes a Regula liveness session and passes its transaction ID, that `regula_face_api_url` is configured in your `config.json`, and that the Regula Face API service is running. Check the service health:
+**Solution**: When face verification is enabled, issuance requires a confirmed `liveness_transaction_id` that matches the document portrait. Ensure the client completes a Regula liveness session and passes its transaction ID, that the `regula` block is configured in your `config.json`, and that the Regula Face API service is running. Check the service health:
 ```bash
 curl http://localhost:41101/api/healthz
 ```

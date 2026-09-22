@@ -40,20 +40,16 @@ type Config struct {
 	RedisConfig             redis.RedisConfig         `json:"redis_config"`
 	RedisSentinelConfig     redis.RedisSentinelConfig `json:"redis_sentinel_config"`
 	LogLevel                string                    `json:"log_level"`
-	RegulaFaceApiUrl        string                    `json:"regula_face_api_url,omitempty"`
-	// Similarity threshold (0-1) above which the live face is considered a match
-	// for the document portrait. Defaults to DefaultFaceMatchThreshold when unset.
-	RegulaFaceMatchThreshold float64 `json:"regula_face_match_threshold,omitempty"`
-	// Browser-reachable origin of the Regula Face API, served to the /capture
-	// liveness page and announced to the app in /api/start-validation. Distinct
-	// from RegulaFaceApiUrl, which the backend uses over the internal network
-	// and which a browser generally cannot resolve.
-	RegulaFaceApiPublicUrl string `json:"regula_face_api_public_url,omitempty"`
+	// Regula holds the Regula method's connection settings and threshold;
+	// required when that method is enabled, and complete when present. See
+	// RegulaConfig.
+	Regula *RegulaConfig `json:"regula,omitempty"`
+	// Iris holds the Iris method's connection settings and threshold; required
+	// when that method is enabled, and complete when present. See IrisConfig.
+	Iris *IrisConfig `json:"iris,omitempty"`
 	// Whether face verification applies in this environment. Enabled is
-	// fail-closed: issuance without a matching liveness transaction is
-	// rejected. When absent, derived from RegulaFaceApiUrl (set → enabled) so
-	// old configs keep their exact behaviour. See
-	// resolveFaceVerificationEnabled.
+	// fail-closed: issuance without a verified match is rejected. Absent means
+	// disabled. See resolveFaceVerificationEnabled.
 	FaceVerificationEnabled *bool `json:"face_verification_enabled,omitempty"`
 	// Which face verification methods may be assigned, with their weights in
 	// the draw. Absent means Regula only, so existing configs keep their exact
@@ -62,12 +58,6 @@ type Config struct {
 	// Whether a wallet's preferred_method is honoured. For staging testers;
 	// off in production.
 	AllowClientPreference bool `json:"allow_client_preference,omitempty"`
-	// Cluster-internal base URL of the Iris verifier, e.g.
-	// http://iris-verifier-svc:8081. Required when the iris method is enabled.
-	IrisVerifierUrl string `json:"iris_verifier_url,omitempty"`
-	// Wallet-reachable origin of the Iris verifier's stream endpoint, e.g.
-	// wss://iris-verifier.staging.yivi.app. Required when iris is enabled.
-	IrisVerifierPublicUrl string `json:"iris_verifier_public_url,omitempty"`
 	// Where face verification attempts are recorded: "stderr" (default, one
 	// JSON log line per event) or "none".
 	Recorder string `json:"face_recorder,omitempty"`
@@ -180,6 +170,10 @@ func main() {
 	var faceVerificationClient FaceVerificationClient
 	var irisClient IrisClient
 	var faceMethods FaceMethodPolicy
+	// The public origins the app is pointed at, set only for a method that is
+	// actually enabled so the capture page and the announcement cannot offer a
+	// method this issuer will not accept.
+	var regulaFaceApiPublicUrl, irisVerifierPublicUrl string
 	if faceVerification {
 		// Validated already by resolveFaceVerificationEnabled.
 		methods, _ := resolveFaceMethods(&config)
@@ -188,18 +182,24 @@ func main() {
 			"regula_enabled", methods.Regula.Enabled, "regula_weight", methods.Regula.Weight,
 			"iris_enabled", methods.Iris.Enabled, "iris_weight", methods.Iris.Weight,
 			"allow_client_preference", config.AllowClientPreference)
+		// Both blocks are present and complete for every enabled method;
+		// resolveFaceVerificationEnabled refused to start otherwise.
 		if methods.Regula.Enabled {
 			slog.Info("Initializing Regula Face API client",
-				"url", config.RegulaFaceApiUrl,
-				"match_threshold", config.RegulaFaceMatchThreshold)
-			faceVerificationClient = NewRegulaFaceClient(config.RegulaFaceApiUrl, config.RegulaFaceMatchThreshold)
+				"url", config.Regula.FaceApiUrl,
+				"match_threshold", config.Regula.FaceMatchThreshold)
+			regulaFaceApiPublicUrl = config.Regula.FaceApiPublicUrl
+			faceVerificationClient = NewRegulaFaceClient(config.Regula.FaceApiUrl, config.Regula.FaceMatchThreshold)
 			if err := faceVerificationClient.HealthCheck(); err != nil {
 				slog.Warn("Regula Face API health check failed, service may not be available", "error", err)
 			}
 		}
 		if methods.Iris.Enabled {
-			slog.Info("Initializing Iris verifier client", "url", config.IrisVerifierUrl)
-			irisClient = NewIrisClient(config.IrisVerifierUrl)
+			slog.Info("Initializing Iris verifier client",
+				"url", config.Iris.VerifierUrl,
+				"match_threshold", config.Iris.FaceMatchThreshold)
+			irisVerifierPublicUrl = config.Iris.VerifierPublicUrl
+			irisClient = NewIrisClient(config.Iris.VerifierUrl, config.Iris.FaceMatchThreshold)
 			if err := irisClient.HealthCheck(); err != nil {
 				slog.Warn("Iris verifier health check failed, service may not be available", "error", err)
 			}
@@ -224,10 +224,10 @@ func main() {
 		converter:              IssuanceRequestConverterImpl{},
 		drivingLicenceParser:   DrivingLicenceParserImpl{},
 		faceVerificationClient: faceVerificationClient,
-		regulaFaceApiPublicUrl: config.RegulaFaceApiPublicUrl,
+		regulaFaceApiPublicUrl: regulaFaceApiPublicUrl,
 		faceMethods:            faceMethods,
 		irisClient:             irisClient,
-		irisVerifierPublicUrl:  config.IrisVerifierPublicUrl,
+		irisVerifierPublicUrl:  irisVerifierPublicUrl,
 		recorder:               recorder,
 	}
 
@@ -261,6 +261,10 @@ func readConfigFile(path string) (Config, error) {
 	configBytes, err := os.ReadFile(path)
 
 	if err != nil {
+		return Config{}, err
+	}
+
+	if err := checkMovedFaceKeys(configBytes); err != nil {
 		return Config{}, err
 	}
 
