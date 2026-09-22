@@ -35,10 +35,22 @@ func TestStderrRecorderMarksEveryLine(t *testing.T) {
 // values, so a count over `score` only sees attempts that produced one.
 func TestStderrRecorderOmitsUnsetFields(t *testing.T) {
 	line := recordOne(t, Record{Kind: KindAssigned, Method: MethodIris})
-	for _, absent := range []string{"platform", "flavor", "app_version", "document_type",
+	for _, absent := range []string{"capabilities", "platform", "flavor", "app_version", "document_type",
 		"attempt_kind", "outcome", "score", "score_kind", "duration_ms", "frames", "per_frame_ms"} {
 		require.NotContains(t, line, absent)
 	}
+}
+
+// What the wallet could run, beside what it was given: one line answers why a
+// session went to the method it did.
+func TestStderrRecorderWritesCapabilities(t *testing.T) {
+	line := recordOne(t, Record{
+		Kind:         KindAssigned,
+		Method:       MethodIris,
+		Capabilities: []Method{MethodRegula, MethodIris},
+	})
+	require.Equal(t, "regula,iris", line["capabilities"])
+	require.Equal(t, "iris", line["method"])
 }
 
 func TestStderrRecorderWritesAllFields(t *testing.T) {

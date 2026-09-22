@@ -3,6 +3,7 @@ package analytics
 import (
 	"context"
 	"log/slog"
+	"strings"
 )
 
 // LogKey is the slog attribute every recorded line carries, so the lines can
@@ -38,6 +39,15 @@ func (r *StderrRecorder) Record(ctx context.Context, e Record) {
 		LogKey, LogValue,
 		"kind", string(e.Kind),
 		"method", string(e.Method),
+	}
+	if len(e.Capabilities) > 0 {
+		// Joined rather than emitted as an array: a log store groups a string
+		// field, while an array field it has to flatten first.
+		names := make([]string, len(e.Capabilities))
+		for i, m := range e.Capabilities {
+			names[i] = string(m)
+		}
+		attrs = append(attrs, "capabilities", strings.Join(names, ","))
 	}
 	if e.Client.Platform != "" {
 		attrs = append(attrs, "platform", e.Client.Platform)

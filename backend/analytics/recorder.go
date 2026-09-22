@@ -105,6 +105,14 @@ type Record struct {
 	Kind   Kind   `json:"kind"`
 	Method Method `json:"method"`
 	Client Client `json:"client,omitzero"`
+	// Capabilities are the methods the wallet declared it can run, on
+	// KindAssigned records: the candidates Method was chosen from, so the two
+	// together say what was possible and what was picked. Names this issuer
+	// does not know are dropped. Absent means the wallet declared nothing,
+	// i.e. a build from before the declaration existed, which can only run
+	// Regula — the case that makes an observed method split trail the
+	// configured weights.
+	Capabilities []Method `json:"capabilities,omitempty"`
 	// DocumentType is "passport", "id_card" or "driving_licence".
 	DocumentType string      `json:"document_type,omitempty"`
 	AttemptKind  AttemptKind `json:"attempt_kind,omitempty"`

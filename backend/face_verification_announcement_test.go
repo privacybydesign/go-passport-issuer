@@ -92,6 +92,9 @@ func TestStartValidationOldWalletGetsRegula(t *testing.T) {
 	require.Equal(t, FaceMethodRegula, e.Method)
 	require.Equal(t, analytics.AttemptFirst, e.AttemptKind)
 	require.Empty(t, e.Client.Platform)
+	// This wallet declared nothing, so there is no candidate list to record:
+	// Regula is the only thing it can run.
+	require.Empty(t, e.Capabilities)
 }
 
 // The Iris announcement names the method and carries no Face API URL, and
@@ -231,4 +234,19 @@ func TestStartValidationAnnouncesIrisOndevice(t *testing.T) {
 	require.Equal(t, analytics.KindAssigned, e.Kind)
 	require.Equal(t, FaceMethodIrisOndevice, e.Method)
 	require.Equal(t, "play", e.Client.Flavor)
+	// Everything the wallet offered, beside the one it was given.
+	require.Equal(t, []FaceMethod{FaceMethodRegula, FaceMethodIris, FaceMethodIrisOndevice}, e.Capabilities)
+}
+
+// A name this issuer does not know is dropped rather than recorded, so the
+// field only ever holds methods that could have been assigned.
+func TestStartValidationRecordsKnownCapabilitiesOnly(t *testing.T) {
+	state, recorder := twoMethodState(false)
+
+	response := startValidationWithBody(t, state,
+		`{"face_verification": {"capabilities": ["regula", "iris", "palm_scan"]}}`)
+	require.NotNil(t, response.FaceVerification)
+
+	e := recorder.events[len(recorder.events)-1]
+	require.Equal(t, []FaceMethod{FaceMethodRegula, FaceMethodIris}, e.Capabilities)
 }

@@ -957,11 +957,19 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 		if method == FaceMethodRegula {
 			response.FaceVerification.FaceApiUrl = state.regulaFaceApiPublicUrl
 		}
+		// The candidates the method was chosen from, recorded beside the
+		// choice: a wallet that declared nothing leaves this empty, which is
+		// what tells an assignment split apart from the configured weights.
+		var capabilities []FaceMethod
+		if d := declaration.FaceVerification; d != nil && len(d.Capabilities) > 0 {
+			capabilities = declaredCapabilities(d)
+		}
 		state.record(r.Context(), analytics.Record{
-			Kind:        analytics.KindAssigned,
-			Method:      method,
-			Client:      record.Client,
-			AttemptKind: record.attemptKind(),
+			Kind:         analytics.KindAssigned,
+			Method:       method,
+			Capabilities: capabilities,
+			Client:       record.Client,
+			AttemptKind:  record.attemptKind(),
 		})
 	}
 
