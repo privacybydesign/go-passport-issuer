@@ -20,6 +20,17 @@ type ValidationRequest struct {
 	// Required at issuance when the session's assigned face verification
 	// method is iris; the issuer pulls the verdict for it (optional).
 	FaceSessionId string `json:"face_session_id,omitempty" example:"fs_1a2b3c"`
+	// Verdict of the Iris SDK that ran on the device: whether the live face it
+	// captured matched the document chip portrait. Required at issuance when
+	// the session's assigned method is iris_ondevice. A pointer so that an
+	// absent field (the step was never run) stays distinguishable from false
+	// (it ran and the face was rejected) — the two are answered differently.
+	// The issuer cannot check this value; it is the client's word (optional).
+	FaceOndevicePassed *bool `json:"face_ondevice_passed,omitempty" example:"true"`
+	// SHA-256, hex, of the portrait bytes the on-device SDK matched against.
+	// Compared with the portrait this request is being issued for, so a
+	// passing verdict cannot be carried over to another document (optional).
+	FaceOndevicePortraitSha256 string `json:"face_ondevice_portrait_sha256,omitempty" example:"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"`
 	// Which attempt at the face verification step this issuance follows within
 	// the wallet's document flow, starting at 1. Recording only (optional).
 	FaceAttempt int `json:"face_attempt,omitempty" example:"1"`

@@ -33,6 +33,11 @@ type Method string
 const (
 	MethodRegula Method = "regula"
 	MethodIris   Method = "iris"
+	// MethodIrisOndevice is the Iris SDK running on the phone. Records for it
+	// never carry a Score: the mobile SDK reports a verdict and no distance,
+	// so this arm is missing from any comparison of score distributions by
+	// construction, not by accident.
+	MethodIrisOndevice Method = "iris_ondevice"
 )
 
 // Kind says which stage of an attempt a record describes.

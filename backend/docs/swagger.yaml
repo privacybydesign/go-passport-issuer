@@ -32,10 +32,12 @@ definitions:
     enum:
     - regula
     - iris
+    - iris_ondevice
     type: string
     x-enum-varnames:
     - MethodRegula
     - MethodIris
+    - MethodIrisOndevice
   main.FaceSessionAnnouncement:
     properties:
       expires_in:
@@ -59,16 +61,17 @@ definitions:
         description: |-
           Browser/app-reachable origin of the Regula Face API the liveness session
           must run against — the same service this issuer matches against. Present
-          for the regula method only.
+          for the regula method only: iris carries its endpoint in the verify
+          response instead, and iris_ondevice has nothing to address at all.
         example: https://faceapi.staging.yivi.app
         type: string
       method:
         allOf:
         - $ref: '#/definitions/main.FaceMethod'
         description: |-
-          The face verification method assigned to this session: regula or iris.
-          Wallets from before methods existed ignore it and run Regula, which is
-          the only method they are ever assigned.
+          The face verification method assigned to this session: regula, iris or
+          iris_ondevice. Wallets from before methods existed ignore it and run
+          Regula, which is the only method they are ever assigned.
         example: regula
     type: object
   main.FaceVerificationDeclaration:
@@ -189,6 +192,23 @@ definitions:
           evidence being in hand. Recording only (optional).
         example: 4200
         type: integer
+      face_ondevice_passed:
+        description: |-
+          Verdict of the Iris SDK that ran on the device: whether the live face it
+          captured matched the document chip portrait. Required at issuance when
+          the session's assigned method is iris_ondevice. A pointer so that an
+          absent field (the step was never run) stays distinguishable from false
+          (it ran and the face was rejected) — the two are answered differently.
+          The issuer cannot check this value; it is the client's word (optional).
+        example: true
+        type: boolean
+      face_ondevice_portrait_sha256:
+        description: |-
+          SHA-256, hex, of the portrait bytes the on-device SDK matched against.
+          Compared with the portrait this request is being issued for, so a
+          passing verdict cannot be carried over to another document (optional).
+        example: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+        type: string
       face_session_id:
         description: |-
           Identifier of the Iris face session the issuer opened at verification.

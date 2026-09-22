@@ -846,13 +846,14 @@ func decodeValidationRequest(r *http.Request) (models.ValidationRequest, error) 
 // the signal — there is no enabled flag inside it, and the app treats an absent
 // announcement as "skip the whole step".
 type FaceVerificationAnnouncement struct {
-	// The face verification method assigned to this session: regula or iris.
-	// Wallets from before methods existed ignore it and run Regula, which is
-	// the only method they are ever assigned.
+	// The face verification method assigned to this session: regula, iris or
+	// iris_ondevice. Wallets from before methods existed ignore it and run
+	// Regula, which is the only method they are ever assigned.
 	Method FaceMethod `json:"method,omitempty" example:"regula"`
 	// Browser/app-reachable origin of the Regula Face API the liveness session
 	// must run against — the same service this issuer matches against. Present
-	// for the regula method only.
+	// for the regula method only: iris carries its endpoint in the verify
+	// response instead, and iris_ondevice has nothing to address at all.
 	FaceApiUrl string `json:"face_api_url,omitempty" example:"https://faceapi.staging.yivi.app"`
 }
 

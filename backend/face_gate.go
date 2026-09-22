@@ -72,29 +72,25 @@ func gateFaceVerification(state *ServerState, w http.ResponseWriter, in faceGate
 		score     *float64
 		scoreKind analytics.ScoreKind
 	)
-	switch method {
-	case FaceMethodRegula:
-		scoreKind = analytics.ScoreRegulaSimilarity
-		if in.request.FaceSessionId != "" {
-			respondWithErr(w, http.StatusBadRequest, faceAssignmentMismatchBody,
-				"face session id on a Regula session", nil, "document_type", in.documentType)
-			outcome = analytics.OutcomeAssignmentMismatch
-		} else {
-			ok, outcome, score = regulaGate(state, w, portraitBase64(in.portrait), in.request.LivenessTransactionId, in.documentType)
-		}
-	case FaceMethodIris:
-		scoreKind = analytics.ScoreIrisDistance
-		if in.request.LivenessTransactionId != "" {
-			respondWithErr(w, http.StatusBadRequest, faceAssignmentMismatchBody,
-				"liveness transaction id on an Iris session", nil, "document_type", in.documentType)
-			outcome = analytics.OutcomeAssignmentMismatch
-		} else {
-			ok, outcome, score = irisGate(state, w, in)
-		}
-	default:
+	foreign := foreignEvidence(method, in.request)
+	switch {
+	case parseFaceMethod(string(method)) == "":
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal,
 			"session assigned an unknown face verification method", fmt.Errorf("method %q", method))
 		outcome = analytics.OutcomeError
+	case foreign != "":
+		respondWithErr(w, http.StatusBadRequest, faceAssignmentMismatchBody,
+			fmt.Sprintf("%s on a %s session", foreign, method), nil, "document_type", in.documentType)
+		outcome = analytics.OutcomeAssignmentMismatch
+	case method == FaceMethodRegula:
+		scoreKind = analytics.ScoreRegulaSimilarity
+		ok, outcome, score = regulaGate(state, w, portraitBase64(in.portrait), in.request.LivenessTransactionId, in.documentType)
+	case method == FaceMethodIris:
+		scoreKind = analytics.ScoreIrisDistance
+		ok, outcome, score = irisGate(state, w, in)
+	case method == FaceMethodIrisOndevice:
+		// No scoreKind: the mobile SDK reports a verdict and no distance.
+		ok, outcome = irisOndeviceGate(w, in)
 	}
 
 	event := analytics.Record{
@@ -119,6 +115,31 @@ func gateFaceVerification(state *ServerState, w http.ResponseWriter, in faceGate
 	}
 	state.record(context.Background(), event)
 	return ok
+}
+
+// foreignEvidence names the evidence in a request that belongs to a method
+// other than the one this session was assigned, or "" when there is none.
+//
+// Every method is fail-closed on its own evidence anyway, so this is about the
+// integrity of the recordings rather than about security: an attempt recorded
+// under one method should not have been decided by another's evidence. It also
+// catches a wallet that ran a method it was not assigned, which is a bug worth
+// seeing rather than quietly tolerating.
+func foreignEvidence(method FaceMethod, req models.ValidationRequest) string {
+	for _, e := range []struct {
+		of      FaceMethod
+		present bool
+		what    string
+	}{
+		{FaceMethodRegula, req.LivenessTransactionId != "", "liveness transaction id"},
+		{FaceMethodIris, req.FaceSessionId != "", "face session id"},
+		{FaceMethodIrisOndevice, req.FaceOndevicePassed != nil, "on-device face verdict"},
+	} {
+		if e.present && e.of != method {
+			return e.what
+		}
+	}
+	return ""
 }
 
 func portraitBase64(portrait []byte) string {
@@ -250,6 +271,48 @@ func irisGate(state *ServerState, w http.ResponseWriter, in faceGateInput) (bool
 			"iris session not completed", fmt.Errorf("status: %s", status.Status), "document_type", documentType)
 		return false, analytics.OutcomeEvidenceMissing, score
 	}
+}
+
+// irisOndeviceGate checks what an on-device verdict can be checked for, which
+// is not the verdict itself: the SDK decided on the phone, and the issuer has
+// no frames, no session and no way to recompute it. What it does enforce is
+// that a verdict was given at all, and that a *passing* one was obtained
+// against the portrait now being issued — a pass is only ever good for the
+// document it was taken against. A tampered wallet defeats both by lying; that
+// is the accepted trade of this method, and the reason it is not a
+// replacement for either server-verdict arm. See
+// irmamobile/docs/on-device-iris-face-verification-plan.md §3.
+func irisOndeviceGate(w http.ResponseWriter, in faceGateInput) (bool, string) {
+	documentType := in.documentType
+	if in.request.FaceOndevicePassed == nil {
+		slog.Warn("On-device face verdict required for issuance", "document_type", documentType)
+		respondWithErr(w, http.StatusBadRequest, faceVerificationRequiredBody,
+			"no on-device face verdict provided for issuance", nil, "document_type", documentType)
+		return false, analytics.OutcomeEvidenceMissing
+	}
+
+	if !*in.request.FaceOndevicePassed {
+		// Checked before the portrait, deliberately: a failed verdict grants
+		// nothing, so which portrait produced it does not matter, and binding
+		// it would only turn a reported failure into a mismatch and lose the
+		// recording of why the attempt failed. The SDK reports one failure for
+		// a rejected liveness and a face that did not match alike, exactly as
+		// the verifier does for a failed stream, so both arms record the same
+		// outcome for the same event.
+		slog.Info("On-device face verification failed", "document_type", documentType)
+		respondWithErr(w, http.StatusBadRequest, faceVerificationFailedBody,
+			"on-device face verification did not pass", nil, "document_type", documentType)
+		return false, analytics.OutcomeLivenessRejected
+	}
+
+	if len(in.portrait) == 0 || !strings.EqualFold(in.request.FaceOndevicePortraitSha256, portraitSha256Hex(in.portrait)) {
+		respondWithErr(w, http.StatusBadRequest, faceVerificationFailedBody,
+			"portrait does not match the on-device verdict", nil, "document_type", documentType)
+		return false, analytics.OutcomeAssignmentMismatch
+	}
+
+	slog.Debug("On-device face verification passed", "document_type", documentType)
+	return true, analytics.OutcomePassed
 }
 
 // FaceSessionAnnouncement is the `face_session` object a verify response

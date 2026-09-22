@@ -474,3 +474,94 @@ func TestStartValidationNoCandidateMethod(t *testing.T) {
 	require.Contains(t, string(body), "update the Yivi app")
 	require.Empty(t, storage.TokenMap)
 }
+
+// The on-device arm end to end. It never calls verify — there is no face
+// session to open — so the whole method is one extra pair of fields on the
+// issuance request, refused until they say what this document's portrait and a
+// passing verdict say together.
+func TestIrisOndeviceFlowIssuesOnTheVerdict(t *testing.T) {
+	storage := NewInMemoryTokenStorage()
+	recorder := &capturingRecorder{}
+	startTestServer(t, storage, func(s *ServerState) {
+		s.faceMethods = policyWith(ondeviceOnly, false)
+		s.recorder = recorder
+		s.documentValidator = portraitValidator{portrait: portrait}
+	})
+
+	start := startValidationDeclaring(t, &StartValidationRequest{
+		FaceVerification: &FaceVerificationDeclaration{Capabilities: []string{"regula", "iris", "iris_ondevice"}},
+		Client:           &analytics.Client{Platform: "android", Flavor: "play", AppVersion: "8.4.0"},
+	})
+	require.NotNil(t, start.FaceVerification)
+	require.Equal(t, FaceMethodIrisOndevice, start.FaceVerification.Method)
+	require.Empty(t, start.FaceVerification.FaceApiUrl, "the on-device method announces no endpoint at all")
+
+	req := newReq(start.SessionId, start.Nonce)
+	issueURL := fmt.Sprintf(TEST_HOST, PASSPORT_ISSUE_ENDPOINT)
+
+	// No verdict: the body an app without this method built in can show.
+	resp, body, _ := postJSON[map[string]any](t, issueURL, req)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Contains(t, string(body), "update the Yivi app")
+
+	// Another method's evidence on this session.
+	wrong := req
+	wrong.FaceSessionId = "fs_1"
+	resp, body, _ = postJSON[map[string]any](t, issueURL, wrong)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Contains(t, string(body), "assigned method")
+
+	// A reported failure: refused, and recorded as a rejection rather than as
+	// a step that never happened. This is what the wallet sends instead of
+	// giving up locally.
+	failed := req
+	failed.FaceOndevicePassed = verdict(false)
+	failed.FaceOndevicePortraitSha256 = portraitSha256Hex(portrait)
+	resp, body, _ = postJSON[map[string]any](t, issueURL, failed)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Equal(t, faceVerificationFailedBody, string(body))
+	require.Equal(t, analytics.OutcomeLivenessRejected, recorder.events[len(recorder.events)-1].Outcome)
+
+	// A pass obtained against some other document's portrait.
+	foreign := req
+	foreign.FaceOndevicePassed = verdict(true)
+	foreign.FaceOndevicePortraitSha256 = portraitSha256Hex([]byte("another portrait"))
+	resp, body, _ = postJSON[map[string]any](t, issueURL, foreign)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Equal(t, faceVerificationFailedBody, string(body))
+
+	// A pass for this portrait: issued, once.
+	req.FaceOndevicePassed = verdict(true)
+	req.FaceOndevicePortraitSha256 = portraitSha256Hex(portrait)
+	req.FaceAttempt = 2
+	req.FaceDurationMs = 5100
+	resp, body, _ = postJSON[map[string]any](t, issueURL, req)
+	mustStatus(t, resp, http.StatusOK, body)
+	_, err := storage.RetrieveToken(start.SessionId)
+	require.Error(t, err, "session consumed")
+
+	resp, body, _ = postJSON[map[string]any](t, issueURL, req)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+
+	var assigned, issuances int
+	for _, e := range recorder.events {
+		require.Equal(t, FaceMethodIrisOndevice, e.Method)
+		require.Equal(t, "play", e.Client.Flavor)
+		switch e.Kind {
+		case analytics.KindAssigned:
+			assigned++
+		case analytics.KindIssuance:
+			issuances++
+		}
+	}
+	require.Equal(t, 1, assigned)
+	require.Equal(t, 5, issuances)
+
+	last := recorder.events[len(recorder.events)-1]
+	require.Equal(t, analytics.OutcomePassed, last.Outcome)
+	require.EqualValues(t, 5100, *last.DurationMs)
+	require.Equal(t, analytics.AttemptRetry, last.AttemptKind, "the wallet's own attempt count wins")
+	// Nothing to score: this is the arm that has no distance to report.
+	require.Nil(t, last.Score)
+	require.Empty(t, string(last.ScoreKind))
+}

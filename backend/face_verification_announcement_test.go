@@ -207,3 +207,28 @@ func TestStartValidationAnnouncementNeverLeaksInternalUrl(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.NotContains(t, rec.Body.String(), "regula-face-api")
 }
+
+// An on-device assignment is announced as the method alone. There is nothing
+// for the wallet to address — no Face API, no verifier — so a URL in this
+// announcement would be a bug, and the session is stored with the assignment
+// like any other.
+func TestStartValidationAnnouncesIrisOndevice(t *testing.T) {
+	state, recorder := twoMethodState(false)
+	state.faceMethods = policyWith(ondeviceOnly, false)
+
+	response := startValidationWithBody(t, state,
+		`{"face_verification": {"capabilities": ["regula", "iris", "iris_ondevice"]}, "client": {"platform": "android", "flavor": "play", "app_version": "8.4.0"}}`)
+
+	require.NotNil(t, response.FaceVerification)
+	require.Equal(t, FaceMethodIrisOndevice, response.FaceVerification.Method)
+	require.Empty(t, response.FaceVerification.FaceApiUrl)
+
+	rec, err := loadSessionRecord(state.tokenStorage, response.SessionId)
+	require.NoError(t, err)
+	require.Equal(t, FaceMethodIrisOndevice, rec.Method)
+
+	e := recorder.events[len(recorder.events)-1]
+	require.Equal(t, analytics.KindAssigned, e.Kind)
+	require.Equal(t, FaceMethodIrisOndevice, e.Method)
+	require.Equal(t, "play", e.Client.Flavor)
+}

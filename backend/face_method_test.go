@@ -6,8 +6,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// policy configures the two server-verdict methods and leaves iris_ondevice
+// off, which is what most of these tests are about. Use policyWith for the
+// cases that involve the on-device method.
 func policy(regula, iris FaceMethodConfig, allowPreference bool, draws ...int) FaceMethodPolicy {
-	p := NewFaceMethodPolicy(FaceMethodsConfig{Regula: regula, Iris: iris}, allowPreference)
+	return policyWith(FaceMethodsConfig{Regula: regula, Iris: iris}, allowPreference, draws...)
+}
+
+func policyWith(cfg FaceMethodsConfig, allowPreference bool, draws ...int) FaceMethodPolicy {
+	p := NewFaceMethodPolicy(cfg, allowPreference)
 	// Deterministic draw sequence for the weighted tests; the last value
 	// repeats once the sequence is exhausted.
 	if len(draws) > 0 {
@@ -27,7 +34,76 @@ var (
 	onZero  = FaceMethodConfig{Enabled: true, Weight: 0}
 	both    = &FaceVerificationDeclaration{Capabilities: []string{"regula", "iris"}}
 	irisDec = &FaceVerificationDeclaration{Capabilities: []string{"iris"}}
+	// What a wallet that can run everything declares, and the on-device method
+	// on its own.
+	allThree     = &FaceVerificationDeclaration{Capabilities: []string{"regula", "iris", "iris_ondevice"}}
+	ondeviceDec  = &FaceVerificationDeclaration{Capabilities: []string{"iris_ondevice"}}
+	allThreeOn   = FaceMethodsConfig{Regula: on, Iris: on, IrisOndevice: on}
+	ondeviceOnly = FaceMethodsConfig{Regula: off, Iris: off, IrisOndevice: on}
 )
+
+// The on-device method takes part in assignment like any other: it is drawn
+// with the rest, kept across a retry, and refused when the issuer has not
+// enabled it.
+func TestAssignIrisOndevice(t *testing.T) {
+	t.Run("the only candidate wins regardless of weight", func(t *testing.T) {
+		m, err := policyWith(ondeviceOnly, false).Assign(allThree)
+		require.NoError(t, err)
+		require.Equal(t, FaceMethodIrisOndevice, m)
+	})
+
+	t.Run("a wallet that only has it, against an issuer that has not enabled it", func(t *testing.T) {
+		_, err := policyWith(FaceMethodsConfig{Regula: on, Iris: on}, false).Assign(ondeviceDec)
+		require.ErrorIs(t, err, ErrNoCandidateMethod)
+	})
+
+	t.Run("it is in the weighted draw with the other two", func(t *testing.T) {
+		// Equal weights, so the draw lands in the third bucket for 100..149.
+		m, err := policyWith(allThreeOn, false, 120).Assign(allThree)
+		require.NoError(t, err)
+		require.Equal(t, FaceMethodIrisOndevice, m)
+	})
+
+	t.Run("sticky retry keeps it", func(t *testing.T) {
+		m, err := policyWith(allThreeOn, false, 0).Assign(&FaceVerificationDeclaration{
+			Capabilities:   allThree.Capabilities,
+			PreviousMethod: "iris_ondevice",
+			Attempt:        2,
+		})
+		require.NoError(t, err)
+		require.Equal(t, FaceMethodIrisOndevice, m)
+	})
+
+	t.Run("a tester can prefer it where preference is allowed", func(t *testing.T) {
+		m, err := policyWith(allThreeOn, true).Assign(&FaceVerificationDeclaration{
+			Capabilities:    allThree.Capabilities,
+			PreferredMethod: "iris_ondevice",
+		})
+		require.NoError(t, err)
+		require.Equal(t, FaceMethodIrisOndevice, m)
+	})
+
+	t.Run("an old wallet is never assigned it", func(t *testing.T) {
+		// No declaration means regula, the only method those wallets know.
+		m, err := policyWith(allThreeOn, false).Assign(nil)
+		require.NoError(t, err)
+		require.Equal(t, FaceMethodRegula, m)
+	})
+}
+
+// Enabling it costs a line of config and nothing else: unlike the other two
+// methods it has no config block to demand.
+func TestResolveFaceMethodsOndeviceNeedsNoBlock(t *testing.T) {
+	cfg := Config{FaceVerificationMethods: &FaceMethodsConfig{IrisOndevice: FaceMethodConfig{Enabled: true, Weight: 1}}}
+	methods, err := resolveFaceMethods(&cfg)
+	require.NoError(t, err)
+	require.True(t, methods.IrisOndevice.Enabled)
+	require.False(t, methods.Regula.Enabled)
+
+	cfg.FaceVerificationMethods.IrisOndevice.Weight = -1
+	_, err = resolveFaceMethods(&cfg)
+	require.ErrorContains(t, err, "weights must not be negative")
+}
 
 // Every rule of the assignment, in order, plus the old-wallet default and the
 // empty candidate set.

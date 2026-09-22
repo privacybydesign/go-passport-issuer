@@ -15,8 +15,9 @@ import (
 type FaceMethod = analytics.Method
 
 const (
-	FaceMethodRegula = analytics.MethodRegula
-	FaceMethodIris   = analytics.MethodIris
+	FaceMethodRegula       = analytics.MethodRegula
+	FaceMethodIris         = analytics.MethodIris
+	FaceMethodIrisOndevice = analytics.MethodIrisOndevice
 )
 
 // FaceMethodConfig is one method's entry in `face_verification_methods`.
@@ -30,8 +31,9 @@ type FaceMethodConfig struct {
 
 // FaceMethodsConfig is the `face_verification_methods` block of config.json.
 type FaceMethodsConfig struct {
-	Regula FaceMethodConfig `json:"regula"`
-	Iris   FaceMethodConfig `json:"iris"`
+	Regula       FaceMethodConfig `json:"regula"`
+	Iris         FaceMethodConfig `json:"iris"`
+	IrisOndevice FaceMethodConfig `json:"iris_ondevice"`
 }
 
 // defaultFaceMethods is what an enabled issuer without a
@@ -82,8 +84,9 @@ type FaceMethodPolicy struct {
 func NewFaceMethodPolicy(cfg FaceMethodsConfig, allowClientPreference bool) FaceMethodPolicy {
 	return FaceMethodPolicy{
 		methods: map[FaceMethod]FaceMethodConfig{
-			FaceMethodRegula: cfg.Regula,
-			FaceMethodIris:   cfg.Iris,
+			FaceMethodRegula:       cfg.Regula,
+			FaceMethodIris:         cfg.Iris,
+			FaceMethodIrisOndevice: cfg.IrisOndevice,
 		},
 		allowClientPreference: allowClientPreference,
 		intn:                  rand.IntN,
@@ -123,7 +126,7 @@ func (p FaceMethodPolicy) AllowsClientPreference() bool { return p.allowClientPr
 // parseFaceMethod returns the method for a wire name, or "" for an unknown one.
 func parseFaceMethod(wireName string) FaceMethod {
 	switch FaceMethod(wireName) {
-	case FaceMethodRegula, FaceMethodIris:
+	case FaceMethodRegula, FaceMethodIris, FaceMethodIrisOndevice:
 		return FaceMethod(wireName)
 	}
 	return ""
@@ -223,10 +226,10 @@ func resolveFaceMethods(config *Config) (FaceMethodsConfig, error) {
 	if config.FaceVerificationMethods != nil {
 		methods = *config.FaceVerificationMethods
 	}
-	if !methods.Regula.Enabled && !methods.Iris.Enabled {
+	if !methods.Regula.Enabled && !methods.Iris.Enabled && !methods.IrisOndevice.Enabled {
 		return methods, fmt.Errorf("face_verification_enabled requires at least one enabled method in face_verification_methods")
 	}
-	if methods.Regula.Weight < 0 || methods.Iris.Weight < 0 {
+	if methods.Regula.Weight < 0 || methods.Iris.Weight < 0 || methods.IrisOndevice.Weight < 0 {
 		return methods, fmt.Errorf("face_verification_methods weights must not be negative")
 	}
 	if methods.Regula.Enabled && config.Regula == nil {
@@ -235,6 +238,11 @@ func resolveFaceMethods(config *Config) (FaceMethodsConfig, error) {
 	if methods.Iris.Enabled && config.Iris == nil {
 		return methods, fmt.Errorf("face_verification_methods.iris.enabled requires an iris config block")
 	}
+	// iris_ondevice deliberately has no config block to require: the engine
+	// runs on the phone, so there is no service to address, and the verdict
+	// arrives already decided, so there is no threshold to apply. Enabling it
+	// costs one line of config and nothing else — see
+	// irmamobile/docs/on-device-iris-face-verification-plan.md §4.4.
 	if err := config.Regula.validate(); err != nil {
 		return methods, err
 	}

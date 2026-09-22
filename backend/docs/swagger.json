@@ -380,11 +380,13 @@
             "type": "string",
             "enum": [
                 "regula",
-                "iris"
+                "iris",
+                "iris_ondevice"
             ],
             "x-enum-varnames": [
                 "MethodRegula",
-                "MethodIris"
+                "MethodIris",
+                "MethodIrisOndevice"
             ]
         },
         "main.FaceSessionAnnouncement": {
@@ -414,12 +416,12 @@
             "type": "object",
             "properties": {
                 "face_api_url": {
-                    "description": "Browser/app-reachable origin of the Regula Face API the liveness session\nmust run against — the same service this issuer matches against. Present\nfor the regula method only.",
+                    "description": "Browser/app-reachable origin of the Regula Face API the liveness session\nmust run against — the same service this issuer matches against. Present\nfor the regula method only: iris carries its endpoint in the verify\nresponse instead, and iris_ondevice has nothing to address at all.",
                     "type": "string",
                     "example": "https://faceapi.staging.yivi.app"
                 },
                 "method": {
-                    "description": "The face verification method assigned to this session: regula or iris.\nWallets from before methods existed ignore it and run Regula, which is\nthe only method they are ever assigned.",
+                    "description": "The face verification method assigned to this session: regula, iris or\niris_ondevice. Wallets from before methods existed ignore it and run\nRegula, which is the only method they are ever assigned.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/main.FaceMethod"
@@ -582,6 +584,16 @@
                     "description": "Milliseconds from the user confirming the face verification intro to the\nevidence being in hand. Recording only (optional).",
                     "type": "integer",
                     "example": 4200
+                },
+                "face_ondevice_passed": {
+                    "description": "Verdict of the Iris SDK that ran on the device: whether the live face it\ncaptured matched the document chip portrait. Required at issuance when\nthe session's assigned method is iris_ondevice. A pointer so that an\nabsent field (the step was never run) stays distinguishable from false\n(it ran and the face was rejected) — the two are answered differently.\nThe issuer cannot check this value; it is the client's word (optional).",
+                    "type": "boolean",
+                    "example": true
+                },
+                "face_ondevice_portrait_sha256": {
+                    "description": "SHA-256, hex, of the portrait bytes the on-device SDK matched against.\nCompared with the portrait this request is being issued for, so a\npassing verdict cannot be carried over to another document (optional).",
+                    "type": "string",
+                    "example": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
                 },
                 "face_session_id": {
                     "description": "Identifier of the Iris face session the issuer opened at verification.\nRequired at issuance when the session's assigned face verification\nmethod is iris; the issuer pulls the verdict for it (optional).",

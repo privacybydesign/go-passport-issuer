@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -427,5 +428,172 @@ func TestRegulaGateThroughMethodDispatch(t *testing.T) {
 		w := httptest.NewRecorder()
 		require.True(t, gateFaceVerification(state, w, irisInput(session, base)))
 		require.Empty(t, rec.events)
+	})
+}
+
+func ondeviceState(t *testing.T) (*ServerState, *capturingRecorder) {
+	t.Helper()
+	rec := &capturingRecorder{}
+	// No Iris client and no Regula client: this method reaches neither, which
+	// is the point of it.
+	return &ServerState{
+		tokenStorage: NewInMemoryTokenStorage(),
+		faceMethods:  policyWith(allThreeOn, false),
+		recorder:     rec,
+	}, rec
+}
+
+func ondeviceInput(session SessionRecord, request models.ValidationRequest) faceGateInput {
+	return faceGateInput{session: session, request: request, portrait: portrait, documentType: documentTypePassport}
+}
+
+func verdict(passed bool) *bool { return &passed }
+
+// The on-device gate, case by case. It cannot check the verdict — that is the
+// accepted trade — so what is tested here is everything around it: that a
+// verdict was given, that a passing one is tied to this document's portrait,
+// and that a failing one is recorded rather than turned into something else.
+func TestIrisOndeviceGate(t *testing.T) {
+	session := SessionRecord{Nonce: "n", Method: FaceMethodIrisOndevice, Client: analytics.Client{Platform: "android", Flavor: "play", AppVersion: "8.4.0"}}
+	base := models.ValidationRequest{SessionId: "s1", Nonce: "n"}
+	hash := portraitSha256Hex(portrait)
+
+	t.Run("no verdict is evidence missing with the update body", func(t *testing.T) {
+		state, rec := ondeviceState(t)
+		w := httptest.NewRecorder()
+		require.False(t, gateFaceVerification(state, w, ondeviceInput(session, base)))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Contains(t, w.Body.String(), "update the Yivi app")
+		e := rec.last(t)
+		require.Equal(t, analytics.KindIssuance, e.Kind)
+		require.Equal(t, FaceMethodIrisOndevice, e.Method)
+		require.Equal(t, analytics.OutcomeEvidenceMissing, e.Outcome)
+		require.Equal(t, "play", e.Client.Flavor)
+	})
+
+	t.Run("a passing verdict for this portrait is issued on", func(t *testing.T) {
+		state, rec := ondeviceState(t)
+		req := base
+		req.FaceOndevicePassed = verdict(true)
+		req.FaceOndevicePortraitSha256 = hash
+		w := httptest.NewRecorder()
+		require.True(t, gateFaceVerification(state, w, ondeviceInput(session, req)))
+		require.Equal(t, http.StatusOK, w.Code)
+		e := rec.last(t)
+		require.Equal(t, analytics.OutcomePassed, e.Outcome)
+		// The mobile SDK reports no distance, so this arm records no score at
+		// all — deliberately, and worth noticing when the arms are compared.
+		require.Nil(t, e.Score)
+		require.Empty(t, string(e.ScoreKind))
+	})
+
+	t.Run("an uppercase hash is the same hash", func(t *testing.T) {
+		state, _ := ondeviceState(t)
+		req := base
+		req.FaceOndevicePassed = verdict(true)
+		req.FaceOndevicePortraitSha256 = strings.ToUpper(hash)
+		w := httptest.NewRecorder()
+		require.True(t, gateFaceVerification(state, w, ondeviceInput(session, req)))
+	})
+
+	t.Run("a failing verdict is recorded as a rejection, not swallowed", func(t *testing.T) {
+		state, rec := ondeviceState(t)
+		req := base
+		req.FaceOndevicePassed = verdict(false)
+		req.FaceOndevicePortraitSha256 = hash
+		w := httptest.NewRecorder()
+		require.False(t, gateFaceVerification(state, w, ondeviceInput(session, req)))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Equal(t, faceVerificationFailedBody, w.Body.String())
+		require.Equal(t, analytics.OutcomeLivenessRejected, rec.last(t).Outcome)
+	})
+
+	// A failure grants nothing, so it is recorded as the failure it is even
+	// when the wallet sent no portrait hash with it. Only a pass has to be
+	// tied to a document.
+	t.Run("a failing verdict without a hash is still a rejection", func(t *testing.T) {
+		state, rec := ondeviceState(t)
+		req := base
+		req.FaceOndevicePassed = verdict(false)
+		w := httptest.NewRecorder()
+		require.False(t, gateFaceVerification(state, w, ondeviceInput(session, req)))
+		require.Equal(t, analytics.OutcomeLivenessRejected, rec.last(t).Outcome)
+	})
+
+	t.Run("a pass obtained against another document is refused", func(t *testing.T) {
+		state, rec := ondeviceState(t)
+		req := base
+		req.FaceOndevicePassed = verdict(true)
+		req.FaceOndevicePortraitSha256 = portraitSha256Hex([]byte("a different portrait"))
+		w := httptest.NewRecorder()
+		require.False(t, gateFaceVerification(state, w, ondeviceInput(session, req)))
+		require.Equal(t, http.StatusBadRequest, w.Code)
+		require.Equal(t, analytics.OutcomeAssignmentMismatch, rec.last(t).Outcome)
+	})
+
+	t.Run("a pass with no hash at all is refused", func(t *testing.T) {
+		state, rec := ondeviceState(t)
+		req := base
+		req.FaceOndevicePassed = verdict(true)
+		w := httptest.NewRecorder()
+		require.False(t, gateFaceVerification(state, w, ondeviceInput(session, req)))
+		require.Equal(t, analytics.OutcomeAssignmentMismatch, rec.last(t).Outcome)
+	})
+
+	t.Run("a pass for a document that carried no portrait is refused", func(t *testing.T) {
+		state, rec := ondeviceState(t)
+		req := base
+		req.FaceOndevicePassed = verdict(true)
+		req.FaceOndevicePortraitSha256 = hash
+		in := ondeviceInput(session, req)
+		in.portrait = nil
+		w := httptest.NewRecorder()
+		require.False(t, gateFaceVerification(state, w, in))
+		require.Equal(t, analytics.OutcomeAssignmentMismatch, rec.last(t).Outcome)
+	})
+}
+
+// Evidence belonging to another method is refused whichever way round it is,
+// now that three methods can be assigned.
+func TestForeignEvidenceAcrossMethods(t *testing.T) {
+	base := models.ValidationRequest{SessionId: "s1", Nonce: "n"}
+
+	cases := []struct {
+		name    string
+		method  FaceMethod
+		mutate  func(*models.ValidationRequest)
+		carries string
+	}{
+		{"liveness transaction on an on-device session", FaceMethodIrisOndevice,
+			func(r *models.ValidationRequest) { r.LivenessTransactionId = "txn-1" }, "liveness transaction id"},
+		{"face session on an on-device session", FaceMethodIrisOndevice,
+			func(r *models.ValidationRequest) { r.FaceSessionId = "fs_1" }, "face session id"},
+		{"on-device verdict on a regula session", FaceMethodRegula,
+			func(r *models.ValidationRequest) { r.FaceOndevicePassed = verdict(true) }, "on-device face verdict"},
+		{"on-device verdict on an iris session", FaceMethodIris,
+			func(r *models.ValidationRequest) { r.FaceOndevicePassed = verdict(true) }, "on-device face verdict"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			state, rec := ondeviceState(t)
+			req := base
+			tc.mutate(&req)
+			w := httptest.NewRecorder()
+			in := ondeviceInput(SessionRecord{Nonce: "n", Method: tc.method}, req)
+			require.False(t, gateFaceVerification(state, w, in))
+			require.Equal(t, http.StatusBadRequest, w.Code)
+			require.Contains(t, w.Body.String(), "assigned method")
+			e := rec.last(t)
+			require.Equal(t, analytics.OutcomeAssignmentMismatch, e.Outcome)
+			require.Equal(t, tc.method, e.Method)
+		})
+	}
+
+	t.Run("a session assigned a method this issuer does not know is an internal error", func(t *testing.T) {
+		state, rec := ondeviceState(t)
+		w := httptest.NewRecorder()
+		require.False(t, gateFaceVerification(state, w, ondeviceInput(SessionRecord{Nonce: "n", Method: "holo"}, base)))
+		require.Equal(t, http.StatusInternalServerError, w.Code)
+		require.Equal(t, analytics.OutcomeError, rec.last(t).Outcome)
 	})
 }
