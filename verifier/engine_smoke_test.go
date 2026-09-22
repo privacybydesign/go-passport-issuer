@@ -57,11 +57,7 @@ func portraitFromEnv(tb testing.TB) (string, bool) {
 	if path == "" {
 		return "", false
 	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		tb.Fatal(err)
-	}
-	return base64.StdEncoding.EncodeToString(b), true
+	return portraitFile(tb, path), true
 }
 
 func TestEngineSmoke(t *testing.T) {
@@ -166,4 +162,64 @@ func BenchmarkWorkerFrame(b *testing.B) {
 			b.Fatalf("unexpected reply %d: %s", reply.Type, reply.Payload)
 		}
 	}
+}
+
+// portraitFile base64s a portrait from disk, the form set_portrait takes.
+func portraitFile(tb testing.TB, path string) string {
+	tb.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+// TestEnginePortraitJPEG2000 answers the question the on-device arm hangs on:
+// does this engine decode JPEG 2000? There the wallet can only hand the SDK
+// the portrait it read off the chip, and DG2 is JPEG 2000 on most European
+// documents, with no decoder available to fall back on in Dart or on either
+// platform (irmamobile/docs/on-device-iris-face-verification-plan.md §9).
+//
+// An undecodable portrait and a decodable one without a face both end at
+// StateFailed, so the state alone cannot tell them apart. The discriminator is
+// what set_portrait returns: the grey PNG is decoded and merely faceless, so a
+// grey JPEG 2000 that returns the same thing was decoded too, while one that
+// returns an error where the PNG did not was rejected as a format. Both
+// packagings are tried, since a chip carries either: the JP2 container the
+// fixture names and the bare codestream .j2k holds.
+//
+// Set IRIS_SMOKE_PORTRAIT_JP2 to a JPEG 2000 portrait *with a face* for the
+// conclusive form of the same question.
+func TestEnginePortraitJPEG2000(t *testing.T) {
+	eng, err := newEngine()
+	require.NoError(t, err)
+
+	require.NoError(t, eng.Clear())
+	pngErr := eng.SetPortrait(greyPNGBase64(t))
+	t.Logf("set_portrait(grey PNG, no face): err=%v", pngErr)
+	require.Equal(t, StateFailed, eng.Verdict().State, "the control must be decoded and faceless")
+
+	for _, tc := range []struct{ name, path string }{
+		{"jp2 container", "testdata/grey_200x200.jp2"},
+		{"raw j2k codestream", "testdata/grey_200x200.j2k"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, eng.Clear())
+			jp2Err := eng.SetPortrait(portraitFile(t, tc.path))
+			t.Logf("set_portrait(grey %s, no face): err=%v", tc.name, jp2Err)
+			require.Equal(t, pngErr == nil, jp2Err == nil,
+				"a grey JPEG 2000 must be treated like a grey PNG; differing means the format was not decoded (png=%v, jpeg2000=%v)", pngErr, jp2Err)
+			require.Equal(t, StateFailed, eng.Verdict().State)
+		})
+	}
+
+	path := os.Getenv("IRIS_SMOKE_PORTRAIT_JP2")
+	if path == "" {
+		t.Log("IRIS_SMOKE_PORTRAIT_JP2 not set: skipping the conclusive case (a JPEG 2000 portrait with a face)")
+		return
+	}
+	require.NoError(t, eng.Clear())
+	require.NoError(t, eng.SetPortrait(portraitFile(t, path)))
+	require.Equal(t, StateInitiated, eng.Verdict().State,
+		"a JPEG 2000 portrait with a face must keep the verifier going")
 }
