@@ -140,15 +140,16 @@ func (s *Server) Stop() error {
 // file located at the index path on the SPA handler will be served. This
 // is suitable behavior for serving an SPA (single page application).
 // https://github.com/gorilla/mux?tab=readme-ov-file#serving-single-page-applications
+// Serving a file or the index is ordinary traffic, and a health probe hits it
+// every few seconds, so the success paths log nothing: a run at debug level
+// stays readable. Only a genuine error is worth a line.
 func (h SpaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	slog.Debug("SPA handler serving request", "path", r.URL.Path)
 	// Join internally call path.Clean to prevent directory traversal
 	path := filepath.Join(h.staticPath, r.URL.Path)
 	// check whether a file exists or is a directory at the given path
 	fi, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		// file does not exist, serve index.html
-		slog.Debug("Serving index.html for path", "path", r.URL.Path)
 		http.ServeFile(w, r, filepath.Join(h.staticPath, h.indexPath))
 		return
 	}
@@ -165,13 +166,11 @@ func (h SpaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if fi.IsDir() {
 		// path is a directory, serve index.html
-		slog.Debug("Serving index.html for directory path", "path", r.URL.Path)
 		http.ServeFile(w, r, filepath.Join(h.staticPath, h.indexPath))
 		return
 	}
 
 	// otherwise, use http.FileServer to serve the static file
-	slog.Debug("Serving static file", "path", path)
 	http.FileServer(http.Dir(h.staticPath)).ServeHTTP(w, r)
 }
 

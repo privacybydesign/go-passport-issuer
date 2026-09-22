@@ -64,15 +64,26 @@ It should look like this:
     "./certificates/v2/CSCA NL eDL-02.cer",
     "./certificates/v3/CSCA NL eDL-03.cer"
   ],
+  "face_verification_enabled": true,
+  "face_verification_methods": {
+    "regula":        { "enabled": true, "weight": 80 },
+    "iris":          { "enabled": true, "weight": 15 },
+    "iris_ondevice": { "enabled": true, "weight": 5 }
+  },
   "regula": {
     "face_api_url": "http://regula-face-api:41101",
     "face_api_public_url": "https://faceapi.staging.yivi.app",
+    "face_match_threshold": 0.75
+  },
+  "iris": {
+    "verifier_url": "http://iris-verifier-svc:8081",
+    "verifier_public_url": "wss://iris-verifier.staging.yivi.app",
     "face_match_threshold": 0.75
   }
 }
 ```
 
-Face verification has more keys (`face_verification_enabled`, `face_verification_methods`, the `iris` block, `face_recorder`); see [Face Verification](#face-verification-with-liveness-detection). `storage_type` must be `redis` or `redis_sentinel` wherever more than one replica runs: the session's method assignment and the Iris face records must be visible to every replica.
+`face_verification_methods` says which methods this issuer allows and in what share; the `regula` and `iris` blocks say how to reach the services those two need. Each service block is all-or-nothing: keep only the ones whose methods you enable, and drop the other entirely rather than leaving it half-filled. `iris_ondevice` needs no block, since it runs on the phone. Face verification has one more key (`face_recorder`); see [Face Verification](#face-verification-with-liveness-detection). `storage_type` must be `redis` or `redis_sentinel` wherever more than one replica runs: the session's method assignment and the Iris face records must be visible to every replica.
 The `jwt_private_key_path` should point to a valid RSA private key in PEM format, which is used to sign JWT tokens for the IRMA server.
 
 ### Running the application
@@ -232,13 +243,16 @@ An Iris assignment announces `{"method": "iris"}` without a Face API URL. When n
 
 Assignment rules, in order: candidates are the declared methods that are enabled here; none → 400; `preferred_method` when allowed; `previous_method` (sticky retry); a single candidate regardless of weight; otherwise a weighted random draw in which weight 0 does not take part.
 
+`enabled` is the allow-list, `weight` the share of the draw. Weights are relative and summed over the candidates, so weights adding up to 100 read as percentages — `80`/`15`/`5` above is a 15% Iris and 5% on-device rollout. The share applies only where the draw runs, i.e. to wallets that declared more than one enabled method: an app that declares nothing is Regula-only and never enters it, a single candidate wins regardless of weight, and a retry sticks to `previous_method`. So the observed split trails the configured one by however much traffic comes from older apps; count the `kind=assigned` recordings by `method` for the real ratio. Weight 0 keeps an enabled method out of the draw while still letting it be assigned when it is the only thing a wallet can run.
+
 Configuration (`config.json`):
 
 ```json
 "face_verification_enabled": true,
 "face_verification_methods": {
-  "regula": { "enabled": true,  "weight": 50 },
-  "iris":   { "enabled": false, "weight": 0 }
+  "regula":        { "enabled": true,  "weight": 80 },
+  "iris":          { "enabled": true,  "weight": 15 },
+  "iris_ondevice": { "enabled": false, "weight": 0 }
 },
 "allow_client_preference": false,
 "regula": {
@@ -254,7 +268,7 @@ Configuration (`config.json`):
 "face_recorder": "stderr"
 ```
 
-An absent `face_verification_methods` means Regula only, so existing configs keep their exact behaviour. Iris can be switched off at three levels: `iris.enabled: false` here takes effect on the next session with no deploy, the ops repository runs the verifier at zero replicas, and the repository variable `BUILD_IRIS_VERIFIER=false` stops CI building or publishing the verifier image at all. Enabled face verification needs at least one enabled method, and every enabled method needs its own block: `regula.enabled` the `regula` block, `iris.enabled` the `iris` block. Each block is all-or-nothing — the internal URL, the public one (browser for Regula, `wss://` for the app for Iris) and the threshold are all required, with no defaults, and a block that is present but incomplete fails startup even when its method is off. `iris.enabled: false` returns every session to Regula at once.
+An absent `face_verification_methods` means Regula only, so existing configs keep their exact behaviour. Iris can be switched off at three levels: `iris.enabled: false` here takes effect on the next session with no deploy, the ops repository runs the verifier at zero replicas, and the repository variable `BUILD_IRIS_VERIFIER=false` stops CI building or publishing the verifier image at all. Enabled face verification needs at least one enabled method, and every enabled method that talks to a service needs its own block: `regula.enabled` the `regula` block, `iris.enabled` the `iris` block. `iris_ondevice` needs none — the engine runs on the phone, so there is no service to address and no threshold to apply, and enabling it costs exactly the one line above. Each block is all-or-nothing — the internal URL, the public one (browser for Regula, `wss://` for the app for Iris) and the threshold are all required, with no defaults, and a block that is present but incomplete fails startup even when its method is off. `iris.enabled: false` returns every session to Regula at once.
 
 **The Iris flow.** `verify-passport` / `verify-driving-licence` no longer consume the session: it lives until an `issue-*` call consumes it or its TTL expires. When the session's method is Iris, verify opens a face session at the verifier from the portrait it has just authenticated and answers with
 
@@ -296,20 +310,37 @@ regula-face-api:
 
 #### 3. Enable in Configuration
 
-Add the `regula` block and `face_verification_enabled` to your `config.json`.
-Every field of the block is required:
+Add `face_verification_enabled` and a block for each method you enable to your
+`config.json`. Every field of a block is required:
 
 ```json
 {
   ...
+  "face_verification_enabled": true,
+  "face_verification_methods": {
+    "regula":        { "enabled": true,  "weight": 100 },
+    "iris":          { "enabled": false, "weight": 0 },
+    "iris_ondevice": { "enabled": false, "weight": 0 }
+  },
   "regula": {
     "face_api_url": "http://regula-face-api:41101",
     "face_api_public_url": "https://faceapi.staging.yivi.app",
     "face_match_threshold": 0.75
   },
-  "face_verification_enabled": true
+  "iris": {
+    "verifier_url": "http://iris-verifier-svc:8081",
+    "verifier_public_url": "wss://iris-verifier.staging.yivi.app",
+    "face_match_threshold": 0.75
+  }
 }
 ```
+
+`face_verification_methods` picks the methods and their shares; an absent block
+means Regula only. The `iris` block is needed only where the Iris method is
+enabled (see
+[Two methods: Regula and Iris](#two-methods-regula-and-iris)); a Regula-only
+issuer leaves it out altogether. The rest of this section covers the Regula
+method.
 
 For local development without Docker, use `"face_api_url": "http://localhost:41101"`.
 
