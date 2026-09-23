@@ -58,6 +58,13 @@ type Config struct {
 	HandshakeTimeout time.Duration
 	LogLevel         string
 	Redis            RedisConfig
+	// DebugFrameDir, when set, makes the verifier write the first
+	// DebugFrameCount processed frames of every session to
+	// <dir>/<face_session_id>/ as JPEGs, to inspect what the engine sees.
+	// These are biometric images: debugging on staging only, never in
+	// production.
+	DebugFrameDir   string
+	DebugFrameCount int
 }
 
 func defaultConfig() Config {
@@ -75,6 +82,7 @@ func defaultConfig() Config {
 		TerminalTTL:      15 * time.Minute,
 		HandshakeTimeout: 10 * time.Second,
 		LogLevel:         "info",
+		DebugFrameCount:  20,
 		Redis:            RedisConfig{SentinelPort: 26379},
 	}
 }
@@ -106,6 +114,8 @@ func parseArgs(args []string, getenv func(string) string) (Config, runMode, erro
 	pendingTTL := fs.Int("pending-ttl-seconds", seconds(cfg.PendingTTL), "how long a session waits for its stream (IRIS_PENDING_TTL_SECONDS)")
 	terminalTTL := fs.Int("terminal-ttl-seconds", seconds(cfg.TerminalTTL), "how long a finished session stays readable (IRIS_TERMINAL_TTL_SECONDS)")
 	handshake := fs.Int("handshake-timeout-seconds", seconds(cfg.HandshakeTimeout), "wait for the hello message (IRIS_HANDSHAKE_TIMEOUT_SECONDS)")
+	fs.StringVar(&cfg.DebugFrameDir, "debug-frame-dir", "", "write the first frames of every session here as JPEGs; staging debugging only (IRIS_DEBUG_FRAME_DIR)")
+	fs.IntVar(&cfg.DebugFrameCount, "debug-frame-count", cfg.DebugFrameCount, "frames per session written to debug-frame-dir (IRIS_DEBUG_FRAME_COUNT)")
 	worker := fs.Bool("worker", false, "run as a session worker on stdin/stdout (spawned by the server)")
 	selftest := fs.Bool("selftest", false, "with --worker: initialise the engine and exit")
 	if err := fs.Parse(args); err != nil {
@@ -125,6 +135,8 @@ func parseArgs(args []string, getenv func(string) string) (Config, runMode, erro
 	cfg.PendingTTL = time.Duration(env.int("IRIS_PENDING_TTL_SECONDS", *pendingTTL)) * time.Second
 	cfg.TerminalTTL = time.Duration(env.int("IRIS_TERMINAL_TTL_SECONDS", *terminalTTL)) * time.Second
 	cfg.HandshakeTimeout = time.Duration(env.int("IRIS_HANDSHAKE_TIMEOUT_SECONDS", *handshake)) * time.Second
+	cfg.DebugFrameDir = env.str("IRIS_DEBUG_FRAME_DIR", cfg.DebugFrameDir)
+	cfg.DebugFrameCount = env.int("IRIS_DEBUG_FRAME_COUNT", cfg.DebugFrameCount)
 	cfg.Redis = RedisConfig{
 		SentinelHost: env.str("REDIS_SENTINEL_HOST", ""),
 		SentinelPort: env.int("REDIS_SENTINEL_PORT", cfg.Redis.SentinelPort),

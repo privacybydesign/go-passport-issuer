@@ -81,6 +81,10 @@ func serve(cfg Config, logger *slog.Logger) int {
 	logger.Info("iris-verifier listening", "addr", cfg.ListenAddr, "public_stream_url", cfg.PublicStreamURL, "engine", engineAvailable,
 		"redis", cfg.Redis.Enabled(), "threshold", cfg.DistanceThreshold,
 		"fps", cfg.Limits.FPS, "max_frames", cfg.Limits.MaxFrames, "max_seconds", int(cfg.Limits.MaxDuration/time.Second))
+	if cfg.DebugFrameDir != "" {
+		logger.Warn("debug frame dump enabled: face images are written to disk; staging only",
+			"dir", cfg.DebugFrameDir, "frames_per_session", cfg.DebugFrameCount)
+	}
 	if !engineAvailable {
 		logger.Warn("built without the engine: every stream will end with an internal error")
 	}

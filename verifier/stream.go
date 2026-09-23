@@ -7,10 +7,12 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image/jpeg"
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -334,6 +336,7 @@ func (s *streamer) stream(ctx context.Context, sess *Session, portrait string, c
 		}
 		lastAccepted = now
 		st.frames++
+		s.dumpFrame(sess.ID, st.frames, hdr, dims.Width, dims.Height, jpegBytes, log)
 
 		v, err := worker.Frame(ctx, hdr.Orientation, jpegBytes)
 		st.perFrame += s.now().Sub(now)
@@ -355,6 +358,26 @@ func (s *streamer) stream(ctx context.Context, sess *Session, portrait string, c
 				return ending{outcome: analytics.OutcomeAbandoned, silent: true}
 			}
 		}
+	}
+}
+
+// dumpFrame writes processed frame n of a session to the debug frame
+// directory, when one is configured and n is within the debug frame count.
+// The name carries what the engine is told about the frame, so an upside-down
+// face can be told apart from a wrong orientation byte. Failures are logged
+// and never affect the stream.
+func (s *streamer) dumpFrame(id string, n int, hdr FrameHeader, width, height int, jpegBytes []byte, log *slog.Logger) {
+	if s.cfg.DebugFrameDir == "" || n > s.cfg.DebugFrameCount {
+		return
+	}
+	dir := filepath.Join(s.cfg.DebugFrameDir, id)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		log.Warn("debug frame dump", "err", err)
+		return
+	}
+	name := fmt.Sprintf("%03d_seq%d_ts%d_o%d_%dx%d.jpg", n, hdr.Seq, hdr.TsMs, hdr.Orientation, width, height)
+	if err := os.WriteFile(filepath.Join(dir, name), jpegBytes, 0o600); err != nil {
+		log.Warn("debug frame dump", "err", err)
 	}
 }
 

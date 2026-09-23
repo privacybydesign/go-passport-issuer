@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -429,4 +430,24 @@ func TestPortraitIsReleasedAfterStream(t *testing.T) {
 	f.streamFrames(id, token, 1)
 	_, held = f.srv.portraits.Get(id)
 	require.False(t, held)
+}
+
+func TestStreamDumpsFirstFramesWhenConfigured(t *testing.T) {
+	dir := t.TempDir()
+	worker := &fakeWorker{verdicts: []Verdict{initiated, initiated, completed(0.41)}}
+	f := newFixture(t, worker, func(c *Config) {
+		c.DebugFrameDir = dir
+		c.DebugFrameCount = 2
+	})
+	id, token := f.createSession()
+
+	f.streamFrames(id, token, 3)
+
+	entries, err := os.ReadDir(filepath.Join(dir, id))
+	require.NoError(t, err)
+	require.Len(t, entries, 2, "only the first DebugFrameCount frames are written")
+	require.Regexp(t, `^001_seq1_ts\d+_o\d_\d+x\d+\.jpg$`, entries[0].Name())
+	got, err := os.ReadFile(filepath.Join(dir, id, entries[0].Name()))
+	require.NoError(t, err)
+	require.Equal(t, frameJPEG(t, 1), got)
 }

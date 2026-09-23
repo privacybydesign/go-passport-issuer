@@ -111,6 +111,8 @@ its flag. Redis settings are environment-only because they carry a secret.
 | `IRIS_PENDING_TTL_SECONDS` | `600` | how long a created session waits for its stream |
 | `IRIS_TERMINAL_TTL_SECONDS` | `900` | how long a finished session stays readable |
 | `IRIS_HANDSHAKE_TIMEOUT_SECONDS` | `10` | wait for the `hello` message |
+| `IRIS_DEBUG_FRAME_DIR` | | when set, the first `IRIS_DEBUG_FRAME_COUNT` processed frames of every session are written to `<dir>/<face_session_id>/` as JPEGs named `<n>_seq<seq>_ts<ms>_o<orientation>_<w>x<h>.jpg`. These are face images: staging debugging only, never production |
+| `IRIS_DEBUG_FRAME_COUNT` | `20` | frames per session written to `IRIS_DEBUG_FRAME_DIR` |
 | `REDIS_SENTINEL_HOST` | | empty selects the in-memory store |
 | `REDIS_SENTINEL_PORT` | `26379` | |
 | `REDIS_MASTER_NAME` | | e.g. `yivi-master` |
