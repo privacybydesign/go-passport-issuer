@@ -585,6 +585,11 @@
                     "type": "integer",
                     "example": 4200
                 },
+                "face_ondevice_distance": {
+                    "description": "Distance the on-device SDK measured between the live face and the\nportrait, on the same scale as the Iris verifier's. Recording only: the\nissuer gates on FaceOndevicePassed and never on this number, which it\ncannot check any more than it can check the verdict. Absent when the\nwallet does not report one (optional).",
+                    "type": "number",
+                    "example": 0.41
+                },
                 "face_ondevice_passed": {
                     "description": "Verdict of the Iris SDK that ran on the device: whether the live face it\ncaptured matched the document chip portrait. Required at issuance when\nthe session's assigned method is iris_ondevice. A pointer so that an\nabsent field (the step was never run) stays distinguishable from false\n(it ran and the face was rejected) — the two are answered differently.\nThe issuer cannot check this value; it is the client's word (optional).",
                     "type": "boolean",

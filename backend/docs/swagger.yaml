@@ -192,6 +192,15 @@ definitions:
           evidence being in hand. Recording only (optional).
         example: 4200
         type: integer
+      face_ondevice_distance:
+        description: |-
+          Distance the on-device SDK measured between the live face and the
+          portrait, on the same scale as the Iris verifier's. Recording only: the
+          issuer gates on FaceOndevicePassed and never on this number, which it
+          cannot check any more than it can check the verdict. Absent when the
+          wallet does not report one (optional).
+        example: 0.41
+        type: number
       face_ondevice_passed:
         description: |-
           Verdict of the Iris SDK that ran on the device: whether the live face it

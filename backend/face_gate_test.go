@@ -481,10 +481,60 @@ func TestIrisOndeviceGate(t *testing.T) {
 		require.Equal(t, http.StatusOK, w.Code)
 		e := rec.last(t)
 		require.Equal(t, analytics.OutcomePassed, e.Outcome)
-		// The mobile SDK reports no distance, so this arm records no score at
-		// all — deliberately, and worth noticing when the arms are compared.
+		// A wallet that reports no distance records no score, as before.
 		require.Nil(t, e.Score)
 		require.Empty(t, string(e.ScoreKind))
+	})
+
+	// The distance is recorded for its own sake: the issuer gates on the
+	// verdict alone, so the number changes no decision, and it is kept on its
+	// own scale name because nothing here measured it.
+	t.Run("a reported distance is recorded under its own score kind", func(t *testing.T) {
+		state, rec := ondeviceState(t)
+		req := base
+		req.FaceOndevicePassed = verdict(true)
+		req.FaceOndevicePortraitSha256 = hash
+		req.FaceOndeviceDistance = analytics.Float64(0.41)
+		w := httptest.NewRecorder()
+		require.True(t, gateFaceVerification(state, w, ondeviceInput(session, req)))
+		e := rec.last(t)
+		require.Equal(t, analytics.OutcomePassed, e.Outcome)
+		require.NotNil(t, e.Score)
+		require.InDelta(t, 0.41, *e.Score, 1e-9)
+		require.Equal(t, analytics.ScoreIrisOndeviceDistance, e.ScoreKind)
+		// Never the verifier's kind: that one means a distance this issuer
+		// measured from frames it saw.
+		require.NotEqual(t, analytics.ScoreIrisDistance, e.ScoreKind)
+	})
+
+	// Recorded whatever the outcome, which is the point of recording it: a
+	// distance is as interesting on a rejection as on a pass, and a passing
+	// verdict carrying an implausible one is only visible this way.
+	t.Run("a distance is recorded on a rejection too", func(t *testing.T) {
+		state, rec := ondeviceState(t)
+		req := base
+		req.FaceOndevicePassed = verdict(false)
+		req.FaceOndevicePortraitSha256 = hash
+		req.FaceOndeviceDistance = analytics.Float64(0.93)
+		w := httptest.NewRecorder()
+		require.False(t, gateFaceVerification(state, w, ondeviceInput(session, req)))
+		e := rec.last(t)
+		require.Equal(t, analytics.OutcomeLivenessRejected, e.Outcome)
+		require.InDelta(t, 0.93, *e.Score, 1e-9)
+		require.Equal(t, analytics.ScoreIrisOndeviceDistance, e.ScoreKind)
+	})
+
+	// A distance a threshold would have refused still passes: the verdict is
+	// what gates, and the number is never acted on.
+	t.Run("the distance changes no decision", func(t *testing.T) {
+		state, rec := ondeviceState(t)
+		req := base
+		req.FaceOndevicePassed = verdict(true)
+		req.FaceOndevicePortraitSha256 = hash
+		req.FaceOndeviceDistance = analytics.Float64(0.99)
+		w := httptest.NewRecorder()
+		require.True(t, gateFaceVerification(state, w, ondeviceInput(session, req)))
+		require.Equal(t, analytics.OutcomePassed, rec.last(t).Outcome)
 	})
 
 	t.Run("an uppercase hash is the same hash", func(t *testing.T) {

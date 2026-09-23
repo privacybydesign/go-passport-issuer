@@ -27,6 +27,12 @@ type ValidationRequest struct {
 	// (it ran and the face was rejected) — the two are answered differently.
 	// The issuer cannot check this value; it is the client's word (optional).
 	FaceOndevicePassed *bool `json:"face_ondevice_passed,omitempty" example:"true"`
+	// Distance the on-device SDK measured between the live face and the
+	// portrait, on the same scale as the Iris verifier's. Recording only: the
+	// issuer gates on FaceOndevicePassed and never on this number, which it
+	// cannot check any more than it can check the verdict. Absent when the
+	// wallet does not report one (optional).
+	FaceOndeviceDistance *float64 `json:"face_ondevice_distance,omitempty" example:"0.41"`
 	// SHA-256, hex, of the portrait bytes the on-device SDK matched against.
 	// Compared with the portrait this request is being issued for, so a
 	// passing verdict cannot be carried over to another document (optional).

@@ -89,8 +89,8 @@ func gateFaceVerification(state *ServerState, w http.ResponseWriter, in faceGate
 		scoreKind = analytics.ScoreIrisDistance
 		ok, outcome, score = irisGate(state, w, in)
 	case method == FaceMethodIrisOndevice:
-		// No scoreKind: the mobile SDK reports a verdict and no distance.
-		ok, outcome = irisOndeviceGate(w, in)
+		scoreKind = analytics.ScoreIrisOndeviceDistance
+		ok, outcome, score = irisOndeviceGate(w, in)
 	}
 
 	event := analytics.Record{
@@ -282,13 +282,18 @@ func irisGate(state *ServerState, w http.ResponseWriter, in faceGateInput) (bool
 // is the accepted trade of this method, and the reason it is not a
 // replacement for either server-verdict arm. See
 // irmamobile/docs/on-device-iris-face-verification-plan.md §3.
-func irisOndeviceGate(w http.ResponseWriter, in faceGateInput) (bool, string) {
+//
+// The distance it returns is whatever the wallet reported, on every path and
+// whatever the outcome: it is recorded, never acted on, and carries
+// ScoreIrisOndeviceDistance so nothing mistakes it for a measured one.
+func irisOndeviceGate(w http.ResponseWriter, in faceGateInput) (bool, string, *float64) {
 	documentType := in.documentType
+	score := in.request.FaceOndeviceDistance
 	if in.request.FaceOndevicePassed == nil {
 		slog.Warn("On-device face verdict required for issuance", "document_type", documentType)
 		respondWithErr(w, http.StatusBadRequest, faceVerificationRequiredBody,
 			"no on-device face verdict provided for issuance", nil, "document_type", documentType)
-		return false, analytics.OutcomeEvidenceMissing
+		return false, analytics.OutcomeEvidenceMissing, score
 	}
 
 	if !*in.request.FaceOndevicePassed {
@@ -302,17 +307,17 @@ func irisOndeviceGate(w http.ResponseWriter, in faceGateInput) (bool, string) {
 		slog.Info("On-device face verification failed", "document_type", documentType)
 		respondWithErr(w, http.StatusBadRequest, faceVerificationFailedBody,
 			"on-device face verification did not pass", nil, "document_type", documentType)
-		return false, analytics.OutcomeLivenessRejected
+		return false, analytics.OutcomeLivenessRejected, score
 	}
 
 	if len(in.portrait) == 0 || !strings.EqualFold(in.request.FaceOndevicePortraitSha256, portraitSha256Hex(in.portrait)) {
 		respondWithErr(w, http.StatusBadRequest, faceVerificationFailedBody,
 			"portrait does not match the on-device verdict", nil, "document_type", documentType)
-		return false, analytics.OutcomeAssignmentMismatch
+		return false, analytics.OutcomeAssignmentMismatch, score
 	}
 
 	slog.Debug("On-device face verification passed", "document_type", documentType)
-	return true, analytics.OutcomePassed
+	return true, analytics.OutcomePassed, score
 }
 
 // FaceSessionAnnouncement is the `face_session` object a verify response
