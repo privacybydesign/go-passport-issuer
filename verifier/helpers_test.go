@@ -161,6 +161,8 @@ type scriptConn struct {
 	steps  []step
 	writes []written
 	closed bool
+	// onWrite, when set, runs before each write is recorded.
+	onWrite func(mt int, data []byte)
 }
 
 func (c *scriptConn) ReadMessage() (int, []byte, error) {
@@ -173,6 +175,9 @@ func (c *scriptConn) ReadMessage() (int, []byte, error) {
 }
 
 func (c *scriptConn) WriteMessage(mt int, data []byte) error {
+	if c.onWrite != nil {
+		c.onWrite(mt, data)
+	}
 	c.writes = append(c.writes, written{mt: mt, data: bytes.Clone(data)})
 	return nil
 }

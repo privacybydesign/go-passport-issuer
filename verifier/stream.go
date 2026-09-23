@@ -164,7 +164,34 @@ func (s *streamer) refuse(conn frameConn, log *slog.Logger, code, why string) (S
 	log.Info("stream refused", "code", code, "reason", why)
 	_ = writeJSONMessage(conn, wsError{Type: "error", Code: code})
 	_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, code))
+	drain(conn)
 	return Session{}, "", false
+}
+
+// closeDrainTimeout bounds the wait for the wallet's close frame.
+const closeDrainTimeout = 2 * time.Second
+
+// closeGracefully sends a normal close frame and drains the connection. See
+// drain.
+func closeGracefully(conn frameConn) {
+	_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+	drain(conn)
+}
+
+// drain reads and discards until the wallet answers the close frame, the
+// connection fails, or closeDrainTimeout passes. The wallet keeps streaming
+// until it reads the terminal message, so unread frames are queued on the
+// socket when the verdict goes out; closing a socket with unread data makes
+// the kernel send a reset instead of a FIN, and the reset discards the
+// terminal message in the ingress before it reaches the wallet. That is the
+// wallet's connection_closed without a result.
+func drain(conn frameConn) {
+	_ = conn.SetReadDeadline(time.Now().Add(closeDrainTimeout))
+	for {
+		if _, _, err := conn.ReadMessage(); err != nil {
+			return
+		}
+	}
 }
 
 // ending is how a stream stopped: either the engine decided (verdict set) or
@@ -241,17 +268,17 @@ func (s *streamer) run(ctx context.Context, sess Session, portrait string, conn 
 			msg = wsError{Type: "error", Code: e.code}
 		}
 	}
-	if msg != nil {
-		_ = writeJSONMessage(conn, msg)
-		_ = conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-	}
-
 	// The client's context may be gone; the record and the recording must
-	// still be written.
+	// still be written. The record goes first: the wallet issues as soon as
+	// it has the verdict, and the issuer must then find it in the store.
 	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := s.store.Finish(bg, sess, s.cfg.TerminalTTL); err != nil {
 		log.Error("store finish", "err", err)
+	}
+	if msg != nil {
+		_ = writeJSONMessage(conn, msg)
+		closeGracefully(conn)
 	}
 	s.recorder.Record(bg, s.event(sess, e, st))
 	attrs := []any{"outcome", e.outcome, "code", e.code, "status", sess.Status,

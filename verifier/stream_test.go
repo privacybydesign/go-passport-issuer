@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"image/color"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
 	"go-passport-issuer/analytics"
@@ -474,4 +476,48 @@ func TestStreamStatsTimingBreakdown(t *testing.T) {
 	require.Equal(t, 60.0, got["first_run_ms"])
 
 	require.Nil(t, streamStats{}.timingAttrs(), "no frames, no breakdown")
+}
+
+func TestStreamDrainsQueuedFramesBeforeClosing(t *testing.T) {
+	worker := &fakeWorker{verdicts: []Verdict{completed(0.41)}}
+	f := newFixture(t, worker, nil)
+	id, token := f.createSession()
+
+	// The wallet keeps streaming until it reads the result, so frames are
+	// queued behind the verdict. Closing with them unread resets the socket
+	// and loses the result in the ingress.
+	conn := f.stream(id,
+		helloStep(token),
+		frameStep(1, frameJPEG(t, 1)),
+		frameStep(2, frameJPEG(t, 2)),
+		frameStep(3, frameJPEG(t, 3)),
+	)
+
+	require.Empty(t, conn.steps, "queued frames are read before the socket closes")
+	require.Len(t, worker.frames, 1, "drained frames are not processed")
+	require.Equal(t, "result", conn.last(t)["type"])
+	require.Equal(t, 1, conn.closeFrames())
+}
+
+func TestStreamStoresVerdictBeforeTellingWallet(t *testing.T) {
+	worker := &fakeWorker{verdicts: []Verdict{completed(0.41)}}
+	f := newFixture(t, worker, nil)
+	id, token := f.createSession()
+
+	// The wallet issues the moment it reads the result; the issuer must then
+	// find the verdict.
+	var statusAtResult Status
+	conn := &scriptConn{
+		steps: []step{helloStep(token), frameStep(1, frameJPEG(t, 1))},
+		onWrite: func(mt int, data []byte) {
+			if mt == websocket.TextMessage && bytes.Contains(data, []byte(`"result"`)) {
+				sess, err := f.store.Get(context.Background(), id)
+				require.NoError(t, err)
+				statusAtResult = sess.Status
+			}
+		},
+	}
+	f.srv.streamer.serve(context.Background(), id, conn)
+
+	require.Equal(t, StatusCompleted, statusAtResult)
 }
