@@ -17,6 +17,27 @@ services:
       - redis
       - regula-face-api
 
+  # The Iris face verification method's verifier. Linux x86_64 only (the vendor
+  # library is bitcode for that target), so it is built for that platform; on
+  # Apple Silicon it runs under emulation. Uses the in-memory session store
+  # here; set the REDIS_* variables to use Redis. Point the issuer at it with
+  # "iris": { "verifier_url": "http://iris-verifier:8081", ... } and enable the
+  # iris method in config.json.
+  iris-verifier:
+    build:
+      context: .
+      dockerfile: verifier/Dockerfile
+    platform: linux/amd64
+    container_name: iris-verifier
+    ports:
+      - "8081:8081"
+    environment:
+      - IRIS_LISTEN_ADDR=:8081
+      - IRIS_PUBLIC_STREAM_URL=ws://localhost:8081
+    networks:
+      - app_network
+    restart: unless-stopped
+
   redis:
     image: 'bitnami/redis:latest'
     environment:

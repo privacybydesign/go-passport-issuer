@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"go-passport-issuer/analytics"
 	mrtdDoc "go-passport-issuer/document"
+	"go-passport-issuer/models"
 	"net/http"
 	"testing"
 
@@ -280,7 +282,10 @@ func TestPassportActiveAuthRequiredWhenDG15Present(t *testing.T) {
 	require.False(t, authentic)
 }
 
-func TestPassportVerifySuccessRemovesSession(t *testing.T) {
+// Verification no longer consumes the session: the same session (and chip
+// read) continues into the issue call, which does. This is what lets the
+// Iris flow open a face session at verify and issue against it afterwards.
+func TestPassportVerifyKeepsSessionForIssuance(t *testing.T) {
 	storage := NewInMemoryTokenStorage()
 	startTestServer(t, storage)
 
@@ -291,8 +296,21 @@ func TestPassportVerifySuccessRemovesSession(t *testing.T) {
 	mustStatus(t, resp, http.StatusOK, body)
 
 	got, err := storage.RetrieveToken(session)
+	require.NoError(t, err)
+	require.NotEmpty(t, got)
+
+	// Verify may run again; issuance still works after it and consumes the
+	// session, after which nothing does.
+	resp, body, _ = postJSON[map[string]any](t, "http://localhost:8081/api/verify-passport", req)
+	mustStatus(t, resp, http.StatusOK, body)
+
+	resp, body, _ = postJSON[map[string]any](t, fmt.Sprintf(TEST_HOST, PASSPORT_ISSUE_ENDPOINT), req)
+	mustStatus(t, resp, http.StatusOK, body)
+
+	_, err = storage.RetrieveToken(session)
 	require.Error(t, err)
-	require.Equal(t, "", got)
+	resp, body, _ = postJSON[map[string]any](t, "http://localhost:8081/api/verify-passport", req)
+	mustStatus(t, resp, http.StatusBadRequest, body)
 }
 
 func TestPassportVerifyFailBadNonce(t *testing.T) {
@@ -309,16 +327,241 @@ func TestPassportVerifyFailBadNonce(t *testing.T) {
 	mustStatus(t, resp, http.StatusBadRequest, body)
 }
 
-func TestPassportVerifyFailSessionReuse(t *testing.T) {
+// The Iris arm end to end: the wallet declares both methods and is assigned
+// Iris; verify opens the face session bound to the chip portrait; issuance is
+// refused until the verifier reports a pass, then succeeds once and consumes
+// the session and the face record.
+func TestIrisFlowVerifyThenIssue(t *testing.T) {
 	storage := NewInMemoryTokenStorage()
-	startTestServer(t, storage)
+	iris := newFakeIris()
+	recorder := &capturingRecorder{}
+	// Iris only: with both enabled the draw could land on Regula.
+	startTestServer(t, storage, func(s *ServerState) {
+		s.faceMethods = policy(off, on, false)
+		s.irisClient = iris
+		s.irisVerifierPublicUrl = "wss://iris-verifier.example"
+		s.recorder = recorder
+		s.documentValidator = portraitValidator{portrait: portrait}
+	})
 
-	session, nonce := startValidation(t)
-	req := newReq(session, nonce)
+	start := startValidationDeclaring(t, &StartValidationRequest{
+		FaceVerification: &FaceVerificationDeclaration{Capabilities: []string{"regula", "iris"}},
+		Client:           &analytics.Client{Platform: "android", Flavor: "play", AppVersion: "8.3.0"},
+	})
+	require.NotNil(t, start.FaceVerification)
+	require.Equal(t, FaceMethodIris, start.FaceVerification.Method)
+	require.Empty(t, start.FaceVerification.FaceApiUrl, "iris announces no Face API")
+	req := newReq(start.SessionId, start.Nonce)
 
-	resp1, body1, _ := postJSON[map[string]any](t, "http://localhost:8081/api/verify-passport", req)
-	mustStatus(t, resp1, http.StatusOK, body1)
+	// Verify opens the face session from the authenticated portrait.
+	resp, body, verification := postJSON[VerificationResponse](t, "http://localhost:8081/api/verify-passport", req)
+	mustStatus(t, resp, http.StatusOK, body)
+	require.NotNil(t, verification.FaceSession)
+	faceSessionID := verification.FaceSession.FaceSessionId
+	require.Equal(t, "wss://iris-verifier.example/stream/"+faceSessionID, verification.FaceSession.StreamUrl)
+	require.NotEmpty(t, verification.FaceSession.Token)
+	require.Equal(t, []string{portraitSha256Hex(portrait)}, iris.created)
 
-	resp2, body2, _ := postJSON[map[string]any](t, "http://localhost:8081/api/verify-passport", req)
-	mustStatus(t, resp2, http.StatusBadRequest, body2)
+	issueURL := fmt.Sprintf(TEST_HOST, PASSPORT_ISSUE_ENDPOINT)
+
+	// Issuance without the evidence: the self-explanatory body.
+	resp, body, _ = postJSON[map[string]any](t, issueURL, req)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Contains(t, string(body), "update the Yivi app")
+
+	// Issuance with Regula's evidence on an Iris session: mismatch.
+	wrong := req
+	wrong.LivenessTransactionId = "txn-1"
+	resp, body, _ = postJSON[map[string]any](t, issueURL, wrong)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Contains(t, string(body), "assigned method")
+
+	// Issuance while the stream has not completed.
+	req.FaceSessionId = faceSessionID
+	req.FaceAttempt = 1
+	req.FaceDurationMs = 4200
+	resp, body, _ = postJSON[map[string]any](t, issueURL, req)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Equal(t, faceVerificationFailedBody, string(body))
+
+	// The verifier reports a pass: issuance succeeds, once.
+	iris.complete(faceSessionID, true, 0.41)
+	resp, body, _ = postJSON[map[string]any](t, issueURL, req)
+	mustStatus(t, resp, http.StatusOK, body)
+	require.Equal(t, []string{faceSessionID}, iris.deleted)
+	_, err := retrieveFaceRecord(storage, faceSessionID)
+	require.Error(t, err, "face record consumed")
+	_, err = storage.RetrieveToken(start.SessionId)
+	require.Error(t, err, "session consumed")
+
+	resp, body, _ = postJSON[map[string]any](t, issueURL, req)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+
+	// One assignment and one issuance event per gated attempt, all attributed
+	// to Iris with the wallet's labels.
+	var assigned, issuances int
+	for _, e := range recorder.events {
+		require.Equal(t, FaceMethodIris, e.Method)
+		require.Equal(t, "play", e.Client.Flavor)
+		switch e.Kind {
+		case analytics.KindAssigned:
+			assigned++
+		case analytics.KindIssuance:
+			issuances++
+		}
+	}
+	require.Equal(t, 1, assigned)
+	require.Equal(t, 4, issuances)
+	last := recorder.events[len(recorder.events)-1]
+	require.Equal(t, analytics.OutcomePassed, last.Outcome)
+	require.InDelta(t, 0.41, *last.Score, 1e-9)
+	require.EqualValues(t, 4200, *last.DurationMs)
+}
+
+// A face session opened for one document cannot issue another: the issuance
+// request's portrait must hash to what the face session was opened with.
+func TestIrisFlowRefusesAnotherPortrait(t *testing.T) {
+	storage := NewInMemoryTokenStorage()
+	iris := newFakeIris()
+	validator := &switchingValidator{portrait: portrait}
+	startTestServer(t, storage, func(s *ServerState) {
+		s.faceMethods = policy(off, on, false)
+		s.irisClient = iris
+		s.irisVerifierPublicUrl = "wss://iris-verifier.example"
+		s.documentValidator = validator
+	})
+
+	start := startValidationDeclaring(t, &StartValidationRequest{
+		FaceVerification: &FaceVerificationDeclaration{Capabilities: []string{"iris"}},
+	})
+	req := newReq(start.SessionId, start.Nonce)
+	resp, body, verification := postJSON[VerificationResponse](t, "http://localhost:8081/api/verify-passport", req)
+	mustStatus(t, resp, http.StatusOK, body)
+	iris.complete(verification.FaceSession.FaceSessionId, true, 0.3)
+
+	// The next chip read yields a different portrait.
+	validator.portrait = []byte("someone else")
+	req.FaceSessionId = verification.FaceSession.FaceSessionId
+	resp, body, _ = postJSON[map[string]any](t, fmt.Sprintf(TEST_HOST, PASSPORT_ISSUE_ENDPOINT), req)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Equal(t, faceVerificationFailedBody, string(body))
+	require.Empty(t, iris.deleted)
+}
+
+// switchingValidator lets a test change the portrait between requests.
+type switchingValidator struct {
+	fakeValidator
+	portrait []byte
+}
+
+func (v *switchingValidator) PassivePassport(_ models.ValidationRequest, _ *cms.CombinedCertPool) (document.Document, error) {
+	var doc document.Document
+	doc.Mf.Lds1.Dg2 = &document.DG2{Images: []document.DG2Image{{Image: v.portrait}}}
+	return doc, nil
+}
+
+// A wallet that declares nothing against an issuer with Regula disabled has no
+// method to run: a 400 with the self-explanatory body, before any session is
+// stored.
+func TestStartValidationNoCandidateMethod(t *testing.T) {
+	storage := NewInMemoryTokenStorage()
+	startTestServer(t, storage, func(s *ServerState) {
+		s.faceMethods = policy(off, on, false)
+		s.irisClient = newFakeIris()
+	})
+	resp, body, _ := postJSON[map[string]any](t, "http://localhost:8081/api/start-validation", nil)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Contains(t, string(body), "update the Yivi app")
+	require.Empty(t, storage.TokenMap)
+}
+
+// The on-device arm end to end. It never calls verify — there is no face
+// session to open — so the whole method is one extra pair of fields on the
+// issuance request, refused until they say what this document's portrait and a
+// passing verdict say together.
+func TestIrisOndeviceFlowIssuesOnTheVerdict(t *testing.T) {
+	storage := NewInMemoryTokenStorage()
+	recorder := &capturingRecorder{}
+	startTestServer(t, storage, func(s *ServerState) {
+		s.faceMethods = policyWith(ondeviceOnly, false)
+		s.recorder = recorder
+		s.documentValidator = portraitValidator{portrait: portrait}
+	})
+
+	start := startValidationDeclaring(t, &StartValidationRequest{
+		FaceVerification: &FaceVerificationDeclaration{Capabilities: []string{"regula", "iris", "iris_ondevice"}},
+		Client:           &analytics.Client{Platform: "android", Flavor: "play", AppVersion: "8.4.0"},
+	})
+	require.NotNil(t, start.FaceVerification)
+	require.Equal(t, FaceMethodIrisOndevice, start.FaceVerification.Method)
+	require.Empty(t, start.FaceVerification.FaceApiUrl, "the on-device method announces no endpoint at all")
+
+	req := newReq(start.SessionId, start.Nonce)
+	issueURL := fmt.Sprintf(TEST_HOST, PASSPORT_ISSUE_ENDPOINT)
+
+	// No verdict: the body an app without this method built in can show.
+	resp, body, _ := postJSON[map[string]any](t, issueURL, req)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Contains(t, string(body), "update the Yivi app")
+
+	// Another method's evidence on this session.
+	wrong := req
+	wrong.FaceSessionId = "fs_1"
+	resp, body, _ = postJSON[map[string]any](t, issueURL, wrong)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Contains(t, string(body), "assigned method")
+
+	// A reported failure: refused, and recorded as a rejection rather than as
+	// a step that never happened. This is what the wallet sends instead of
+	// giving up locally.
+	failed := req
+	failed.FaceOndevicePassed = verdict(false)
+	failed.FaceOndevicePortraitSha256 = portraitSha256Hex(portrait)
+	resp, body, _ = postJSON[map[string]any](t, issueURL, failed)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Equal(t, faceVerificationFailedBody, string(body))
+	require.Equal(t, analytics.OutcomeLivenessRejected, recorder.events[len(recorder.events)-1].Outcome)
+
+	// A pass obtained against some other document's portrait.
+	foreign := req
+	foreign.FaceOndevicePassed = verdict(true)
+	foreign.FaceOndevicePortraitSha256 = portraitSha256Hex([]byte("another portrait"))
+	resp, body, _ = postJSON[map[string]any](t, issueURL, foreign)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+	require.Equal(t, faceVerificationFailedBody, string(body))
+
+	// A pass for this portrait: issued, once.
+	req.FaceOndevicePassed = verdict(true)
+	req.FaceOndevicePortraitSha256 = portraitSha256Hex(portrait)
+	req.FaceAttempt = 2
+	req.FaceDurationMs = 5100
+	resp, body, _ = postJSON[map[string]any](t, issueURL, req)
+	mustStatus(t, resp, http.StatusOK, body)
+	_, err := storage.RetrieveToken(start.SessionId)
+	require.Error(t, err, "session consumed")
+
+	resp, body, _ = postJSON[map[string]any](t, issueURL, req)
+	mustStatus(t, resp, http.StatusBadRequest, body)
+
+	var assigned, issuances int
+	for _, e := range recorder.events {
+		require.Equal(t, FaceMethodIrisOndevice, e.Method)
+		require.Equal(t, "play", e.Client.Flavor)
+		switch e.Kind {
+		case analytics.KindAssigned:
+			assigned++
+		case analytics.KindIssuance:
+			issuances++
+		}
+	}
+	require.Equal(t, 1, assigned)
+	require.Equal(t, 5, issuances)
+
+	last := recorder.events[len(recorder.events)-1]
+	require.Equal(t, analytics.OutcomePassed, last.Outcome)
+	require.EqualValues(t, 5100, *last.DurationMs)
+	require.Equal(t, analytics.AttemptRetry, last.AttemptKind, "the wallet's own attempt count wins")
+	// Nothing to score: this is the arm that has no distance to report.
+	require.Nil(t, last.Score)
+	require.Empty(t, string(last.ScoreKind))
 }

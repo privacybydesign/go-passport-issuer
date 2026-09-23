@@ -1,5 +1,14 @@
 basePath: /api
 definitions:
+  analytics.Client:
+    properties:
+      app_version:
+        type: string
+      flavor:
+        type: string
+      platform:
+        type: string
+    type: object
   main.FaceCaptureConfigResponse:
     properties:
       face_api_url:
@@ -19,13 +28,72 @@ definitions:
         example: 0.92
         type: number
     type: object
+  main.FaceMethod:
+    enum:
+    - regula
+    - iris
+    - iris_ondevice
+    type: string
+    x-enum-varnames:
+    - MethodRegula
+    - MethodIris
+    - MethodIrisOndevice
+  main.FaceSessionAnnouncement:
+    properties:
+      expires_in:
+        description: Seconds until the session expires when streaming has not started
+        example: 600
+        type: integer
+      face_session_id:
+        example: fs_1a2b3c
+        type: string
+      stream_url:
+        description: WebSocket endpoint of the verifier's stream for this session
+        example: wss://iris-verifier.staging.yivi.app/stream/fs_1a2b3c
+        type: string
+      token:
+        description: Presented by the wallet as the first message on the stream
+        type: string
+    type: object
   main.FaceVerificationAnnouncement:
     properties:
       face_api_url:
         description: |-
           Browser/app-reachable origin of the Regula Face API the liveness session
-          must run against — the same service this issuer matches against.
+          must run against — the same service this issuer matches against. Present
+          for the regula method only: iris carries its endpoint in the verify
+          response instead, and iris_ondevice has nothing to address at all.
         example: https://faceapi.staging.yivi.app
+        type: string
+      method:
+        allOf:
+        - $ref: '#/definitions/main.FaceMethod'
+        description: |-
+          The face verification method assigned to this session: regula, iris or
+          iris_ondevice. Wallets from before methods existed ignore it and run
+          Regula, which is the only method they are ever assigned.
+        example: regula
+    type: object
+  main.FaceVerificationDeclaration:
+    properties:
+      attempt:
+        description: 'Set on a retry: the number of this attempt, starting at 2.'
+        type: integer
+      capabilities:
+        description: |-
+          Wire names of the methods this build can run. Absent or empty means
+          ["regula"], the only method those wallets support. Unknown names are
+          ignored.
+        items:
+          type: string
+        type: array
+      preferred_method:
+        description: A tester's preference, honoured only when allow_client_preference
+          is on.
+        type: string
+      previous_method:
+        description: 'Set on a retry within one document flow: the method assigned
+          last time.'
         type: string
     type: object
   main.HealthResponse:
@@ -45,6 +113,15 @@ definitions:
         description: Signed JWT containing the IRMA issuance request
         example: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
         type: string
+    type: object
+  main.StartValidationRequest:
+    properties:
+      client:
+        allOf:
+        - $ref: '#/definitions/analytics.Client'
+        description: Coarse labels of the wallet build, for the recordings only.
+      face_verification:
+        $ref: '#/definitions/main.FaceVerificationDeclaration'
     type: object
   main.ValidatePassportResponse:
     properties:
@@ -77,6 +154,12 @@ definitions:
         allOf:
         - $ref: '#/definitions/main.FaceMatchResult'
         description: Optional face verification result
+      face_session:
+        allOf:
+        - $ref: '#/definitions/main.FaceSessionAnnouncement'
+        description: |-
+          The Iris face session opened for this document; present only when the
+          session's assigned face verification method is iris
       is_expired:
         description: True if the document has expired
         example: false
@@ -96,6 +179,51 @@ definitions:
       ef_sod:
         description: Hex-encoded Security Object (EF.SOD) containing document signature
         example: 778201ab...
+        type: string
+      face_attempt:
+        description: |-
+          Which attempt at the face verification step this issuance follows within
+          the wallet's document flow, starting at 1. Recording only (optional).
+        example: 1
+        type: integer
+      face_duration_ms:
+        description: |-
+          Milliseconds from the user confirming the face verification intro to the
+          evidence being in hand. Recording only (optional).
+        example: 4200
+        type: integer
+      face_ondevice_distance:
+        description: |-
+          Distance the on-device SDK measured between the live face and the
+          portrait, on the same scale as the Iris verifier's. Recording only: the
+          issuer gates on FaceOndevicePassed and never on this number, which it
+          cannot check any more than it can check the verdict. Absent when the
+          wallet does not report one (optional).
+        example: 0.41
+        type: number
+      face_ondevice_passed:
+        description: |-
+          Verdict of the Iris SDK that ran on the device: whether the live face it
+          captured matched the document chip portrait. Required at issuance when
+          the session's assigned method is iris_ondevice. A pointer so that an
+          absent field (the step was never run) stays distinguishable from false
+          (it ran and the face was rejected) — the two are answered differently.
+          The issuer cannot check this value; it is the client's word (optional).
+        example: true
+        type: boolean
+      face_ondevice_portrait_sha256:
+        description: |-
+          SHA-256, hex, of the portrait bytes the on-device SDK matched against.
+          Compared with the portrait this request is being issued for, so a
+          passing verdict cannot be carried over to another document (optional).
+        example: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+        type: string
+      face_session_id:
+        description: |-
+          Identifier of the Iris face session the issuer opened at verification.
+          Required at issuance when the session's assigned face verification
+          method is iris; the issuer pulls the verdict for it (optional).
+        example: fs_1a2b3c
         type: string
       liveness_transaction_id:
         description: |-
@@ -268,13 +396,24 @@ paths:
       - Passport
   /start-validation:
     post:
-      description: Initializes a new validation session and generates a nonce for
+      consumes:
+      - application/json
+      description: 'Initializes a new validation session and generates a nonce for
         active authentication. The nonce should be used to perform active authentication
         on the document chip. The session ID and nonce must be included in subsequent
-        verification/issuance requests. When face verification is enabled for this
-        environment, the response carries a face_verification object naming the Face
-        API the liveness session must run against; the app skips the face verification
-        step when the object is absent.
+        verification/issuance requests. The body is optional: a wallet may declare
+        which face verification methods it can run (and, on a retry, which it was
+        assigned before); no body means Regula only. When face verification is enabled
+        for this environment, the response carries a face_verification object naming
+        the assigned method and, for regula, the Face API the liveness session must
+        run against; the app skips the face verification step when the object is absent.
+        Responds 400 when none of the wallet''s methods is enabled here.'
+      parameters:
+      - description: Optional capability declaration
+        in: body
+        name: request
+        schema:
+          $ref: '#/definitions/main.StartValidationRequest'
       produces:
       - application/json
       responses:
@@ -282,6 +421,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/main.ValidatePassportResponse'
+        "400":
+          description: 'face verification required: please update the Yivi app'
+          schema:
+            type: string
         "500":
           description: error:internal
           schema:

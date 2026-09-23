@@ -11,20 +11,26 @@ import (
 	"time"
 )
 
-// DefaultFaceMatchThreshold is the similarity threshold used to decide whether
-// two faces match when none is configured.
-const DefaultFaceMatchThreshold = 0.75
-
 // Regula ImageSource types (see the Face SDK OpenAPI ImageSource enum).
 const (
 	regulaImageSourceDocumentRFID = 2 // portrait read from the document chip (DG2/DG6)
 	regulaImageSourceLive         = 3 // a live capture / selfie
 )
 
-// FaceMatchResponse represents the result of a face matching operation.
-type FaceMatchResponse struct {
-	Similarity float64 `json:"similarity"` // 0-1 similarity score
-	Matched    bool    `json:"matched"`    // Whether faces match based on threshold
+// FaceMatchVerdict is one method's verdict on the live face: the score the
+// method produced and the threshold decision this issuer made on it. Both
+// methods' clients produce it, so the gate reads the same value whichever
+// method a session was assigned, and both thresholds live in this issuer's
+// config.
+//
+// The scale differs per method and is recorded alongside the score as an
+// analytics.ScoreKind: Regula scores similarity, where higher is better and
+// the threshold is a floor; Iris scores distance, where lower is better and
+// the threshold is a ceiling. Nothing here is serialised; the wire type the
+// verify endpoints return is FaceMatchResult.
+type FaceMatchVerdict struct {
+	Score   float64
+	Matched bool
 }
 
 // LivenessStatus represents the outcome of a Regula liveness transaction.
@@ -39,7 +45,7 @@ type LivenessStatus struct {
 type FaceVerificationClient interface {
 	// MatchFaceWithLiveness compares the document (chip) portrait against the live
 	// face captured during a Regula liveness session, identified by its transaction ID.
-	MatchFaceWithLiveness(documentImage, livenessTransactionID string) (*FaceMatchResponse, error)
+	MatchFaceWithLiveness(documentImage, livenessTransactionID string) (*FaceMatchVerdict, error)
 
 	// GetLivenessStatus retrieves a liveness transaction and reports whether the
 	// captured face was confirmed to be a real, live person.
@@ -60,12 +66,10 @@ type RegulaFaceClient struct {
 	httpClient *http.Client
 }
 
-// NewRegulaFaceClient creates a new instance of RegulaFaceClient. A threshold of
-// 0 (or less) falls back to DefaultFaceMatchThreshold.
+// NewRegulaFaceClient creates a new instance of RegulaFaceClient. The
+// threshold is the configured regula.face_match_threshold; there is no default
+// to fall back on, and the config validation rejects an absent one.
 func NewRegulaFaceClient(baseURL string, threshold float64) *RegulaFaceClient {
-	if threshold <= 0 {
-		threshold = DefaultFaceMatchThreshold
-	}
 	return &RegulaFaceClient{
 		baseURL:   baseURL,
 		threshold: threshold,
@@ -79,7 +83,7 @@ func NewRegulaFaceClient(baseURL string, threshold float64) *RegulaFaceClient {
 // captured during a liveness session using Regula's POST /api/match endpoint. The
 // live face is referenced by its liveness transaction ID rather than supplied as a
 // raw image, so the match is bound to a face Regula already validated as live.
-func (c *RegulaFaceClient) MatchFaceWithLiveness(documentImage, livenessTransactionID string) (*FaceMatchResponse, error) {
+func (c *RegulaFaceClient) MatchFaceWithLiveness(documentImage, livenessTransactionID string) (*FaceMatchVerdict, error) {
 	matchURL := fmt.Sprintf("%s/api/match", c.baseURL)
 
 	requestBody := map[string]any{
@@ -138,9 +142,9 @@ func (c *RegulaFaceClient) MatchFaceWithLiveness(documentImage, livenessTransact
 
 	slog.Info("Face match completed", "similarity", similarity, "threshold", c.threshold, "matched", matched)
 
-	return &FaceMatchResponse{
-		Similarity: similarity,
-		Matched:    matched,
+	return &FaceMatchVerdict{
+		Score:   similarity,
+		Matched: matched,
 	}, nil
 }
 

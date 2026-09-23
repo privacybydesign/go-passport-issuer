@@ -1,0 +1,9 @@
+# Applies when building with -f verifier/Dockerfile from the repository root.
+# Only the two Go modules are needed; keep node_modules, secrets and git out
+# of the context.
+*
+!backend/**
+!verifier/**
+backend/.secrets
+backend/certificates
+backend/test-secrets

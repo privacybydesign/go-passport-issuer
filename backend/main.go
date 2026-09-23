@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
+	"go-passport-issuer/analytics"
 	"go-passport-issuer/logging"
 	"go-passport-issuer/redis"
 	"log/slog"
@@ -39,21 +40,27 @@ type Config struct {
 	RedisConfig             redis.RedisConfig         `json:"redis_config"`
 	RedisSentinelConfig     redis.RedisSentinelConfig `json:"redis_sentinel_config"`
 	LogLevel                string                    `json:"log_level"`
-	RegulaFaceApiUrl        string                    `json:"regula_face_api_url,omitempty"`
-	// Similarity threshold (0-1) above which the live face is considered a match
-	// for the document portrait. Defaults to DefaultFaceMatchThreshold when unset.
-	RegulaFaceMatchThreshold float64 `json:"regula_face_match_threshold,omitempty"`
-	// Browser-reachable origin of the Regula Face API, served to the /capture
-	// liveness page and announced to the app in /api/start-validation. Distinct
-	// from RegulaFaceApiUrl, which the backend uses over the internal network
-	// and which a browser generally cannot resolve.
-	RegulaFaceApiPublicUrl string `json:"regula_face_api_public_url,omitempty"`
+	// Regula holds the Regula method's connection settings and threshold;
+	// required when that method is enabled, and complete when present. See
+	// RegulaConfig.
+	Regula *RegulaConfig `json:"regula,omitempty"`
+	// Iris holds the Iris method's connection settings and threshold; required
+	// when that method is enabled, and complete when present. See IrisConfig.
+	Iris *IrisConfig `json:"iris,omitempty"`
 	// Whether face verification applies in this environment. Enabled is
-	// fail-closed: issuance without a matching liveness transaction is
-	// rejected. When absent, derived from RegulaFaceApiUrl (set → enabled) so
-	// old configs keep their exact behaviour. See
-	// resolveFaceVerificationEnabled.
+	// fail-closed: issuance without a verified match is rejected. Absent means
+	// disabled. See resolveFaceVerificationEnabled.
 	FaceVerificationEnabled *bool `json:"face_verification_enabled,omitempty"`
+	// Which face verification methods may be assigned, with their weights in
+	// the draw. Absent means Regula only, so existing configs keep their exact
+	// behaviour. See resolveFaceMethods.
+	FaceVerificationMethods *FaceMethodsConfig `json:"face_verification_methods,omitempty"`
+	// Whether a wallet's preferred_method is honoured. For staging testers;
+	// off in production.
+	AllowClientPreference bool `json:"allow_client_preference,omitempty"`
+	// Where face verification attempts are recorded: "stderr" (default, one
+	// JSON log line per event) or "none".
+	Recorder string `json:"face_recorder,omitempty"`
 }
 
 type CredentialConfig struct {
@@ -161,16 +168,50 @@ func main() {
 	}
 
 	var faceVerificationClient FaceVerificationClient
+	var irisClient IrisClient
+	var faceMethods FaceMethodPolicy
+	// The public origins the app is pointed at, set only for a method that is
+	// actually enabled so the capture page and the announcement cannot offer a
+	// method this issuer will not accept.
+	var regulaFaceApiPublicUrl, irisVerifierPublicUrl string
 	if faceVerification {
-		slog.Info("Initializing Regula Face API client",
-			"url", config.RegulaFaceApiUrl,
-			"match_threshold", config.RegulaFaceMatchThreshold)
-		faceVerificationClient = NewRegulaFaceClient(config.RegulaFaceApiUrl, config.RegulaFaceMatchThreshold)
-		if err := faceVerificationClient.HealthCheck(); err != nil {
-			slog.Warn("Regula Face API health check failed, service may not be available", "error", err)
+		// Validated already by resolveFaceVerificationEnabled.
+		methods, _ := resolveFaceMethods(&config)
+		faceMethods = NewFaceMethodPolicy(methods, config.AllowClientPreference)
+		slog.Info("Face verification enabled",
+			"regula_enabled", methods.Regula.Enabled, "regula_weight", methods.Regula.Weight,
+			"iris_enabled", methods.Iris.Enabled, "iris_weight", methods.Iris.Weight,
+			"allow_client_preference", config.AllowClientPreference)
+		// Both blocks are present and complete for every enabled method;
+		// resolveFaceVerificationEnabled refused to start otherwise.
+		if methods.Regula.Enabled {
+			slog.Info("Initializing Regula Face API client",
+				"url", config.Regula.FaceApiUrl,
+				"match_threshold", config.Regula.FaceMatchThreshold)
+			regulaFaceApiPublicUrl = config.Regula.FaceApiPublicUrl
+			faceVerificationClient = NewRegulaFaceClient(config.Regula.FaceApiUrl, config.Regula.FaceMatchThreshold)
+			if err := faceVerificationClient.HealthCheck(); err != nil {
+				slog.Warn("Regula Face API health check failed, service may not be available", "error", err)
+			}
+		}
+		if methods.Iris.Enabled {
+			slog.Info("Initializing Iris verifier client",
+				"url", config.Iris.VerifierUrl,
+				"match_threshold", config.Iris.FaceMatchThreshold)
+			irisVerifierPublicUrl = config.Iris.VerifierPublicUrl
+			irisClient = NewIrisClient(config.Iris.VerifierUrl, config.Iris.FaceMatchThreshold)
+			if err := irisClient.HealthCheck(); err != nil {
+				slog.Warn("Iris verifier health check failed, service may not be available", "error", err)
+			}
 		}
 	} else {
 		slog.Info("Face verification disabled")
+	}
+
+	recorder, err := createRecorder(config.Recorder)
+	if err != nil {
+		slog.Error("invalid face recorder configuration", "error", err)
+		os.Exit(1)
 	}
 
 	serverState := ServerState{
@@ -183,7 +224,11 @@ func main() {
 		converter:              IssuanceRequestConverterImpl{},
 		drivingLicenceParser:   DrivingLicenceParserImpl{},
 		faceVerificationClient: faceVerificationClient,
-		regulaFaceApiPublicUrl: config.RegulaFaceApiPublicUrl,
+		regulaFaceApiPublicUrl: regulaFaceApiPublicUrl,
+		faceMethods:            faceMethods,
+		irisClient:             irisClient,
+		irisVerifierPublicUrl:  irisVerifierPublicUrl,
+		recorder:               recorder,
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)
@@ -199,10 +244,27 @@ func main() {
 	}
 }
 
+// createRecorder builds the recorder named by `face_recorder`. The default
+// writes one JSON log line per event; "none" discards them. A Prometheus
+// recorder is the planned next option and would be selected here.
+func createRecorder(name string) (analytics.Recorder, error) {
+	switch name {
+	case "", "stderr":
+		return analytics.NewStderrRecorder(nil), nil
+	case "none":
+		return analytics.Noop{}, nil
+	}
+	return nil, fmt.Errorf("%q is not a valid face_recorder (stderr, none)", name)
+}
+
 func readConfigFile(path string) (Config, error) {
 	configBytes, err := os.ReadFile(path)
 
 	if err != nil {
+		return Config{}, err
+	}
+
+	if err := checkMovedFaceKeys(configBytes); err != nil {
 		return Config{}, err
 	}
 
