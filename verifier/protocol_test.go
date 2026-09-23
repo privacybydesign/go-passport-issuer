@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"math"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -82,8 +84,21 @@ func TestVerdictRoundTrip(t *testing.T) {
 func TestDecodeVerdictRejectsGarbage(t *testing.T) {
 	_, err := decodeVerdict([]byte{0, 0})
 	require.Error(t, err)
-	_, err = decodeVerdict([]byte{9, 0, 0, 0, 0})
+	bad := make([]byte, verdictPayloadSize)
+	bad[0] = 9
+	_, err = decodeVerdict(bad)
 	require.Error(t, err, "unknown state")
+}
+
+func TestVerdictCarriesWorkerTimings(t *testing.T) {
+	v := Verdict{State: StateInitiated, DecodeTime: 12345 * time.Microsecond, RunTime: 45678 * time.Microsecond}
+	got, err := decodeVerdict(verdictMessage(v).Payload)
+	require.NoError(t, err)
+	require.Equal(t, v.DecodeTime, got.DecodeTime)
+	require.Equal(t, v.RunTime, got.RunTime)
+
+	require.Equal(t, uint32(0), micros(-time.Second))
+	require.Equal(t, uint32(math.MaxUint32), micros(2*time.Hour))
 }
 
 func TestFramePayload(t *testing.T) {

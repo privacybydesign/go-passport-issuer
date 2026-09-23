@@ -181,7 +181,37 @@ type streamStats struct {
 	frames   int
 	dropped  int
 	perFrame time.Duration
+	// Where the per-frame time goes, summed over processed frames: the
+	// worker's JPEG decode and engine run, the rest of the round trip to the
+	// worker (pipe, scheduling), and the wait for the next frame to process
+	// (network and the app's own pace). first holds frame 1 alone, which
+	// carries the engine's lazy model loading.
+	decode, run, pipe, idle time.Duration
+	first                   frameTiming
 }
+
+type frameTiming struct {
+	decode, run, pipe time.Duration
+}
+
+// timingAttrs summarises the breakdown for the stream ended log line.
+func (st streamStats) timingAttrs() []any {
+	if st.frames == 0 {
+		return nil
+	}
+	n := float64(st.frames)
+	return []any{
+		"avg_decode_ms", ms(st.decode) / n,
+		"avg_run_ms", ms(st.run) / n,
+		"avg_pipe_ms", ms(st.pipe) / n,
+		"avg_idle_ms", ms(st.idle) / n,
+		"first_decode_ms", ms(st.first.decode),
+		"first_run_ms", ms(st.first.run),
+		"first_pipe_ms", ms(st.first.pipe),
+	}
+}
+
+func ms(d time.Duration) float64 { return float64(d.Microseconds()) / 1000 }
 
 // run streams frames to a worker and writes the terminal state everywhere it
 // belongs: the connection, the store and the recorder.
@@ -224,8 +254,9 @@ func (s *streamer) run(ctx context.Context, sess Session, portrait string, conn 
 		log.Error("store finish", "err", err)
 	}
 	s.recorder.Record(bg, s.event(sess, e, st))
-	log.Info("stream ended", "outcome", e.outcome, "code", e.code, "status", sess.Status,
-		"passed", sess.Passed != nil && *sess.Passed, "frames", st.frames, "dropped", st.dropped, "duration_ms", sess.DurationMs())
+	attrs := []any{"outcome", e.outcome, "code", e.code, "status", sess.Status,
+		"passed", sess.Passed != nil && *sess.Passed, "frames", st.frames, "dropped", st.dropped, "duration_ms", sess.DurationMs()}
+	log.Info("stream ended", append(attrs, st.timingAttrs()...)...)
 }
 
 func (s *streamer) event(sess Session, e ending, st streamStats) analytics.Record {
@@ -245,6 +276,19 @@ func (s *streamer) event(sess Session, e ending, st streamStats) analytics.Recor
 		ev.ScoreKind = analytics.ScoreIrisDistance
 	}
 	return ev
+}
+
+// record adds one processed frame to the breakdown. The pipe share is what
+// the round trip spent outside the worker's own decode and run.
+func (st *streamStats) record(roundtrip, idle time.Duration, v Verdict) {
+	pipe := max(roundtrip-v.DecodeTime-v.RunTime, 0)
+	st.decode += v.DecodeTime
+	st.run += v.RunTime
+	st.pipe += pipe
+	st.idle += idle
+	if st.frames == 1 {
+		st.first = frameTiming{decode: v.DecodeTime, run: v.RunTime, pipe: pipe}
+	}
 }
 
 func decided(v Verdict) ending {
@@ -286,6 +330,9 @@ func (s *streamer) stream(ctx context.Context, sess *Session, portrait string, c
 	deadline := sess.StartedAt.Add(s.cfg.Limits.MaxDuration)
 	_ = conn.SetReadDeadline(time.Now().Add(s.cfg.Limits.MaxDuration))
 	var lastAccepted, lastState time.Time
+	// lastDone is when the worker last answered: the gap from there to the
+	// next processed frame is time the verifier sat idle.
+	lastDone := s.now()
 	for {
 		mt, p, err := conn.ReadMessage()
 		now := s.now()
@@ -339,7 +386,14 @@ func (s *streamer) stream(ctx context.Context, sess *Session, portrait string, c
 		s.dumpFrame(sess.ID, st.frames, hdr, dims.Width, dims.Height, jpegBytes, log)
 
 		v, err := worker.Frame(ctx, hdr.Orientation, jpegBytes)
-		st.perFrame += s.now().Sub(now)
+		done := s.now()
+		st.perFrame += done.Sub(now)
+		if err == nil {
+			st.record(done.Sub(now), now.Sub(lastDone), v)
+			log.Debug("frame timing", "seq", hdr.Seq, "n", st.frames, "decode_ms", ms(v.DecodeTime), "run_ms", ms(v.RunTime),
+				"roundtrip_ms", ms(done.Sub(now)), "idle_ms", ms(now.Sub(lastDone)), "state", v.State.String(), "distance", v.Distance)
+		}
+		lastDone = done
 		if err != nil {
 			var rejected *RejectedError
 			if errors.As(err, &rejected) {

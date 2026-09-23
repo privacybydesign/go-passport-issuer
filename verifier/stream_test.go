@@ -451,3 +451,27 @@ func TestStreamDumpsFirstFramesWhenConfigured(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, frameJPEG(t, 1), got)
 }
+
+func TestStreamStatsTimingBreakdown(t *testing.T) {
+	var st streamStats
+	st.frames = 1
+	st.record(100*time.Millisecond, 20*time.Millisecond, Verdict{DecodeTime: 30 * time.Millisecond, RunTime: 60 * time.Millisecond})
+	st.frames = 2
+	st.record(50*time.Millisecond, 10*time.Millisecond, Verdict{DecodeTime: 10 * time.Millisecond, RunTime: 45 * time.Millisecond})
+
+	require.Equal(t, frameTiming{decode: 30 * time.Millisecond, run: 60 * time.Millisecond, pipe: 10 * time.Millisecond}, st.first)
+	require.Equal(t, 10*time.Millisecond, st.pipe, "the second round trip is shorter than decode+run and adds no pipe time")
+
+	attrs := st.timingAttrs()
+	got := map[string]any{}
+	for i := 0; i < len(attrs); i += 2 {
+		got[attrs[i].(string)] = attrs[i+1]
+	}
+	require.Equal(t, 20.0, got["avg_decode_ms"])
+	require.Equal(t, 52.5, got["avg_run_ms"])
+	require.Equal(t, 5.0, got["avg_pipe_ms"])
+	require.Equal(t, 15.0, got["avg_idle_ms"])
+	require.Equal(t, 60.0, got["first_run_ms"])
+
+	require.Nil(t, streamStats{}.timingAttrs(), "no frames, no breakdown")
+}

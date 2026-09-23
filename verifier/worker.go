@@ -47,14 +47,19 @@ func handleWorkerMessage(eng Engine, m pipeMessage) pipeMessage {
 		if err != nil {
 			return rejectMessage(err.Error())
 		}
+		start := time.Now()
 		img, err := decodeFrameJPEG(jpegBytes)
 		if err != nil {
 			return rejectMessage(err.Error())
 		}
+		decoded := time.Now()
 		if err := eng.Run(img, orientation); err != nil {
 			return rejectMessage("run: " + err.Error())
 		}
-		return verdictMessage(eng.Verdict())
+		v := eng.Verdict()
+		v.DecodeTime = decoded.Sub(start)
+		v.RunTime = time.Since(decoded)
+		return verdictMessage(v)
 	default:
 		return rejectMessage(fmt.Sprintf("unknown message type %d", m.Type))
 	}

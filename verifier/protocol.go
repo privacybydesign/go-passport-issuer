@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"time"
 )
 
 // The parent and its worker talk over the worker's stdin and stdout with
@@ -71,13 +72,19 @@ func readMessage(r io.Reader) (pipeMessage, error) {
 	return pipeMessage{Type: msgType(body[0]), Payload: body[1:]}, nil
 }
 
+// verdictPayloadSize: state, distance, decode and run time.
+const verdictPayloadSize = 13
+
 // verdictMessage encodes a Verdict as msgState or msgResult, depending on
-// whether the state is terminal: one byte state, then the distance as an
-// IEEE-754 float32 little-endian (the library's own precision).
+// whether the state is terminal: one byte state, the distance as an IEEE-754
+// float32 (the library's own precision), then the decode and run times in
+// microseconds as uint32; all little-endian.
 func verdictMessage(v Verdict) pipeMessage {
-	buf := make([]byte, 5)
+	buf := make([]byte, verdictPayloadSize)
 	buf[0] = byte(v.State)
 	binary.LittleEndian.PutUint32(buf[1:], math.Float32bits(float32(v.Distance)))
+	binary.LittleEndian.PutUint32(buf[5:], micros(v.DecodeTime))
+	binary.LittleEndian.PutUint32(buf[9:], micros(v.RunTime))
 	t := msgState
 	if v.State.Terminal() {
 		t = msgResult
@@ -86,17 +93,31 @@ func verdictMessage(v Verdict) pipeMessage {
 }
 
 func decodeVerdict(p []byte) (Verdict, error) {
-	if len(p) != 5 {
-		return Verdict{}, fmt.Errorf("verdict payload is %d bytes, want 5", len(p))
+	if len(p) != verdictPayloadSize {
+		return Verdict{}, fmt.Errorf("verdict payload is %d bytes, want %d", len(p), verdictPayloadSize)
 	}
 	state := EngineState(p[0])
 	if state > StateCompleted {
 		return Verdict{}, fmt.Errorf("unknown engine state %d", p[0])
 	}
 	return Verdict{
-		State:    state,
-		Distance: float64(math.Float32frombits(binary.LittleEndian.Uint32(p[1:]))),
+		State:      state,
+		Distance:   float64(math.Float32frombits(binary.LittleEndian.Uint32(p[1:]))),
+		DecodeTime: time.Duration(binary.LittleEndian.Uint32(p[5:])) * time.Microsecond,
+		RunTime:    time.Duration(binary.LittleEndian.Uint32(p[9:])) * time.Microsecond,
 	}, nil
+}
+
+// micros clamps d to what a uint32 of microseconds holds (over an hour).
+func micros(d time.Duration) uint32 {
+	us := d.Microseconds()
+	switch {
+	case us < 0:
+		return 0
+	case us > math.MaxUint32:
+		return math.MaxUint32
+	}
+	return uint32(us)
 }
 
 func rejectMessage(reason string) pipeMessage {

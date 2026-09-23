@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"time"
 )
 
 // EngineState mirrors passportreader_face_verifier_state_t.
@@ -37,6 +38,10 @@ func (s EngineState) String() string {
 type Verdict struct {
 	State    EngineState
 	Distance float64
+	// DecodeTime and RunTime are the worker's time for the frame behind this
+	// verdict: the JPEG decode and the library's run call. The worker sets
+	// them on frame replies only; the engine does not time itself.
+	DecodeTime, RunTime time.Duration
 }
 
 // Engine is the face verifier as the worker process sees it. The C library
