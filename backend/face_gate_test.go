@@ -26,7 +26,7 @@ type fakeIrisClient struct {
 	deleted   []string
 	healthErr error
 	// threshold stands in for the one HTTPIrisClient applies to a completed
-	// session's distance; a test moves it to put the issuer's decision and the
+	// session's score; a test moves it to put the issuer's decision and the
 	// verifier's apart.
 	threshold float64
 }
@@ -72,15 +72,15 @@ func (f *fakeIrisClient) HealthCheck() error { return f.healthErr }
 
 // complete marks the verifier session with a verdict: passed is the
 // verifier's own decision, and Match is the issuer's, which the real client
-// derives from the distance the same way.
-func (f *fakeIrisClient) complete(id string, passed bool, distance float64) {
+// derives from the score the same way.
+func (f *fakeIrisClient) complete(id string, passed bool, score float64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.status[id] = &IrisSessionStatus{
 		Status:     irisStatusCompleted,
 		Passed:     &passed,
-		Distance:   &distance,
-		Match:      &FaceMatchVerdict{Score: distance, Matched: distance <= f.threshold},
+		Score:      &score,
+		Match:      &FaceMatchVerdict{Score: score, Matched: score >= f.threshold},
 		Frames:     60,
 		DurationMs: 4000,
 	}
@@ -272,7 +272,7 @@ func TestIrisGate(t *testing.T) {
 	t.Run("completed but not passed", func(t *testing.T) {
 		state, iris, rec := irisState(t)
 		id := open(t, state, "s1")
-		iris.complete(id, false, 0.91)
+		iris.complete(id, false, 0.21)
 		req := base
 		req.FaceSessionId = id
 		w := httptest.NewRecorder()
@@ -281,15 +281,15 @@ func TestIrisGate(t *testing.T) {
 		e := rec.last(t)
 		require.Equal(t, analytics.OutcomeMatchRejected, e.Outcome)
 		require.NotNil(t, e.Score)
-		require.InDelta(t, 0.91, *e.Score, 1e-9)
-		require.Equal(t, analytics.ScoreIrisDistance, e.ScoreKind)
+		require.InDelta(t, 0.21, *e.Score, 1e-9)
+		require.Equal(t, analytics.ScoreIris, e.ScoreKind)
 	})
 
 	t.Run("a stricter issuer refuses what the verifier passed", func(t *testing.T) {
 		state, iris, rec := irisState(t)
 		// The verifier passed the session on its own threshold; this issuer is
 		// configured stricter, and its decision is the one that gates.
-		iris.threshold = 0.5
+		iris.threshold = 0.7
 		id := open(t, state, "s1")
 		iris.complete(id, true, 0.61)
 		req := base
@@ -306,9 +306,9 @@ func TestIrisGate(t *testing.T) {
 
 	t.Run("a laxer issuer accepts what the verifier did not pass", func(t *testing.T) {
 		state, iris, rec := irisState(t)
-		iris.threshold = 0.95
+		iris.threshold = 0.3
 		id := open(t, state, "s1")
-		iris.complete(id, false, 0.91)
+		iris.complete(id, false, 0.41)
 		req := base
 		req.FaceSessionId = id
 		w := httptest.NewRecorder()
@@ -332,7 +332,7 @@ func TestIrisGate(t *testing.T) {
 	t.Run("passed: issuance proceeds and nothing outlives it", func(t *testing.T) {
 		state, iris, rec := irisState(t)
 		id := open(t, state, "s1")
-		iris.complete(id, true, 0.41)
+		iris.complete(id, true, 0.91)
 		req := base
 		req.FaceSessionId = id
 		req.FaceAttempt = 2
@@ -346,8 +346,8 @@ func TestIrisGate(t *testing.T) {
 
 		e := rec.last(t)
 		require.Equal(t, analytics.OutcomePassed, e.Outcome)
-		require.InDelta(t, 0.41, *e.Score, 1e-9)
-		require.Equal(t, analytics.ScoreIrisDistance, e.ScoreKind)
+		require.InDelta(t, 0.91, *e.Score, 1e-9)
+		require.Equal(t, analytics.ScoreIris, e.ScoreKind)
 		require.EqualValues(t, 4200, *e.DurationMs)
 		// The wallet reported a second attempt, so the record's first-attempt
 		// label is overridden.
@@ -481,57 +481,57 @@ func TestIrisOndeviceGate(t *testing.T) {
 		require.Equal(t, http.StatusOK, w.Code)
 		e := rec.last(t)
 		require.Equal(t, analytics.OutcomePassed, e.Outcome)
-		// A wallet that reports no distance records no score, as before.
+		// A wallet that reports no score records no score, as before.
 		require.Nil(t, e.Score)
 		require.Empty(t, string(e.ScoreKind))
 	})
 
-	// The distance is recorded for its own sake: the issuer gates on the
+	// The score is recorded for its own sake: the issuer gates on the
 	// verdict alone, so the number changes no decision, and it is kept on its
 	// own scale name because nothing here measured it.
-	t.Run("a reported distance is recorded under its own score kind", func(t *testing.T) {
+	t.Run("a reported score is recorded under its own score kind", func(t *testing.T) {
 		state, rec := ondeviceState(t)
 		req := base
 		req.FaceOndevicePassed = verdict(true)
 		req.FaceOndevicePortraitSha256 = hash
-		req.FaceOndeviceDistance = analytics.Float64(0.41)
+		req.FaceOndeviceScore = analytics.Float64(0.41)
 		w := httptest.NewRecorder()
 		require.True(t, gateFaceVerification(state, w, ondeviceInput(session, req)))
 		e := rec.last(t)
 		require.Equal(t, analytics.OutcomePassed, e.Outcome)
 		require.NotNil(t, e.Score)
 		require.InDelta(t, 0.41, *e.Score, 1e-9)
-		require.Equal(t, analytics.ScoreIrisOndeviceDistance, e.ScoreKind)
-		// Never the verifier's kind: that one means a distance this issuer
+		require.Equal(t, analytics.ScoreIrisOndevice, e.ScoreKind)
+		// Never the verifier's kind: that one means a score this issuer
 		// measured from frames it saw.
-		require.NotEqual(t, analytics.ScoreIrisDistance, e.ScoreKind)
+		require.NotEqual(t, analytics.ScoreIris, e.ScoreKind)
 	})
 
 	// Recorded whatever the outcome, which is the point of recording it: a
-	// distance is as interesting on a rejection as on a pass, and a passing
+	// score is as interesting on a rejection as on a pass, and a passing
 	// verdict carrying an implausible one is only visible this way.
-	t.Run("a distance is recorded on a rejection too", func(t *testing.T) {
+	t.Run("a score is recorded on a rejection too", func(t *testing.T) {
 		state, rec := ondeviceState(t)
 		req := base
 		req.FaceOndevicePassed = verdict(false)
 		req.FaceOndevicePortraitSha256 = hash
-		req.FaceOndeviceDistance = analytics.Float64(0.93)
+		req.FaceOndeviceScore = analytics.Float64(0.93)
 		w := httptest.NewRecorder()
 		require.False(t, gateFaceVerification(state, w, ondeviceInput(session, req)))
 		e := rec.last(t)
 		require.Equal(t, analytics.OutcomeLivenessRejected, e.Outcome)
 		require.InDelta(t, 0.93, *e.Score, 1e-9)
-		require.Equal(t, analytics.ScoreIrisOndeviceDistance, e.ScoreKind)
+		require.Equal(t, analytics.ScoreIrisOndevice, e.ScoreKind)
 	})
 
-	// A distance a threshold would have refused still passes: the verdict is
+	// A score a threshold would have refused still passes: the verdict is
 	// what gates, and the number is never acted on.
-	t.Run("the distance changes no decision", func(t *testing.T) {
+	t.Run("the score changes no decision", func(t *testing.T) {
 		state, rec := ondeviceState(t)
 		req := base
 		req.FaceOndevicePassed = verdict(true)
 		req.FaceOndevicePortraitSha256 = hash
-		req.FaceOndeviceDistance = analytics.Float64(0.99)
+		req.FaceOndeviceScore = analytics.Float64(0.99)
 		w := httptest.NewRecorder()
 		require.True(t, gateFaceVerification(state, w, ondeviceInput(session, req)))
 		require.Equal(t, analytics.OutcomePassed, rec.last(t).Outcome)

@@ -7,7 +7,9 @@ import (
 	"time"
 )
 
-// EngineState mirrors passportreader_face_verifier_state_t.
+// EngineState is the verifier's view of a session's engine. The library itself
+// has only INITIATED and COMPLETED; StateFailed is what the binding reports
+// when the library refuses the portrait, which ends the session at once.
 type EngineState uint8
 
 const (
@@ -17,7 +19,7 @@ const (
 )
 
 // Terminal reports whether the engine has reached a verdict; frames fed after
-// that are no-ops in the library.
+// that are not processed.
 func (s EngineState) Terminal() bool { return s == StateFailed || s == StateCompleted }
 
 func (s EngineState) String() string {
@@ -32,31 +34,31 @@ func (s EngineState) String() string {
 	return fmt.Sprintf("state(%d)", uint8(s))
 }
 
-// Verdict is the engine's state after a call, with the distance between the
-// portrait and the live face. Distance is meaningful only when State is
-// StateCompleted; lower is better.
+// Verdict is the engine's state after a call, with the match score between
+// the portrait and the live face. Score is in [0, 1] and meaningful only when
+// State is StateCompleted; higher is a stronger match.
 type Verdict struct {
-	State    EngineState
-	Distance float64
+	State EngineState
+	Score float64
 	// DecodeTime and RunTime are the worker's time for the frame behind this
 	// verdict: the JPEG decode and the library's run call. The worker sets
 	// them on frame replies only; the engine does not time itself.
 	DecodeTime, RunTime time.Duration
 }
 
-// Engine is the face verifier as the worker process sees it. The C library
-// keeps one verifier as process-global state, so exactly one Engine value is
-// used per worker process, and one worker process serves one session.
+// Engine is the face verifier as the worker process sees it. One worker
+// process serves one session, so a crash or a leak in the vendor library
+// takes down that session only.
 type Engine interface {
-	// Clear resets the verifier; it must precede SetPortrait.
+	// Clear starts a fresh verification; it must precede SetPortrait.
 	Clear() error
-	// SetPortrait loads the reference portrait (base64 JPEG or PNG). A
-	// portrait without a detectable face moves the state to StateFailed at
-	// once.
-	SetPortrait(base64Portrait string) error
+	// SetPortrait loads the reference portrait (JPEG, PNG or JPEG 2000
+	// bytes). A portrait the library refuses, such as one without a
+	// detectable face, moves the state to StateFailed at once.
+	SetPortrait(portrait []byte) error
 	// Run feeds one full-range 4:2:0 frame.
 	Run(img *image.YCbCr, orientation uint8) error
-	// Verdict reads the current state and distance.
+	// Verdict reads the current state and score.
 	Verdict() Verdict
 }
 

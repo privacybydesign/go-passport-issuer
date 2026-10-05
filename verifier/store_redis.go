@@ -141,8 +141,8 @@ func terminalFields(s Session) map[string]any {
 		"ended_at": formatTime(s.EndedAt),
 		"frames":   strconv.Itoa(s.Frames),
 	}
-	if s.Distance != nil {
-		f["distance"] = strconv.FormatFloat(*s.Distance, 'g', -1, 64)
+	if s.Score != nil {
+		f["score"] = strconv.FormatFloat(*s.Score, 'g', -1, 64)
 	}
 	if s.Passed != nil {
 		f["passed"] = strconv.FormatBool(*s.Passed)
@@ -175,12 +175,12 @@ func fieldsToSession(id string, f map[string]string) (Session, error) {
 			return Session{}, fmt.Errorf("session %s: frames: %w", id, err)
 		}
 	}
-	if v, ok := f["distance"]; ok {
+	if v, ok := f["score"]; ok {
 		d, err := strconv.ParseFloat(v, 64)
 		if err != nil {
-			return Session{}, fmt.Errorf("session %s: distance: %w", id, err)
+			return Session{}, fmt.Errorf("session %s: score: %w", id, err)
 		}
-		s.Distance = &d
+		s.Score = &d
 	}
 	if v, ok := f["passed"]; ok {
 		p, err := strconv.ParseBool(v)

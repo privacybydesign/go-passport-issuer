@@ -83,7 +83,7 @@ func (m *memoryStore) Finish(_ context.Context, s Session, ttl time.Duration) er
 	it.s.Status = s.Status
 	it.s.EndedAt = s.EndedAt
 	it.s.Frames = s.Frames
-	it.s.Distance = s.Distance
+	it.s.Score = s.Score
 	it.s.Passed = s.Passed
 	it.dies = m.now().Add(ttl)
 	m.items[s.ID] = it

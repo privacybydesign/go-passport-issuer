@@ -18,7 +18,7 @@ import (
 // scripted verdict.
 type fakeEngine struct {
 	cleared      int
-	portrait     string
+	portrait     []byte
 	frames       []*image.YCbCr
 	orientations []uint8
 	verdict      Verdict
@@ -34,7 +34,7 @@ func (e *fakeEngine) Clear() error {
 	return nil
 }
 
-func (e *fakeEngine) SetPortrait(p string) error {
+func (e *fakeEngine) SetPortrait(p []byte) error {
 	e.portrait = p
 	return e.portraitErr
 }
@@ -78,7 +78,7 @@ func TestWorkerLoopPortraitThenFrames(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, msgState, reply.Type)
 	require.Equal(t, 1, eng.cleared, "clear() precedes set_portrait()")
-	require.Equal(t, "UE9SVFJBSVQ=", eng.portrait)
+	require.Equal(t, []byte("PORTRAIT"), eng.portrait, "the worker hands the engine decoded bytes")
 
 	jpeg := frameJPEG(t, 1)
 	require.NoError(t, writeMessage(in, frameMessage(1, jpeg)))
@@ -96,7 +96,7 @@ func TestWorkerLoopPortraitThenFrames(t *testing.T) {
 	v, err := decodeVerdict(reply.Payload)
 	require.NoError(t, err)
 	require.Equal(t, StateCompleted, v.State)
-	require.InDelta(t, 0.3, v.Distance, 1e-6)
+	require.InDelta(t, 0.3, v.Score, 1e-6)
 
 	require.NoError(t, in.Close())
 	require.NoError(t, <-done, "a closed pipe is a clean exit")
@@ -140,6 +140,12 @@ func TestWorkerLoopPortraitRejected(t *testing.T) {
 	reply, err := readMessage(out)
 	require.NoError(t, err)
 	require.Equal(t, msgReject, reply.Type)
+
+	require.NoError(t, writeMessage(in, pipeMessage{Type: msgPortrait, Payload: []byte("%%% not base64 %%%")}))
+	reply, err = readMessage(out)
+	require.NoError(t, err)
+	require.Equal(t, msgReject, reply.Type)
+	require.Nil(t, eng.portrait, "malformed base64 never reaches the engine")
 }
 
 // --- the real subprocess plumbing, with this test binary as the child ------
@@ -193,7 +199,7 @@ func TestSubprocessWorkerRoundTrip(t *testing.T) {
 	v, err = w.Frame(ctx, 2, frameJPEG(t, 2))
 	require.NoError(t, err)
 	require.Equal(t, StateCompleted, v.State)
-	require.InDelta(t, 0.3, v.Distance, 1e-6)
+	require.InDelta(t, 0.3, v.Score, 1e-6)
 
 	require.NoError(t, w.Close())
 	require.NoError(t, w.Close(), "Close is idempotent")

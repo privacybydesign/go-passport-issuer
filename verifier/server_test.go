@@ -64,7 +64,7 @@ func TestCreateSessionResponseShape(t *testing.T) {
 }
 
 func TestGetSessionResponseShape(t *testing.T) {
-	f := newFixture(t, &fakeWorker{verdicts: []Verdict{completed(0.2)}}, nil)
+	f := newFixture(t, &fakeWorker{verdicts: []Verdict{completed(0.92)}}, nil)
 	id, token := f.createSession()
 
 	r := httptest.NewRequest(http.MethodGet, "/internal/sessions/"+id, nil)
@@ -72,17 +72,17 @@ func TestGetSessionResponseShape(t *testing.T) {
 	f.srv.handler().ServeHTTP(w, r)
 	var raw map[string]any
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &raw))
-	require.ElementsMatch(t, []string{"status", "portrait_sha256", "frames", "duration_ms"}, keys(raw), "no passed or distance before completion")
+	require.ElementsMatch(t, []string{"status", "portrait_sha256", "frames", "duration_ms"}, keys(raw), "no passed or score before completion")
 
 	f.streamFrames(id, token, 1)
 	w = httptest.NewRecorder()
 	f.srv.handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/internal/sessions/"+id, nil))
 	raw = nil
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &raw))
-	require.ElementsMatch(t, []string{"status", "passed", "distance", "portrait_sha256", "frames", "duration_ms"}, keys(raw))
+	require.ElementsMatch(t, []string{"status", "passed", "score", "portrait_sha256", "frames", "duration_ms"}, keys(raw))
 	require.Equal(t, "completed", raw["status"])
 	require.Equal(t, true, raw["passed"])
-	require.Equal(t, 0.2, raw["distance"])
+	require.Equal(t, 0.92, raw["score"])
 }
 
 func keys(m map[string]any) []string {
@@ -215,7 +215,7 @@ func readJSON(t *testing.T, conn *websocket.Conn) map[string]any {
 }
 
 func TestStreamOverWebSocket(t *testing.T) {
-	worker := &fakeWorker{verdicts: []Verdict{initiated, completed(0.33)}}
+	worker := &fakeWorker{verdicts: []Verdict{initiated, completed(0.93)}}
 	f := newFixture(t, worker, nil)
 	srv := httptest.NewServer(f.srv.handler())
 	defer srv.Close()
@@ -231,7 +231,7 @@ func TestStreamOverWebSocket(t *testing.T) {
 	f.clock.Advance(time.Second)
 	require.NoError(t, conn.WriteMessage(websocket.BinaryMessage, FrameHeader{Seq: 2, Orientation: 1}.encode(frameJPEG(t, 2))))
 	result := readJSON(t, conn)
-	require.Equal(t, map[string]any{"type": "result", "state": "completed", "passed": true, "distance": 0.33}, result)
+	require.Equal(t, map[string]any{"type": "result", "state": "completed", "passed": true, "score": 0.93}, result)
 
 	_, _, err := conn.ReadMessage()
 	var closeErr *websocket.CloseError

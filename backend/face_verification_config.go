@@ -36,11 +36,11 @@ type IrisConfig struct {
 	// wss://iris-verifier.staging.yivi.app, from which each session's stream
 	// URL is built.
 	VerifierPublicUrl string `json:"verifier_public_url"`
-	// Distance in (0, 1] at or below which the live face is a match for the
-	// document portrait. The counterpart of
-	// RegulaConfig.FaceMatchThreshold on the other method's scale, where lower
-	// is stricter. The verifier applies a threshold of its own to the verdict
-	// it shows the wallet; this one decides issuance.
+	// Iris match score in (0, 1] at or above which the live face is a match
+	// for the document portrait; higher is stricter. The counterpart of
+	// RegulaConfig.FaceMatchThreshold on the other engine's scale. The
+	// verifier applies a threshold of its own to the verdict it shows the
+	// wallet; this one decides issuance.
 	FaceMatchThreshold float64 `json:"face_match_threshold"`
 }
 
@@ -79,8 +79,7 @@ func (c *IrisConfig) validate() error {
 // default: how strict face verification is decides who gets a credential, so
 // every environment states it rather than inheriting a number from a release.
 // Zero is what an absent key decodes to, and it is meaningless on both scales
-// (a similarity floor of 0 matches everything, a distance ceiling of 0 matches
-// nothing), so it is reported as missing.
+// (a floor of 0 matches everything), so it is reported as missing.
 func validateThreshold(key string, threshold float64) error {
 	if threshold == 0 {
 		return fmt.Errorf("%s is required", key)

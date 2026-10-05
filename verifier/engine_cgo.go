@@ -17,41 +17,67 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"runtime"
 	"unsafe"
 )
 
 // engineAvailable tells readyz whether to also prove that a worker can start.
 const engineAvailable = true
 
-// cEngine binds the vendor library. There is no handle: all state is
-// process-global, which is why each worker process holds exactly one.
-type cEngine struct{}
+// cEngine binds one passportreader_face_verification_t. The library has no
+// failed state; failed records that initiate refused the portrait.
+type cEngine struct {
+	h      *C.passportreader_face_verification_t
+	state  C.passportreader_face_verification_state_t
+	failed bool
+}
 
-func newEngine() (Engine, error) { return cEngine{}, nil }
+func newEngine() (Engine, error) { return &cEngine{}, nil }
 
-// check maps the library's int results to errors. A negative value is a
-// failure (set_portrait returns -1 on malformed base64); the smoke test pins
-// this convention for the other calls.
+// check maps the library's results to errors: every call returns 0 on
+// success and 1 on failure.
 func check(name string, rc C.int) error {
-	if rc < 0 {
+	if rc != 0 {
 		return fmt.Errorf("%s returned %d", name, int(rc))
 	}
 	return nil
 }
 
-func (cEngine) Clear() error {
-	return check("clear", C.passportreader_face_verifier_clear())
+func (e *cEngine) Clear() error {
+	if e.h != nil {
+		_ = C.passportreader_face_verification_destroy(e.h)
+		e.h = nil
+	}
+	e.state, e.failed = C.PASSPORTREADER_FACE_VERIFICATION_INITIATED, false
+	return check("create", C.passportreader_face_verification_create(&e.h))
 }
 
-func (cEngine) SetPortrait(base64Portrait string) error {
-	// A NUL-terminated copy in Go memory, passed for the duration of the
-	// call only, avoids stdlib.h and C.free for a single string argument.
-	buf := append([]byte(base64Portrait), 0)
-	rc := C.passportreader_face_verifier_set_portrait((*C.char)(unsafe.Pointer(&buf[0])))
-	return check("set_portrait", rc)
+func (e *cEngine) SetPortrait(portrait []byte) error {
+	if e.h == nil {
+		return errors.New("set portrait before clear")
+	}
+	if len(portrait) == 0 {
+		return errors.New("portrait is empty")
+	}
+	var pin runtime.Pinner
+	defer pin.Unpin()
+	pin.Pin(&portrait[0])
+	b := C.passportreader_bytes_t{data: (*C.uchar)(unsafe.Pointer(&portrait[0])), length: C.size_t(len(portrait))}
+	// initiate does not say why it refused; an undecodable portrait and one
+	// without a face look the same here. Either way the session is decided.
+	if C.passportreader_face_verification_initiate(e.h, b) != 0 {
+		e.failed = true
+	}
+	return nil
 }
 
-func (cEngine) Run(img *image.YCbCr, orientation uint8) error {
+func (e *cEngine) Run(img *image.YCbCr, orientation uint8) error {
+	if e.h == nil {
+		return errors.New("run before clear")
+	}
+	if e.failed || e.state == C.PASSPORTREADER_FACE_VERIFICATION_COMPLETED {
+		return nil
+	}
 	if img.SubsampleRatio != image.YCbCrSubsampleRatio420 {
 		return fmt.Errorf("frame is %v, want 4:2:0", img.SubsampleRatio)
 	}
@@ -62,22 +88,48 @@ func (cEngine) Run(img *image.YCbCr, orientation uint8) error {
 	y := img.Y[img.YOffset(img.Rect.Min.X, img.Rect.Min.Y):]
 	c := img.COffset(img.Rect.Min.X, img.Rect.Min.Y)
 	cb, cr := img.Cb[c:], img.Cr[c:]
-	rc := C.passportreader_face_verifier_run_YCbCr420FullRangeTriPlanar(
-		(*C.uchar)(unsafe.Pointer(&y[0])),
-		(*C.uchar)(unsafe.Pointer(&cb[0])),
-		(*C.uchar)(unsafe.Pointer(&cr[0])),
-		C.uint(img.YStride), 1,
-		C.uint(img.CStride), 1,
-		C.uint(img.CStride), 1,
-		C.uint(w), C.uint(h),
-		C.passportreader_image_orientation_t(orientation),
-	)
-	return check("run_YCbCr420FullRangeTriPlanar", rc)
+
+	// The image struct lives in Go memory and points at the planes, which
+	// cgo allows only for pinned memory.
+	var pin runtime.Pinner
+	defer pin.Unpin()
+	pin.Pin(&y[0])
+	pin.Pin(&cb[0])
+	pin.Pin(&cr[0])
+	var in C.passportreader_image_t
+	in.format = C.PASSPORTREADER_IMAGE_FORMAT_YCBCR_420_TRIPLANAR
+	in.planes[0] = C.passportreader_image_plane_t{data: (*C.uchar)(unsafe.Pointer(&y[0])), row_stride: C.uint(img.YStride), pixel_stride: 1}
+	in.planes[1] = C.passportreader_image_plane_t{data: (*C.uchar)(unsafe.Pointer(&cb[0])), row_stride: C.uint(img.CStride), pixel_stride: 1}
+	in.planes[2] = C.passportreader_image_plane_t{data: (*C.uchar)(unsafe.Pointer(&cr[0])), row_stride: C.uint(img.CStride), pixel_stride: 1}
+	in.plane_count = 3
+	in.width, in.height = C.uint(w), C.uint(h)
+	in.orientation = C.passportreader_frame_orientation_t(orientation)
+	// JFIF JPEGs carry full-range YCbCr (see decodeFrameJPEG).
+	in.color_range = C.PASSPORTREADER_COLOR_RANGE_FULL
+
+	var status C.passportreader_face_verification_status_t
+	if err := check("process", C.passportreader_face_verification_process(e.h, &in, &status)); err != nil {
+		return err
+	}
+	e.state = status.state
+	return nil
 }
 
-func (cEngine) Verdict() Verdict {
-	return Verdict{
-		State:    EngineState(C.passportreader_face_verifier_state()),
-		Distance: float64(C.passportreader_face_verifier_distance()),
+func (e *cEngine) Verdict() Verdict {
+	switch {
+	case e.failed:
+		return Verdict{State: StateFailed}
+	case e.state != C.PASSPORTREADER_FACE_VERIFICATION_COMPLETED:
+		return Verdict{State: StateInitiated}
 	}
+	// The result copies the retained frames and the face PNG, so it is read
+	// only once the verification has completed.
+	var res C.passportreader_face_verification_result_t
+	if C.passportreader_face_verification_result(e.h, &res) != 0 {
+		// Completed without a readable score: report it as a failure rather
+		// than as a score of 0 that a threshold might misread.
+		return Verdict{State: StateFailed}
+	}
+	defer C.passportreader_face_verification_result_free(&res)
+	return Verdict{State: StateCompleted, Score: float64(res.score)}
 }

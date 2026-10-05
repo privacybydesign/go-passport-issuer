@@ -5,12 +5,12 @@ Vendor-supplied static library and C header for the Iris engine that
 
 | File | What |
 |---|---|
-| `include/libpassportreader/libpassportreader.h` | C API: MRZ scanner, chip reader, face verifier, QR scanner. Only the `passportreader_face_verifier_*` calls are used. |
-| `linux/x86_64/libpassportreader.a` | Static archive, Linux x86_64 only, 49 MB. Not in this repository: fetched by `fetch.sh` from a release asset, and ignored by git. |
+| `include/libpassportreader/libpassportreader.h` | C API: MRZ scanner, chip reader, face verifier, QR scanner. Only the `passportreader_face_verification_*` calls are used. |
+| `linux/x86_64/libpassportreader.a` | Static archive, Linux x86_64 only, 50 MB. Not in this repository: fetched by `fetch.sh` from a release asset, and ignored by git. |
 
 SHA-256 of `libpassportreader.a`:
 
-    ed7382efb56cc27e31d944336e70119714819f4737563104eb6cad452624e599
+    9ada7e81482963ff3aea283138d14db405feb42bbe06d322a04104f57ac972ff
 
 ## Toolchain pin
 

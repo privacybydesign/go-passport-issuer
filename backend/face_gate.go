@@ -86,10 +86,10 @@ func gateFaceVerification(state *ServerState, w http.ResponseWriter, in faceGate
 		scoreKind = analytics.ScoreRegulaSimilarity
 		ok, outcome, score = regulaGate(state, w, portraitBase64(in.portrait), in.request.LivenessTransactionId, in.documentType)
 	case method == FaceMethodIris:
-		scoreKind = analytics.ScoreIrisDistance
+		scoreKind = analytics.ScoreIris
 		ok, outcome, score = irisGate(state, w, in)
 	case method == FaceMethodIrisOndevice:
-		scoreKind = analytics.ScoreIrisOndeviceDistance
+		scoreKind = analytics.ScoreIrisOndevice
 		ok, outcome, score = irisOndeviceGate(w, in)
 	}
 
@@ -186,9 +186,9 @@ func regulaGate(state *ServerState, w http.ResponseWriter, documentImage, livene
 
 // irisGate checks an Iris session's evidence: a face record that belongs to
 // this document session and was opened for this very portrait, and a completed
-// session whose distance passes this issuer's threshold. The verifier's own
+// session whose score passes this issuer's threshold. The verifier's own
 // verdict is not what decides; the client applies the configured threshold to
-// the distance, as the Regula path does to a similarity. On success it deletes
+// the score, as the Regula path does to a similarity. On success it deletes
 // the verifier session and the face record; nothing about the attempt outlives
 // the issuance.
 func irisGate(state *ServerState, w http.ResponseWriter, in faceGateInput) (bool, string, *float64) {
@@ -248,17 +248,17 @@ func irisGate(state *ServerState, w http.ResponseWriter, in faceGateInput) (bool
 		if err := deleteFaceRecord(state.tokenStorage, faceSessionID); err != nil {
 			slog.Warn("Failed to delete face record", "error", err, "face_session_id", faceSessionID)
 		}
-		slog.Debug("Face verification passed", "distance", status.Match.Score)
+		slog.Debug("Face verification passed", "score", status.Match.Score)
 		return true, analytics.OutcomePassed, score
 	case status.Status == irisStatusCompleted:
-		// A completed session always carries a distance, so Match is set; the
+		// A completed session always carries a score, so Match is set; the
 		// zero value would only surface if the verifier broke that contract.
-		distance := 0.0
+		got := 0.0
 		if status.Match != nil {
-			distance = status.Match.Score
+			got = status.Match.Score
 		}
 		respondWithErr(w, http.StatusBadRequest, faceVerificationFailedBody,
-			"face does not match document photo", fmt.Errorf("distance: %f", distance), "document_type", documentType)
+			"face does not match document photo", fmt.Errorf("score: %f", got), "document_type", documentType)
 		return false, analytics.OutcomeMatchRejected, score
 	case status.Status == irisStatusFailed:
 		// The engine judged the frame sequence not live, or found no face it
@@ -283,12 +283,12 @@ func irisGate(state *ServerState, w http.ResponseWriter, in faceGateInput) (bool
 // replacement for either server-verdict arm. See
 // irmamobile/docs/on-device-iris-face-verification-plan.md §3.
 //
-// The distance it returns is whatever the wallet reported, on every path and
+// The score it returns is whatever the wallet reported, on every path and
 // whatever the outcome: it is recorded, never acted on, and carries
-// ScoreIrisOndeviceDistance so nothing mistakes it for a measured one.
+// ScoreIrisOndevice so nothing mistakes it for a measured one.
 func irisOndeviceGate(w http.ResponseWriter, in faceGateInput) (bool, string, *float64) {
 	documentType := in.documentType
-	score := in.request.FaceOndeviceDistance
+	score := in.request.FaceOndeviceScore
 	if in.request.FaceOndevicePassed == nil {
 		slog.Warn("On-device face verdict required for issuance", "document_type", documentType)
 		respondWithErr(w, http.StatusBadRequest, faceVerificationRequiredBody,

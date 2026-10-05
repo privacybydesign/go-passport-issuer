@@ -24,9 +24,9 @@ statically linked and carry the same restriction.
 
 One process serves HTTP and WebSockets. Every stream that starts gets a
 child process, this same binary re-executed with `--worker`, which links the
-C library and owns exactly one verifier (the library keeps it as
-process-global state, so two sessions in one process would corrupt each
-other). Parent and worker talk over the worker's stdin/stdout with
+C library and owns exactly one verification handle. The library no longer
+keeps process-global state, but a process per session still confines a crash
+or a leak in the vendor code to that one session. Parent and worker talk over the worker's stdin/stdout with
 length-prefixed messages (`protocol.go`): `portrait` and `frame` down,
 `state`, `result` or `reject` back. The parent kills the worker at the
 terminal state, on timeout and on disconnect. The portrait and every frame
@@ -53,7 +53,7 @@ or a shared, encrypted portrait store.
    followed by a JPEG.
 4. Server sends `{"type":"state","seq":n,"state":"initiated"}` at most every
    500ms, then exactly one terminal message and a close frame:
-   `{"type":"result","state":"completed","passed":true,"distance":0.41}`,
+   `{"type":"result","state":"completed","passed":true,"score":0.41}`,
    `{"type":"result","state":"failed"}`, or
    `{"type":"error","code":"timeout|too_many_frames|frame_too_large|bad_frame|internal"}`.
 
@@ -65,9 +65,9 @@ ends the stream with `bad_frame`. `internal` is not in the plan's list: it
 means the verifier itself failed (no worker, store down, portrait on another
 replica); the wallet should treat it like any error and start a new session.
 
-`passed = state == COMPLETED && distance <= IRIS_DISTANCE_THRESHOLD`. It is
+`passed = state == COMPLETED && score >= IRIS_SCORE_THRESHOLD`. It is
 what the wallet shows the user; the issuer applies its own
-`iris_face_match_threshold` to `distance` and gates issuance on that, so the
+`iris_face_match_threshold` to `score` and gates issuance on that, so the
 two can disagree without the issuer's decision moving.
 
 ### Issuer → `/internal/sessions` (HTTP, cluster-only; the ingress exposes `/stream` only)
@@ -77,8 +77,8 @@ two can disagree without the issuer's decision moving.
   `portrait_sha256` must be the SHA-256 of the decoded portrait bytes, else
   400. The issuer builds the wallet's stream URL from its own configuration
   as `<public origin>/stream/<face_session_id>`.
-- `GET /internal/sessions/{id}` → `{"status": "pending|streaming|completed|failed|expired", "passed": bool, "distance": number, "portrait_sha256": "…", "frames": n, "duration_ms": n}`;
-  `passed` and `distance` are present only once the engine completed. 404
+- `GET /internal/sessions/{id}` → `{"status": "pending|streaming|completed|failed|expired", "passed": bool, "score": number, "portrait_sha256": "…", "frames": n, "duration_ms": n}`;
+  `passed` and `score` are present only once the engine completed. 404
   once the record is gone. A pending record stays readable as `expired` for
   `IRIS_TERMINAL_TTL_SECONDS` after its deadline. Every stream that ends
   without an engine verdict (timeout, disconnect, bad frame) is `failed`.
@@ -101,7 +101,7 @@ its flag. Redis settings are environment-only because they carry a secret.
 |---|---|---|
 | `IRIS_LISTEN_ADDR` | `:8081` | listen address |
 | `IRIS_PUBLIC_STREAM_URL` | | public `wss://` origin of this service, e.g. `wss://iris-verifier.staging.yivi.app`; reported in logs and `/readyz` only, the issuer builds each session's stream URL itself |
-| `IRIS_DISTANCE_THRESHOLD` | `0.75` | a completed session passes when distance ≤ this, for the verdict reported to the wallet; issuance is gated on the issuer's own threshold |
+| `IRIS_SCORE_THRESHOLD` | `0.75` | a completed session passes when its match score (0–1, higher is a stronger match) is ≥ this; the default is a placeholder until calibrated, for the verdict reported to the wallet; issuance is gated on the issuer's own threshold |
 | `IRIS_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `IRIS_MAX_FRAMES` | `900` | processed frames per session |
 | `IRIS_MAX_SECONDS` | `60` | seconds per session from its start |
@@ -127,7 +127,7 @@ Logs are JSON on stderr. Each finished stream also produces one
 `event=face_verification` line with `kind=iris_session` through the shared
 `analytics` package (`backend/analytics`): outcome
 `completed|failed|timeout|abandoned`, `frames`, `duration_ms`,
-`per_frame_ms`, and `score`/`score_kind=iris_distance` when the engine
+`per_frame_ms`, and `score`/`score_kind=iris_score` when the engine
 completed.
 
 ## Building and running
@@ -176,8 +176,10 @@ Real-library smoke test and benchmarks (`engine_smoke_test.go`, build tag
       go test -run 'TestEngine' -bench 'Benchmark' -benchtime 100x ./...
 
 Without `IRIS_SMOKE_PORTRAIT` (a JPEG or PNG with a detectable face) the
-smoke test covers the face-less portrait → FAILED case and the no-op after a
-terminal state; the INITIATED case and the benchmarks need a real face.
-`BenchmarkEngineFrame` reports ns per `run` call on decoded 640×480 frames;
+smoke test covers a portrait that is no image → FAILED (the library has no
+failed state; the binding reports a portrait `initiate` refuses as FAILED),
+the no-op after a terminal state, and that a face-less portrait never
+completes; the INITIATED case and the benchmarks need a real face.
+`BenchmarkEngineFrame` reports ns per `process` call on decoded 640×480 frames;
 `BenchmarkWorkerFrame` includes the JPEG decode, i.e. the per-frame CPU the
 capacity plan needs.

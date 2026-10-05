@@ -385,7 +385,7 @@ func TestIrisFlowVerifyThenIssue(t *testing.T) {
 	require.Equal(t, faceVerificationFailedBody, string(body))
 
 	// The verifier reports a pass: issuance succeeds, once.
-	iris.complete(faceSessionID, true, 0.41)
+	iris.complete(faceSessionID, true, 0.91)
 	resp, body, _ = postJSON[map[string]any](t, issueURL, req)
 	mustStatus(t, resp, http.StatusOK, body)
 	require.Equal(t, []string{faceSessionID}, iris.deleted)
@@ -414,7 +414,7 @@ func TestIrisFlowVerifyThenIssue(t *testing.T) {
 	require.Equal(t, 4, issuances)
 	last := recorder.events[len(recorder.events)-1]
 	require.Equal(t, analytics.OutcomePassed, last.Outcome)
-	require.InDelta(t, 0.41, *last.Score, 1e-9)
+	require.InDelta(t, 0.91, *last.Score, 1e-9)
 	require.EqualValues(t, 4200, *last.DurationMs)
 }
 
@@ -437,7 +437,7 @@ func TestIrisFlowRefusesAnotherPortrait(t *testing.T) {
 	req := newReq(start.SessionId, start.Nonce)
 	resp, body, verification := postJSON[VerificationResponse](t, "http://localhost:8081/api/verify-passport", req)
 	mustStatus(t, resp, http.StatusOK, body)
-	iris.complete(verification.FaceSession.FaceSessionId, true, 0.3)
+	iris.complete(verification.FaceSession.FaceSessionId, true, 0.93)
 
 	// The next chip read yields a different portrait.
 	validator.portrait = []byte("someone else")
@@ -561,7 +561,7 @@ func TestIrisOndeviceFlowIssuesOnTheVerdict(t *testing.T) {
 	require.Equal(t, analytics.OutcomePassed, last.Outcome)
 	require.EqualValues(t, 5100, *last.DurationMs)
 	require.Equal(t, analytics.AttemptRetry, last.AttemptKind, "the wallet's own attempt count wins")
-	// Nothing to score: this is the arm that has no distance to report.
+	// Nothing to score: this is the arm that has no score to report.
 	require.Nil(t, last.Score)
 	require.Empty(t, string(last.ScoreKind))
 }

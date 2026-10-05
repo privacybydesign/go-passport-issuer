@@ -34,11 +34,11 @@ type createSessionResponse struct {
 }
 
 // sessionResponse is what the issuer's IrisSessionStatus decodes. Passed and
-// Distance appear only once the engine completed.
+// Score appear only once the engine completed.
 type sessionResponse struct {
 	Status         Status   `json:"status"`
 	Passed         *bool    `json:"passed,omitempty"`
-	Distance       *float64 `json:"distance,omitempty"`
+	Score          *float64 `json:"score,omitempty"`
 	PortraitSHA256 string   `json:"portrait_sha256"`
 	Frames         int      `json:"frames"`
 	DurationMs     int64    `json:"duration_ms"`
@@ -117,7 +117,7 @@ func (s *server) handleGetSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sessionResponse{
 		Status:         sess.StatusAt(s.now()),
 		Passed:         sess.Passed,
-		Distance:       sess.Distance,
+		Score:          sess.Score,
 		PortraitSHA256: sess.PortraitSHA256,
 		Frames:         sess.Frames,
 		DurationMs:     sess.DurationMs(),

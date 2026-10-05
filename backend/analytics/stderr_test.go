@@ -62,7 +62,7 @@ func TestStderrRecorderWritesAllFields(t *testing.T) {
 		AttemptKind:  AttemptRetry,
 		Outcome:      OutcomePassed,
 		Score:        Float64(0.41),
-		ScoreKind:    ScoreIrisDistance,
+		ScoreKind:    ScoreIris,
 		DurationMs:   Int64(4200),
 		Frames:       Int(60),
 		PerFrameMs:   Float64(12.5),
@@ -74,7 +74,7 @@ func TestStderrRecorderWritesAllFields(t *testing.T) {
 	require.Equal(t, "retry", line["attempt_kind"])
 	require.Equal(t, "passed", line["outcome"])
 	require.InDelta(t, 0.41, line["score"], 1e-9)
-	require.Equal(t, "iris_distance", line["score_kind"])
+	require.Equal(t, "iris_score", line["score_kind"])
 	require.EqualValues(t, 4200, line["duration_ms"])
 	require.EqualValues(t, 60, line["frames"])
 	require.InDelta(t, 12.5, line["per_frame_ms"], 1e-9)

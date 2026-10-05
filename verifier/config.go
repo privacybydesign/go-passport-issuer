@@ -46,10 +46,11 @@ type Config struct {
 	// is reported in logs and readyz only; the issuer builds each session's
 	// stream URL itself.
 	PublicStreamURL string
-	// DistanceThreshold: a completed session passes when the engine's
-	// distance is at most this.
-	DistanceThreshold float64
-	Limits            Limits
+	// ScoreThreshold: a completed session passes when the engine's match
+	// score, in [0, 1] with higher a stronger match, is at least this. The
+	// default is a placeholder until the threshold is calibrated.
+	ScoreThreshold float64
+	Limits         Limits
 	// PendingTTL is how long a created session waits for its stream.
 	PendingTTL time.Duration
 	// TerminalTTL is how long a finished session stays readable by the issuer.
@@ -69,8 +70,8 @@ type Config struct {
 
 func defaultConfig() Config {
 	return Config{
-		ListenAddr:        ":8081",
-		DistanceThreshold: 0.75,
+		ListenAddr:     ":8081",
+		ScoreThreshold: 0.75,
 		Limits: Limits{
 			FPS:           15,
 			MaxFrames:     900,
@@ -104,7 +105,7 @@ func parseArgs(args []string, getenv func(string) string) (Config, runMode, erro
 	fs := flag.NewFlagSet("iris-verifier", flag.ContinueOnError)
 	fs.StringVar(&cfg.ListenAddr, "listen", cfg.ListenAddr, "listen address (IRIS_LISTEN_ADDR)")
 	fs.StringVar(&cfg.PublicStreamURL, "public-stream-url", "", "public wss:// origin of this service, for logs and readyz (IRIS_PUBLIC_STREAM_URL)")
-	fs.Float64Var(&cfg.DistanceThreshold, "distance-threshold", cfg.DistanceThreshold, "maximum distance for a completed session to pass (IRIS_DISTANCE_THRESHOLD)")
+	fs.Float64Var(&cfg.ScoreThreshold, "score-threshold", cfg.ScoreThreshold, "minimum score in (0, 1] for a completed session to pass (IRIS_SCORE_THRESHOLD)")
 	fs.StringVar(&cfg.LogLevel, "log-level", cfg.LogLevel, "debug, info, warn or error (IRIS_LOG_LEVEL)")
 	fs.IntVar(&cfg.Limits.MaxFrames, "max-frames", cfg.Limits.MaxFrames, "processed frames per session (IRIS_MAX_FRAMES)")
 	maxSeconds := fs.Int("max-seconds", seconds(cfg.Limits.MaxDuration), "seconds per session from its start (IRIS_MAX_SECONDS)")
@@ -125,7 +126,7 @@ func parseArgs(args []string, getenv func(string) string) (Config, runMode, erro
 	env := envReader{getenv: getenv}
 	cfg.ListenAddr = env.str("IRIS_LISTEN_ADDR", cfg.ListenAddr)
 	cfg.PublicStreamURL = env.str("IRIS_PUBLIC_STREAM_URL", cfg.PublicStreamURL)
-	cfg.DistanceThreshold = env.float("IRIS_DISTANCE_THRESHOLD", cfg.DistanceThreshold)
+	cfg.ScoreThreshold = env.float("IRIS_SCORE_THRESHOLD", cfg.ScoreThreshold)
 	cfg.LogLevel = env.str("IRIS_LOG_LEVEL", cfg.LogLevel)
 	cfg.Limits.MaxFrames = env.int("IRIS_MAX_FRAMES", cfg.Limits.MaxFrames)
 	cfg.Limits.MaxDuration = time.Duration(env.int("IRIS_MAX_SECONDS", *maxSeconds)) * time.Second
@@ -179,8 +180,8 @@ func (c Config) validate() error {
 		return errors.New("max-width must be at least 1")
 	case c.Limits.MaxFrameBytes < 1:
 		return errors.New("max-frame-bytes must be at least 1")
-	case c.DistanceThreshold <= 0:
-		return errors.New("distance-threshold must be positive")
+	case c.ScoreThreshold <= 0 || c.ScoreThreshold > 1:
+		return errors.New("score-threshold must be in (0, 1]")
 	case c.PendingTTL <= 0 || c.TerminalTTL <= 0 || c.HandshakeTimeout <= 0:
 		return errors.New("ttl and handshake-timeout seconds must be positive")
 	}

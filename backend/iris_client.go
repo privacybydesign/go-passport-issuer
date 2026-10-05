@@ -34,17 +34,17 @@ const (
 // IrisSessionStatus is the verifier's view of one face session.
 type IrisSessionStatus struct {
 	Status string `json:"status"`
-	// Passed and Distance are set once the status is completed. Passed is the
+	// Passed and Score are set once the status is completed. Passed is the
 	// verifier's own decision, which it also sends the wallet so the capture
 	// screen can show an outcome; the issuer records it but does not gate on
 	// it, because its threshold belongs to the verifier's deployment rather
 	// than to this issuer's config. See Match.
 	Passed         *bool    `json:"passed,omitempty"`
-	Distance       *float64 `json:"distance,omitempty"`
+	Score          *float64 `json:"score,omitempty"`
 	PortraitSha256 string   `json:"portrait_sha256"`
 	Frames         int      `json:"frames"`
 	DurationMs     int64    `json:"duration_ms"`
-	// Match is this issuer's verdict on Distance, filled in by the client the
+	// Match is this issuer's verdict on Score, filled in by the client the
 	// way RegulaFaceClient decides a similarity, and nil until the engine has
 	// completed. It is what the gate reads, so one config governs how strict
 	// both methods are.
@@ -122,14 +122,14 @@ func (c *HTTPIrisClient) GetSession(ctx context.Context, faceSessionID string) (
 	if err := json.Unmarshal(respBody, &status); err != nil {
 		return nil, fmt.Errorf("failed to decode iris session status: %w", err)
 	}
-	// The distance is meaningful only once the engine completed; before that
+	// The score is meaningful only once the engine completed; before that
 	// there is nothing to judge.
-	if status.Status == irisStatusCompleted && status.Distance != nil {
-		matched := *status.Distance <= c.threshold
-		status.Match = &FaceMatchVerdict{Score: *status.Distance, Matched: matched}
+	if status.Status == irisStatusCompleted && status.Score != nil {
+		matched := *status.Score >= c.threshold
+		status.Match = &FaceMatchVerdict{Score: *status.Score, Matched: matched}
 		// verifier_passed is logged beside the decision so the two thresholds
 		// drifting apart is visible rather than silent.
-		slog.Info("Face match completed", "distance", *status.Distance, "threshold", c.threshold,
+		slog.Info("Face match completed", "score", *status.Score, "threshold", c.threshold,
 			"matched", matched, "verifier_passed", status.Passed != nil && *status.Passed)
 	}
 	return &status, nil

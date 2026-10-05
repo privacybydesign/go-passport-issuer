@@ -17,7 +17,7 @@ func TestParseArgsDefaults(t *testing.T) {
 	require.Equal(t, modeServe, mode)
 	require.Equal(t, defaultConfig(), cfg)
 	require.Equal(t, ":8081", cfg.ListenAddr)
-	require.Equal(t, 0.75, cfg.DistanceThreshold)
+	require.Equal(t, 0.75, cfg.ScoreThreshold)
 	require.Equal(t, Limits{FPS: 15, MaxFrames: 900, MaxDuration: time.Minute, MaxWidth: 640, MaxFrameBytes: 1 << 20}, cfg.Limits)
 	require.Equal(t, 10*time.Minute, cfg.PendingTTL)
 	require.Equal(t, 15*time.Minute, cfg.TerminalTTL)
@@ -30,7 +30,7 @@ func TestParseArgsEnvironment(t *testing.T) {
 	env := envOf(map[string]string{
 		"IRIS_LISTEN_ADDR":               ":9000",
 		"IRIS_PUBLIC_STREAM_URL":         "wss://iris-verifier.staging.yivi.app",
-		"IRIS_DISTANCE_THRESHOLD":        "0.6",
+		"IRIS_SCORE_THRESHOLD":           "0.6",
 		"IRIS_LOG_LEVEL":                 "debug",
 		"IRIS_MAX_FRAMES":                "450",
 		"IRIS_MAX_SECONDS":               "30",
@@ -50,7 +50,7 @@ func TestParseArgsEnvironment(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, ":9000", cfg.ListenAddr)
 	require.Equal(t, "wss://iris-verifier.staging.yivi.app", cfg.PublicStreamURL)
-	require.Equal(t, 0.6, cfg.DistanceThreshold)
+	require.Equal(t, 0.6, cfg.ScoreThreshold)
 	require.Equal(t, "debug", cfg.LogLevel)
 	require.Equal(t, Limits{FPS: 10, MaxFrames: 450, MaxDuration: 30 * time.Second, MaxWidth: 480, MaxFrameBytes: 200000}, cfg.Limits)
 	require.Equal(t, 5*time.Minute, cfg.PendingTTL)
@@ -104,4 +104,9 @@ func TestParseArgsValidation(t *testing.T) {
 	require.ErrorContains(t, err, "fps")
 	_, _, err = parseArgs(nil, envOf(map[string]string{"IRIS_MAX_SECONDS": "0"}))
 	require.ErrorContains(t, err, "max-seconds")
+	// A score is in [0, 1]: a threshold above 1 would fail every session.
+	_, _, err = parseArgs(nil, envOf(map[string]string{"IRIS_SCORE_THRESHOLD": "1.5"}))
+	require.ErrorContains(t, err, "score-threshold")
+	_, _, err = parseArgs(nil, envOf(map[string]string{"IRIS_SCORE_THRESHOLD": "0"}))
+	require.ErrorContains(t, err, "score-threshold")
 }

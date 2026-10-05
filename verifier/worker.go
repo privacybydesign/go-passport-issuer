@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -38,7 +39,13 @@ func handleWorkerMessage(eng Engine, m pipeMessage) pipeMessage {
 		if err := eng.Clear(); err != nil {
 			return rejectMessage("clear: " + err.Error())
 		}
-		if err := eng.SetPortrait(string(m.Payload)); err != nil {
+		// The parent holds the portrait as the issuer sent it, base64; the
+		// library takes the image bytes.
+		portrait, err := base64.StdEncoding.DecodeString(string(m.Payload))
+		if err != nil {
+			return rejectMessage("portrait: " + err.Error())
+		}
+		if err := eng.SetPortrait(portrait); err != nil {
 			return rejectMessage("set_portrait: " + err.Error())
 		}
 		return verdictMessage(eng.Verdict())
@@ -65,8 +72,8 @@ func handleWorkerMessage(eng Engine, m pipeMessage) pipeMessage {
 	}
 }
 
-// runSelftest is `--worker --selftest`: it links the library and initialises
-// a verifier, which is what readyz needs to know a node can run sessions.
+// runSelftest is `--worker --selftest`: it links the library and creates a
+// verification, which is what readyz needs to know a node can run sessions.
 func runSelftest() error {
 	eng, err := newEngine()
 	if err != nil {

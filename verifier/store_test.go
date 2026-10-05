@@ -39,7 +39,7 @@ func storeContract(t *testing.T, store Store, clock *fakeClock) {
 	require.Equal(t, "passport", got.DocumentType)
 	require.True(t, s.ExpiresAt.Equal(got.ExpiresAt))
 	require.Nil(t, got.Passed)
-	require.Nil(t, got.Distance)
+	require.Nil(t, got.Score)
 
 	_, err = store.Get(ctx, "fs_unknown")
 	require.ErrorIs(t, err, ErrNotFound)
@@ -55,12 +55,12 @@ func storeContract(t *testing.T, store Store, clock *fakeClock) {
 	require.True(t, started.Equal(got.StartedAt))
 
 	// Finish writes the terminal fields and nothing else.
-	distance, passed := 0.41, true
+	score, passed := 0.41, true
 	fin := got
 	fin.Status = StatusCompleted
 	fin.EndedAt = started.Add(4 * time.Second)
 	fin.Frames = 60
-	fin.Distance = &distance
+	fin.Score = &score
 	fin.Passed = &passed
 	fin.PortraitSHA256 = "must not change"
 	require.NoError(t, store.Finish(ctx, fin, time.Hour))
@@ -68,7 +68,7 @@ func storeContract(t *testing.T, store Store, clock *fakeClock) {
 	require.NoError(t, err)
 	require.Equal(t, StatusCompleted, got.Status)
 	require.Equal(t, 60, got.Frames)
-	require.Equal(t, 0.41, *got.Distance)
+	require.Equal(t, 0.41, *got.Score)
 	require.True(t, *got.Passed)
 	require.EqualValues(t, 4000, got.DurationMs())
 	require.Equal(t, "abcd", got.PortraitSHA256)
@@ -135,7 +135,7 @@ func TestRedisFieldsRoundTrip(t *testing.T) {
 	s.EndedAt = now.Add(5 * time.Second)
 	s.Frames = 42
 	d, p := 0.4142, true
-	s.Distance, s.Passed = &d, &p
+	s.Score, s.Passed = &d, &p
 
 	fields := map[string]string{}
 	for k, v := range sessionToFields(s) {
@@ -153,13 +153,13 @@ func TestRedisFieldsRoundTrip(t *testing.T) {
 		require.True(t, pair[0].Equal(pair[1]), "%v != %v", pair[0], pair[1])
 	}
 	require.Equal(t, 42, got.Frames)
-	require.Equal(t, 0.4142, *got.Distance)
+	require.Equal(t, 0.4142, *got.Score)
 	require.True(t, *got.Passed)
 
 	// A pending record has no terminal values, and none must be invented.
 	pending, err := fieldsToSession("x", map[string]string{"status": "pending", "token_hash": "00", "frames": "0"})
 	require.NoError(t, err)
-	require.Nil(t, pending.Distance)
+	require.Nil(t, pending.Score)
 	require.Nil(t, pending.Passed)
 	require.True(t, pending.StartedAt.IsZero())
 }

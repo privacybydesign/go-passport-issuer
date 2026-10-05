@@ -67,7 +67,7 @@ func frameJPEG(t *testing.T, seq int) []byte {
 
 var initiated = Verdict{State: StateInitiated}
 
-func completed(distance float64) Verdict { return Verdict{State: StateCompleted, Distance: distance} }
+func completed(score float64) Verdict { return Verdict{State: StateCompleted, Score: score} }
 
 // fakeWorker stands in for the worker subprocess. It answers SetPortrait with
 // portraitVerdict and the i-th frame with verdicts[i], repeating the last

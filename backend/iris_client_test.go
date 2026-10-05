@@ -22,12 +22,12 @@ func irisStatusServer(t *testing.T, body string) *httptest.Server {
 	return srv
 }
 
-// The client turns the verifier's distance into this issuer's verdict, the way
+// The client turns the verifier's score into this issuer's verdict, the way
 // RegulaFaceClient turns a similarity into one. The verifier's own `passed` is
 // carried through but decides nothing.
 func TestIrisClientAppliesItsOwnThreshold(t *testing.T) {
-	t.Run("distance at or under the threshold matches", func(t *testing.T) {
-		srv := irisStatusServer(t, `{"status":"completed","passed":true,"distance":0.5,"frames":60,"duration_ms":4000}`)
+	t.Run("score at or above the threshold matches", func(t *testing.T) {
+		srv := irisStatusServer(t, `{"status":"completed","passed":true,"score":0.5,"frames":60,"duration_ms":4000}`)
 		status, err := NewIrisClient(srv.URL, 0.5).GetSession(context.Background(), "fs_1")
 		require.NoError(t, err)
 		require.NotNil(t, status.Match)
@@ -36,8 +36,8 @@ func TestIrisClientAppliesItsOwnThreshold(t *testing.T) {
 	})
 
 	t.Run("a stricter threshold than the verifier's refuses", func(t *testing.T) {
-		srv := irisStatusServer(t, `{"status":"completed","passed":true,"distance":0.61}`)
-		status, err := NewIrisClient(srv.URL, 0.5).GetSession(context.Background(), "fs_1")
+		srv := irisStatusServer(t, `{"status":"completed","passed":true,"score":0.61}`)
+		status, err := NewIrisClient(srv.URL, 0.7).GetSession(context.Background(), "fs_1")
 		require.NoError(t, err)
 		require.NotNil(t, status.Match)
 		require.False(t, status.Match.Matched)
@@ -47,8 +47,8 @@ func TestIrisClientAppliesItsOwnThreshold(t *testing.T) {
 	})
 
 	t.Run("a laxer threshold than the verifier's accepts", func(t *testing.T) {
-		srv := irisStatusServer(t, `{"status":"completed","passed":false,"distance":0.91}`)
-		status, err := NewIrisClient(srv.URL, 0.95).GetSession(context.Background(), "fs_1")
+		srv := irisStatusServer(t, `{"status":"completed","passed":false,"score":0.41}`)
+		status, err := NewIrisClient(srv.URL, 0.3).GetSession(context.Background(), "fs_1")
 		require.NoError(t, err)
 		require.NotNil(t, status.Match)
 		require.True(t, status.Match.Matched)
@@ -62,7 +62,7 @@ func TestIrisClientAppliesItsOwnThreshold(t *testing.T) {
 		require.Equal(t, irisStatusStreaming, status.Status)
 	})
 
-	t.Run("a completed session without a distance yields no verdict", func(t *testing.T) {
+	t.Run("a completed session without a score yields no verdict", func(t *testing.T) {
 		srv := irisStatusServer(t, `{"status":"completed"}`)
 		status, err := NewIrisClient(srv.URL, 0.5).GetSession(context.Background(), "fs_1")
 		require.NoError(t, err)

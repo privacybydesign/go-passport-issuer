@@ -18,8 +18,8 @@ import (
 	"go-passport-issuer/analytics"
 )
 
-func TestStreamCompletedWithinThresholdPasses(t *testing.T) {
-	worker := &fakeWorker{verdicts: []Verdict{initiated, initiated, completed(0.41)}}
+func TestStreamCompletedAtOrAboveThresholdPasses(t *testing.T) {
+	worker := &fakeWorker{verdicts: []Verdict{initiated, initiated, completed(0.91)}}
 	f := newFixture(t, worker, nil)
 	id, token := f.createSession()
 
@@ -31,7 +31,7 @@ func TestStreamCompletedWithinThresholdPasses(t *testing.T) {
 	require.EqualValues(t, 640, msgs[0]["max_width"])
 	require.EqualValues(t, 15, msgs[0]["fps"])
 	require.Equal(t, map[string]any{"type": "state", "seq": float64(1), "state": "initiated"}, msgs[1])
-	require.Equal(t, map[string]any{"type": "result", "state": "completed", "passed": true, "distance": 0.41}, conn.last(t))
+	require.Equal(t, map[string]any{"type": "result", "state": "completed", "passed": true, "score": 0.91}, conn.last(t))
 	require.Equal(t, 1, conn.closeFrames())
 
 	require.Equal(t, base64Std(testPortrait), worker.portrait)
@@ -42,7 +42,7 @@ func TestStreamCompletedWithinThresholdPasses(t *testing.T) {
 	require.Equal(t, 200, code)
 	require.Equal(t, StatusCompleted, sr.Status)
 	require.True(t, *sr.Passed)
-	require.Equal(t, 0.41, *sr.Distance)
+	require.Equal(t, 0.91, *sr.Score)
 	require.Equal(t, 3, sr.Frames)
 	require.EqualValues(t, (2 * time.Second / 15).Milliseconds(), sr.DurationMs, "two FPS intervals on the fake clock")
 
@@ -51,20 +51,20 @@ func TestStreamCompletedWithinThresholdPasses(t *testing.T) {
 	require.Equal(t, analytics.MethodIris, ev.Method)
 	require.Equal(t, "passport", ev.DocumentType)
 	require.Equal(t, analytics.OutcomeCompleted, ev.Outcome)
-	require.Equal(t, 0.41, *ev.Score)
-	require.Equal(t, analytics.ScoreIrisDistance, ev.ScoreKind)
+	require.Equal(t, 0.91, *ev.Score)
+	require.Equal(t, analytics.ScoreIris, ev.ScoreKind)
 	require.Equal(t, 3, *ev.Frames)
 	require.NotNil(t, ev.DurationMs)
 	require.NotNil(t, ev.PerFrameMs)
 }
 
-func TestStreamCompletedAboveThresholdDoesNotPass(t *testing.T) {
-	worker := &fakeWorker{verdicts: []Verdict{completed(0.9)}}
+func TestStreamCompletedBelowThresholdDoesNotPass(t *testing.T) {
+	worker := &fakeWorker{verdicts: []Verdict{completed(0.41)}}
 	f := newFixture(t, worker, nil)
 	id, token := f.createSession()
 
 	conn := f.streamFrames(id, token, 1)
-	require.Equal(t, map[string]any{"type": "result", "state": "completed", "passed": false, "distance": 0.9}, conn.last(t))
+	require.Equal(t, map[string]any{"type": "result", "state": "completed", "passed": false, "score": 0.41}, conn.last(t))
 
 	_, sr := f.getSession(id)
 	require.Equal(t, StatusCompleted, sr.Status)
@@ -73,8 +73,8 @@ func TestStreamCompletedAboveThresholdDoesNotPass(t *testing.T) {
 }
 
 func TestStreamThresholdIsConfigurable(t *testing.T) {
-	worker := &fakeWorker{verdicts: []Verdict{completed(0.9)}}
-	f := newFixture(t, worker, func(c *Config) { c.DistanceThreshold = 1.0 })
+	worker := &fakeWorker{verdicts: []Verdict{completed(0.41)}}
+	f := newFixture(t, worker, func(c *Config) { c.ScoreThreshold = 0.4 })
 	id, token := f.createSession()
 	conn := f.streamFrames(id, token, 1)
 	require.Equal(t, true, conn.last(t)["passed"])
@@ -90,8 +90,8 @@ func TestStreamEngineFailed(t *testing.T) {
 
 	_, sr := f.getSession(id)
 	require.Equal(t, StatusFailed, sr.Status)
-	require.Nil(t, sr.Passed, "passed and distance appear only once the engine completed")
-	require.Nil(t, sr.Distance)
+	require.Nil(t, sr.Passed, "passed and score appear only once the engine completed")
+	require.Nil(t, sr.Score)
 	ev := f.rec.single(t)
 	require.Equal(t, analytics.OutcomeFailed, ev.Outcome)
 	require.Nil(t, ev.Score)

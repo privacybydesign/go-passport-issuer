@@ -34,8 +34,8 @@ const (
 	MethodRegula Method = "regula"
 	MethodIris   Method = "iris"
 	// MethodIrisOndevice is the Iris SDK running on the phone. Its Score, when
-	// the wallet reports one, is on ScoreIrisOndeviceDistance rather than
-	// ScoreIrisDistance: the same engine produced it, but nothing this issuer
+	// the wallet reports one, is on ScoreIrisOndevice rather than
+	// ScoreIris: the same engine produced it, but nothing this issuer
 	// runs measured it.
 	MethodIrisOndevice Method = "iris_ondevice"
 )
@@ -86,16 +86,17 @@ type ScoreKind string
 const (
 	// ScoreRegulaSimilarity: Regula similarity, 0–1, higher is better.
 	ScoreRegulaSimilarity ScoreKind = "regula_similarity"
-	// ScoreIrisDistance: Iris embedding distance measured by the verifier from
-	// the frames it received, lower is better.
-	ScoreIrisDistance ScoreKind = "iris_distance"
-	// ScoreIrisOndeviceDistance: the same distance, on the same scale, but
+	// ScoreIris: Iris match score measured by the verifier from the frames
+	// it received, 0–1, higher is better. It replaces iris_distance, which
+	// was on an inverted scale; the two must not be pooled.
+	ScoreIris ScoreKind = "iris_score"
+	// ScoreIrisOndevice: the same score, on the same scale, but
 	// reported by the wallet rather than measured here. Kept apart from
-	// ScoreIrisDistance on purpose: the issuer has no frames and no session to
+	// ScoreIris on purpose: the issuer has no frames and no session to
 	// recompute it from, so it is the client's word, and a query that trusts
 	// its numbers should have to name it. Comparing the two distributions is
 	// what it is for.
-	ScoreIrisOndeviceDistance ScoreKind = "iris_ondevice_distance"
+	ScoreIrisOndevice ScoreKind = "iris_ondevice_score"
 )
 
 // Client describes the wallet build that made the attempt, as declared by the

@@ -33,10 +33,10 @@ type Session struct {
 	StartedAt time.Time
 	EndedAt   time.Time
 	Frames    int
-	// Distance and Passed are set only when the engine completed; Passed is
-	// the threshold decision on Distance.
-	Distance *float64
-	Passed   *bool
+	// Score and Passed are set only when the engine completed; Passed is
+	// the threshold decision on Score.
+	Score  *float64
+	Passed *bool
 }
 
 // StatusAt is the status the issuer should see at now: a pending session past
@@ -72,7 +72,7 @@ type Store interface {
 	// ExpiresAt; the caller does, against its own clock.
 	Claim(ctx context.Context, id string, startedAt time.Time, ttl time.Duration) error
 	// Finish writes the terminal fields of s: Status, EndedAt, Frames,
-	// Distance and Passed.
+	// Score and Passed.
 	Finish(ctx context.Context, s Session, ttl time.Duration) error
 	// Delete removes the record; an unknown id is not an error.
 	Delete(ctx context.Context, id string) error

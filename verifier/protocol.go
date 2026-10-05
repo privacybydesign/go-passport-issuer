@@ -18,7 +18,8 @@ type msgType uint8
 
 const (
 	// msgPortrait, parent → worker: the base64 portrait. The worker runs
-	// clear() and set_portrait() and replies with the verdict.
+	// decodes it, starts a fresh verification with it and replies with the
+	// verdict.
 	msgPortrait msgType = 1
 	// msgFrame, parent → worker: one byte orientation, then JPEG bytes.
 	msgFrame msgType = 2
@@ -72,17 +73,17 @@ func readMessage(r io.Reader) (pipeMessage, error) {
 	return pipeMessage{Type: msgType(body[0]), Payload: body[1:]}, nil
 }
 
-// verdictPayloadSize: state, distance, decode and run time.
+// verdictPayloadSize: state, score, decode and run time.
 const verdictPayloadSize = 13
 
 // verdictMessage encodes a Verdict as msgState or msgResult, depending on
-// whether the state is terminal: one byte state, the distance as an IEEE-754
+// whether the state is terminal: one byte state, the score as an IEEE-754
 // float32 (the library's own precision), then the decode and run times in
 // microseconds as uint32; all little-endian.
 func verdictMessage(v Verdict) pipeMessage {
 	buf := make([]byte, verdictPayloadSize)
 	buf[0] = byte(v.State)
-	binary.LittleEndian.PutUint32(buf[1:], math.Float32bits(float32(v.Distance)))
+	binary.LittleEndian.PutUint32(buf[1:], math.Float32bits(float32(v.Score)))
 	binary.LittleEndian.PutUint32(buf[5:], micros(v.DecodeTime))
 	binary.LittleEndian.PutUint32(buf[9:], micros(v.RunTime))
 	t := msgState
@@ -102,7 +103,7 @@ func decodeVerdict(p []byte) (Verdict, error) {
 	}
 	return Verdict{
 		State:      state,
-		Distance:   float64(math.Float32frombits(binary.LittleEndian.Uint32(p[1:]))),
+		Score:      float64(math.Float32frombits(binary.LittleEndian.Uint32(p[1:]))),
 		DecodeTime: time.Duration(binary.LittleEndian.Uint32(p[5:])) * time.Microsecond,
 		RunTime:    time.Duration(binary.LittleEndian.Uint32(p[9:])) * time.Microsecond,
 	}, nil

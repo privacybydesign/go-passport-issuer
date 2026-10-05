@@ -41,10 +41,10 @@ type wsState struct {
 }
 
 type wsResult struct {
-	Type     string   `json:"type"`
-	State    string   `json:"state"`
-	Passed   *bool    `json:"passed,omitempty"`
-	Distance *float64 `json:"distance,omitempty"`
+	Type   string   `json:"type"`
+	State  string   `json:"state"`
+	Passed *bool    `json:"passed,omitempty"`
+	Score  *float64 `json:"score,omitempty"`
 }
 
 type wsError struct {
@@ -253,12 +253,12 @@ func (s *streamer) run(ctx context.Context, sess Session, portrait string, conn 
 	switch {
 	case e.decided && e.verdict.State == StateCompleted:
 		// The verdict is ours: the engine only measures.
-		passed := e.verdict.Distance <= s.cfg.DistanceThreshold
-		distance := e.verdict.Distance
+		passed := e.verdict.Score >= s.cfg.ScoreThreshold
+		score := e.verdict.Score
 		sess.Status = StatusCompleted
 		sess.Passed = &passed
-		sess.Distance = &distance
-		msg = wsResult{Type: "result", State: "completed", Passed: &passed, Distance: &distance}
+		sess.Score = &score
+		msg = wsResult{Type: "result", State: "completed", Passed: &passed, Score: &score}
 	case e.decided:
 		sess.Status = StatusFailed
 		msg = wsResult{Type: "result", State: "failed"}
@@ -299,8 +299,8 @@ func (s *streamer) event(sess Session, e ending, st streamStats) analytics.Recor
 		ev.PerFrameMs = analytics.Float64(float64(st.perFrame.Microseconds()) / 1000 / float64(st.frames))
 	}
 	if e.decided && e.verdict.State == StateCompleted {
-		ev.Score = analytics.Float64(e.verdict.Distance)
-		ev.ScoreKind = analytics.ScoreIrisDistance
+		ev.Score = analytics.Float64(e.verdict.Score)
+		ev.ScoreKind = analytics.ScoreIris
 	}
 	return ev
 }
@@ -418,7 +418,7 @@ func (s *streamer) stream(ctx context.Context, sess *Session, portrait string, c
 		if err == nil {
 			st.record(done.Sub(now), now.Sub(lastDone), v)
 			log.Debug("frame timing", "seq", hdr.Seq, "n", st.frames, "decode_ms", ms(v.DecodeTime), "run_ms", ms(v.RunTime),
-				"roundtrip_ms", ms(done.Sub(now)), "idle_ms", ms(now.Sub(lastDone)), "state", v.State.String(), "distance", v.Distance)
+				"roundtrip_ms", ms(done.Sub(now)), "idle_ms", ms(now.Sub(lastDone)), "state", v.State.String(), "score", v.Score)
 		}
 		lastDone = done
 		if err != nil {

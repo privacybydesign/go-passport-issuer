@@ -77,7 +77,7 @@ func TestVerdictRoundTrip(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, v.State, got.State)
 		// The wire carries the library's float32.
-		require.InDelta(t, v.Distance, got.Distance, 1e-6)
+		require.InDelta(t, v.Score, got.Score, 1e-6)
 	}
 }
 

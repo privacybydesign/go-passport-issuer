@@ -79,7 +79,7 @@ func serve(cfg Config, logger *slog.Logger) int {
 	}()
 
 	logger.Info("iris-verifier listening", "addr", cfg.ListenAddr, "public_stream_url", cfg.PublicStreamURL, "engine", engineAvailable,
-		"redis", cfg.Redis.Enabled(), "threshold", cfg.DistanceThreshold,
+		"redis", cfg.Redis.Enabled(), "threshold", cfg.ScoreThreshold,
 		"fps", cfg.Limits.FPS, "max_frames", cfg.Limits.MaxFrames, "max_seconds", int(cfg.Limits.MaxDuration/time.Second))
 	if cfg.DebugFrameDir != "" {
 		logger.Warn("debug frame dump enabled: face images are written to disk; staging only",

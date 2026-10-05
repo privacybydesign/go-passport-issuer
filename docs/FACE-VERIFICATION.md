@@ -65,10 +65,12 @@ running an environment that would dead-end at runtime.
   `http://iris-verifier-svc:8081`).
 - `iris.verifier_public_url` — wallet-reachable origin of the verifier's stream
   endpoint (e.g. `wss://iris-verifier.staging.yivi.app`).
-- `iris.face_match_threshold` — the same knob on the Iris scale: the distance
-  in (0, 1] at or *below* which the live face is considered a match. Also
+- `iris.face_match_threshold` — the same knob on the Iris scale: the match
+  score in (0, 1] at or above which the live face is considered a match
+  (higher is stricter). This used to be a distance, where lower was
+  stricter; a value carried over from then means the opposite now. Also
   required. The verifier has a threshold of its own
-  (`IRIS_DISTANCE_THRESHOLD`) for the verdict it reports to the wallet, but
+  (`IRIS_SCORE_THRESHOLD`) for the verdict it reports to the wallet, but
   issuance is decided by this one, so both methods' strictness lives in this
   config.
 

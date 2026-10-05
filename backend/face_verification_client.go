@@ -24,9 +24,9 @@ const (
 // config.
 //
 // The scale differs per method and is recorded alongside the score as an
-// analytics.ScoreKind: Regula scores similarity, where higher is better and
-// the threshold is a floor; Iris scores distance, where lower is better and
-// the threshold is a ceiling. Nothing here is serialised; the wire type the
+// analytics.ScoreKind: Regula scores similarity and Iris a match score. Both
+// are in [0, 1] with higher better and the threshold a floor, but they are
+// different engines and not comparable. Nothing here is serialised; the wire type the
 // verify endpoints return is FaceMatchResult.
 type FaceMatchVerdict struct {
 	Score   float64
