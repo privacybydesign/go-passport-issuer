@@ -189,7 +189,7 @@ func TestDg12AttributesAreIssued(t *testing.T) {
 	})
 }
 
-func TestDg12AttributesAreOmittedWhenMissing(t *testing.T) {
+func TestDg12AttributesOmitted(t *testing.T) {
 	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
 	require.NoError(t, err)
 	token, err := jc.CreatePassportJwt(models.PassportData{DocumentType: "P"})
