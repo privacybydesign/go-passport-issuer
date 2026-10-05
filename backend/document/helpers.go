@@ -67,6 +67,20 @@ func ParseExpiryDate(dateStr string) (time.Time, error) {
 	return parsedDate, nil
 }
 
+func ParseDateOfIssue(dateStr string) (time.Time, error) {
+	// DG12 stores the date of issue as yyyymmdd
+	if len(dateStr) != 8 {
+		return time.Time{}, fmt.Errorf("invalid date format: %s", dateStr)
+	}
+
+	parsedDate, err := time.Parse("20060102", dateStr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("error parsing date: %w", err)
+	}
+
+	return parsedDate, nil
+}
+
 func ParseDateOfBirth(dateStr string) (time.Time, error) {
 	// Parse date in yymmdd format
 	if len(dateStr) != 6 {

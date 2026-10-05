@@ -13,6 +13,8 @@ type PassportData struct {
 	DateOfBirth          time.Time `json:"date_of_birth"`
 	YearOfBirth          string    `json:"year_of_birth"`
 	DateOfExpiry         time.Time `json:"date_of_expiry"`
+	IssuingAuthority     string    `json:"issuing_authority"` // DG12, empty when absent
+	DateOfIssue          time.Time `json:"date_of_issue"`     // DG12, zero when absent
 	Gender               string    `json:"gender"`
 	Country              string    `json:"country"`
 	Over12               string    `json:"over12"`

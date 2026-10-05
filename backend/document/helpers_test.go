@@ -22,6 +22,24 @@ func TestBoolToYesNo(t *testing.T) {
 	})
 }
 
+func TestParseDateOfIssue(t *testing.T) {
+	t.Run("valid date parses correctly", func(t *testing.T) {
+		result, err := ParseDateOfIssue("20170905")
+		require.NoError(t, err)
+		require.Equal(t, time.Date(2017, time.September, 5, 0, 0, 0, 0, time.UTC), result)
+	})
+
+	t.Run("wrong length is rejected", func(t *testing.T) {
+		_, err := ParseDateOfIssue("170905")
+		require.Error(t, err)
+	})
+
+	t.Run("non-date value is rejected", func(t *testing.T) {
+		_, err := ParseDateOfIssue("2017xx05")
+		require.Error(t, err)
+	})
+}
+
 func TestParseExpiryDate(t *testing.T) {
 	t.Run("valid date parses correctly", func(t *testing.T) {
 		result, err := ParseExpiryDate("250315")
