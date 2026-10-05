@@ -156,6 +156,60 @@ func TestIdCardDocumentTypeIsRefusedAsPassport(t *testing.T) {
 	requireInvalidPassport(t, testPassportIssuanceRequest)
 }
 
+func TestDg12AttributesAreIssued(t *testing.T) {
+	data := models.PassportData{
+		DocumentNumber:   "X1234567",
+		DocumentType:     "P",
+		IssuingAuthority: "JAKARTA - AMBASSADE DE FRANCE EN INDONESIE",
+		DateOfIssue:      time.Date(2017, time.September, 5, 0, 0, 0, 0, time.UTC),
+	}
+	idCard := data
+	idCard.DocumentType = "I"
+
+	t.Run("passport", func(t *testing.T) {
+		jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
+		require.NoError(t, err)
+		token, err := jc.CreatePassportJwt(data)
+		require.NoError(t, err)
+
+		attributes := jwtAttributes(t, token)
+		require.Equal(t, "JAKARTA - AMBASSADE DE FRANCE EN INDONESIE", attributes["issuingAuthority"])
+		require.Equal(t, "2017-09-05", attributes["dateOfIssue"])
+	})
+
+	t.Run("id card", func(t *testing.T) {
+		jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.idcard", 25)
+		require.NoError(t, err)
+		token, err := jc.CreateIdCardJwt(idCard)
+		require.NoError(t, err)
+
+		attributes := jwtAttributes(t, token)
+		require.Equal(t, "JAKARTA - AMBASSADE DE FRANCE EN INDONESIE", attributes["issuingAuthority"])
+		require.Equal(t, "2017-09-05", attributes["dateOfIssue"])
+	})
+}
+
+func TestDg12AttributesAreOmittedWhenMissing(t *testing.T) {
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
+	require.NoError(t, err)
+	token, err := jc.CreatePassportJwt(models.PassportData{DocumentType: "P"})
+	require.NoError(t, err)
+
+	attributes := jwtAttributes(t, token)
+	require.NotContains(t, attributes, "issuingAuthority")
+	require.NotContains(t, attributes, "dateOfIssue")
+}
+
+func jwtAttributes(t *testing.T, token string) map[string]any {
+	parsed, err := jwt.ParseWithClaims(token, jwt.MapClaims{}, jwtKeyFunc)
+	require.NoError(t, err)
+
+	claims := parsed.Claims.(jwt.MapClaims)
+	request := claims["iprequest"].(map[string]any)["request"].(map[string]any)
+	credentials := request["credentials"].([]any)
+	return credentials[0].(map[string]any)["attributes"].(map[string]any)
+}
+
 func TestDecodeValidateJwt(t *testing.T) {
 	// 1) create the jwt
 	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)

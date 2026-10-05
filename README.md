@@ -136,6 +136,12 @@ The issued credential carries an `activeAuthentication` attribute
 (value `Yes`/`No`). With this policy, a value of `Yes` means AA was performed and
 succeeded; `No` only ever means the chip does not support AA.
 
+When the document carries `DG12`, the passport and ID card credentials also
+carry `issuingAuthority` and `dateOfIssue` (`YYYY-MM-DD`). `DG12` is optional in
+ICAO 9303, so if it is missing or a field cannot be read, that attribute is left
+out and issuance continues. Both attributes must be marked `optional` in the
+credential scheme.
+
 ### API Documentation
 
 The backend serves interactive API documentation using ReDoc at `/api/docs`. The OpenAPI specification is generated from Go code annotations using [swaggo/swag](https://github.com/swaggo/swag).
