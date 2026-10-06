@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -350,6 +351,11 @@ func (s *streamer) stream(ctx context.Context, sess *Session, portrait string, c
 		return cut(analytics.OutcomeAbandoned, codeInternal)
 	}
 	if v.State.Terminal() {
+		// The library gives no reason. Format and size tell an unreadable
+		// format from a portrait without a usable face; neither identifies
+		// anyone.
+		log.Warn("engine refused portrait", "portrait_format", portraitFormatOfBase64(portrait),
+			"portrait_bytes", base64.StdEncoding.DecodedLen(len(portrait)))
 		return decided(v)
 	}
 

@@ -52,12 +52,14 @@ func noisyFrame(tb testing.TB, seed uint64) *image.YCbCr {
 	return frame
 }
 
+// portraitFromEnv reads IRIS_SMOKE_PORTRAIT as the worker would hand it to the
+// engine, so a JPEG goes through the same workaround as in production.
 func portraitFromEnv(tb testing.TB) ([]byte, bool) {
 	path := os.Getenv("IRIS_SMOKE_PORTRAIT")
 	if path == "" {
 		return nil, false
 	}
-	return portraitFile(tb, path), true
+	return portraitForEngine(portraitFile(tb, path)), true
 }
 
 func TestEngineSmoke(t *testing.T) {
@@ -171,16 +173,6 @@ func BenchmarkWorkerFrame(b *testing.B) {
 	}
 }
 
-// portraitFile reads a portrait from disk, the form initiate takes.
-func portraitFile(tb testing.TB, path string) []byte {
-	tb.Helper()
-	b, err := os.ReadFile(path)
-	if err != nil {
-		tb.Fatal(err)
-	}
-	return b
-}
-
 // TestEnginePortraitJPEG2000 answers the question the on-device arm hangs on:
 // does this engine decode JPEG 2000? There the wallet can only hand the SDK
 // the portrait it read off the chip, and DG2 is JPEG 2000 on most European
@@ -233,4 +225,43 @@ func TestEnginePortraitJPEG2000(t *testing.T) {
 	}
 	require.Equal(t, StateInitiated, stateFor(portraitFile(t, path)),
 		"a JPEG 2000 portrait with a face must keep the verifier going")
+}
+
+// TestEnginePortraitJPEG guards the JPEG workaround. libpassportreader-20261002
+// refuses every JPEG portrait in initiate, and chip portraits are JPEG on
+// driving licences and on some passports; portraitForEngine re-encodes them
+// as PNG. The direct case only logs, so the test keeps passing when a vendor
+// drop fixes JPEG; the log line says when the workaround can go. The worker
+// case is the guard: a JPEG portrait with a face must keep the verifier going.
+//
+// Needs IRIS_SMOKE_PORTRAIT (a JPEG or PNG with a face); it is re-encoded as
+// JPEG here, so a PNG works as well.
+func TestEnginePortraitJPEG(t *testing.T) {
+	src, ok := portraitFromEnv(t)
+	if !ok {
+		t.Skip("IRIS_SMOKE_PORTRAIT not set: needs a portrait with a face")
+	}
+	img, _, err := image.Decode(bytes.NewReader(src))
+	if err != nil {
+		t.Skipf("IRIS_SMOKE_PORTRAIT is not a JPEG or PNG Go can decode: %v", err)
+	}
+	var buf bytes.Buffer
+	require.NoError(t, jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}))
+	portrait := buf.Bytes()
+
+	eng, err := newEngine()
+	require.NoError(t, err)
+	require.NoError(t, eng.Clear())
+	require.NoError(t, eng.SetPortrait(portrait))
+	if eng.Verdict().State == StateInitiated {
+		t.Log("the engine accepts a JPEG portrait directly: portraitForEngine is no longer needed")
+	} else {
+		t.Log("the engine refuses a JPEG portrait directly: portraitForEngine is still needed")
+	}
+
+	reply := handleWorkerMessage(eng, pipeMessage{Type: msgPortrait, Payload: []byte(base64.StdEncoding.EncodeToString(portrait))})
+	require.Equal(t, msgState, reply.Type, "a JPEG portrait with a face must keep the verifier going: %s", reply.Payload)
+	v, err := decodeVerdict(reply.Payload)
+	require.NoError(t, err)
+	require.Equal(t, StateInitiated, v.State)
 }

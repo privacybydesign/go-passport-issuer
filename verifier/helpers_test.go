@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -347,4 +348,14 @@ func (f *fixture) streamFrames(id, token string, n int) *scriptConn {
 		steps = append(steps, s)
 	}
 	return f.stream(id, steps...)
+}
+
+// portraitFile reads a portrait from disk, the form initiate takes.
+func portraitFile(tb testing.TB, path string) []byte {
+	tb.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return b
 }

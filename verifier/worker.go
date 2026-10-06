@@ -45,7 +45,7 @@ func handleWorkerMessage(eng Engine, m pipeMessage) pipeMessage {
 		if err != nil {
 			return rejectMessage("portrait: " + err.Error())
 		}
-		if err := eng.SetPortrait(portrait); err != nil {
+		if err := eng.SetPortrait(portraitForEngine(portrait)); err != nil {
 			return rejectMessage("set_portrait: " + err.Error())
 		}
 		return verdictMessage(eng.Verdict())

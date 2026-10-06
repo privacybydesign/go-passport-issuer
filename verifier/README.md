@@ -91,6 +91,21 @@ two can disagree without the issuer's decision moving.
   engine, `--worker --selftest` can start and initialise the library. Returns
   `{"status":"ok","engine":true,"public_stream_url":"…"}`.
 
+## JPEG portraits
+
+libpassportreader-20261002 refuses every JPEG portrait in `initiate`
+(baseline, progressive, greyscale alike), while it accepts the same image as
+PNG or JPEG 2000; the drop before it read JPEG fine. Chip portraits are JPEG
+on driving licences and on some passports, so the worker re-encodes a JPEG
+portrait as PNG before handing it to the engine (`portraitForEngine`). The
+issuer's binding is unaffected: it is on the hash of the original bytes,
+checked when the session is created.
+
+`session created` and `engine refused portrait` log the portrait's format and
+size (from its magic bytes; nothing that identifies anyone), so a refusal can
+be told apart from an unreadable format. Remove the workaround once
+`TestEnginePortraitJPEG` logs that the engine accepts JPEG directly.
+
 ## Configuration
 
 Environment variables, as the deployment sets them. Each has a flag of the
@@ -179,7 +194,11 @@ Without `IRIS_SMOKE_PORTRAIT` (a JPEG or PNG with a detectable face) the
 smoke test covers a portrait that is no image → FAILED (the library has no
 failed state; the binding reports a portrait `initiate` refuses as FAILED),
 the no-op after a terminal state, and that a face-less portrait never
-completes; the INITIATED case and the benchmarks need a real face.
+completes; the INITIATED case, the JPEG portrait case and the benchmarks
+need a real face. CI sets no portrait, so it runs only the face-less part.
+`TestEnginePortraitJPEG` re-encodes the portrait as JPEG and requires the
+worker to accept it, and logs whether the engine itself still refuses JPEG
+(see "JPEG portraits" below).
 `BenchmarkEngineFrame` reports ns per `process` call on decoded 640×480 frames;
 `BenchmarkWorkerFrame` includes the JPEG decode, i.e. the per-frame CPU the
 capacity plan needs.

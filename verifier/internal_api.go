@@ -95,7 +95,8 @@ func (s *server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	// issuer sent.
 	s.portraits.Put(id, base64.StdEncoding.EncodeToString(portrait), s.cfg.PendingTTL)
 
-	s.log.Info("session created", "face_session_id", id, "document_type", req.DocumentType)
+	s.log.Info("session created", "face_session_id", id, "document_type", req.DocumentType,
+		"portrait_format", portraitFormat(portrait), "portrait_bytes", len(portrait))
 	writeJSON(w, http.StatusOK, createSessionResponse{
 		FaceSessionID: id,
 		Token:         token,
