@@ -37,7 +37,9 @@ func InitLogger(level string) {
 		Level: logLevel,
 	}
 
-	handler := slog.NewTextHandler(os.Stderr, opts)
+	// JSON rather than text so every line, including the face verification
+	// recordings, is queryable by field in the log store.
+	handler := slog.NewJSONHandler(os.Stderr, opts)
 	logger = slog.New(handler)
 	slog.SetDefault(logger)
 }

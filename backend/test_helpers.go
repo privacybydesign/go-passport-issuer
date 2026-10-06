@@ -26,7 +26,7 @@ var testConfig = ServerConfig{
 	TlsPrivKeyPath: "",
 }
 
-func startTestServer(t *testing.T, storage TokenStorage) *Server {
+func startTestServer(t *testing.T, storage TokenStorage, opts ...func(*ServerState)) *Server {
 	t.Helper()
 
 	jwtCreators := AllJwtCreators{
@@ -41,6 +41,9 @@ func startTestServer(t *testing.T, storage TokenStorage) *Server {
 		documentValidator:    fakeValidator{},
 		drivingLicenceParser: fakeEDLParser{},
 		converter:            fakeConverter{},
+	}
+	for _, o := range opts {
+		o(testState)
 	}
 
 	srv, err := NewServer(testState, testConfig)
@@ -102,18 +105,27 @@ func mustStatus(t *testing.T, resp *http.Response, want int, body []byte) {
 	require.Equalf(t, want, resp.StatusCode, "body: %s", body)
 }
 
-// start-validation bootstrap
+// start-validation bootstrap, as a wallet without a capability declaration
+// (no body) does it.
 func startValidation(t *testing.T) (sessionID, nonce string) {
 	t.Helper()
-	type startResp struct {
-		SessionID string `json:"session_id"`
-		Nonce     string `json:"nonce"`
+	sr := startValidationDeclaring(t, nil)
+	return sr.SessionId, sr.Nonce
+}
+
+// startValidationDeclaring starts a session with the given declaration body
+// (nil for none) and returns the whole response.
+func startValidationDeclaring(t *testing.T, declaration *StartValidationRequest) ValidatePassportResponse {
+	t.Helper()
+	var payload any
+	if declaration != nil {
+		payload = declaration
 	}
-	resp, body, sr := postJSON[startResp](t, "http://localhost:8081/api/start-validation", nil)
+	resp, body, sr := postJSON[ValidatePassportResponse](t, "http://localhost:8081/api/start-validation", payload)
 	mustStatus(t, resp, http.StatusOK, body)
-	require.NotEmpty(t, sr.SessionID)
+	require.NotEmpty(t, sr.SessionId)
 	require.NotEmpty(t, sr.Nonce)
-	return sr.SessionID, sr.Nonce
+	return *sr
 }
 
 // Request builders
@@ -188,6 +200,19 @@ func (fakeValidator) PassivePassport(_ models.ValidationRequest, _ *cms.Combined
 
 func (fakeValidator) ActivePassport(_ models.ValidationRequest, _ document.Document) (bool, error) {
 	return true, nil
+}
+
+// portraitValidator is a fakeValidator whose passport carries a DG2 portrait,
+// so the Iris face session can be opened from it.
+type portraitValidator struct {
+	fakeValidator
+	portrait []byte
+}
+
+func (v portraitValidator) PassivePassport(_ models.ValidationRequest, _ *cms.CombinedCertPool) (document.Document, error) {
+	var doc document.Document
+	doc.Mf.Lds1.Dg2 = &document.DG2{Images: []document.DG2Image{{Image: v.portrait}}}
+	return doc, nil
 }
 
 type fakeConverter struct{}

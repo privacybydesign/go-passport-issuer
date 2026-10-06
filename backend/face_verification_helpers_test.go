@@ -10,9 +10,34 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// The thresholds the tests configure. There is no default to fall back on, so
+// every client construction states one, as every config must.
+const (
+	testRegulaThreshold = 0.75
+	testIrisThreshold   = 0.75
+)
+
+// validRegula and validIris are complete method blocks, as a config has to
+// carry for a method it enables.
+func validRegula() *RegulaConfig {
+	return &RegulaConfig{
+		FaceApiUrl:         "http://regula-face-api:41101",
+		FaceApiPublicUrl:   "https://faceapi.example",
+		FaceMatchThreshold: testRegulaThreshold,
+	}
+}
+
+func validIris() *IrisConfig {
+	return &IrisConfig{
+		VerifierUrl:        "http://iris-verifier-svc:8081",
+		VerifierPublicUrl:  "wss://iris-verifier.example",
+		FaceMatchThreshold: testIrisThreshold,
+	}
+}
+
 // fakeFaceClient is a configurable test double for FaceVerificationClient.
 type fakeFaceClient struct {
-	matchResp    *FaceMatchResponse
+	matchResp    *FaceMatchVerdict
 	matchErr     error
 	livenessResp *LivenessStatus
 	livenessErr  error
@@ -21,7 +46,7 @@ type fakeFaceClient struct {
 	healthErr    error
 }
 
-func (f *fakeFaceClient) MatchFaceWithLiveness(_, _ string) (*FaceMatchResponse, error) {
+func (f *fakeFaceClient) MatchFaceWithLiveness(_, _ string) (*FaceMatchVerdict, error) {
 	return f.matchResp, f.matchErr
 }
 
@@ -94,14 +119,14 @@ func TestPerformFaceMatch_MatchError(t *testing.T) {
 func TestPerformFaceMatch_Success(t *testing.T) {
 	fake := &fakeFaceClient{
 		livenessResp: &LivenessStatus{Confirmed: true},
-		matchResp:    &FaceMatchResponse{Matched: true, Similarity: 0.9},
+		matchResp:    &FaceMatchVerdict{Matched: true, Score: 0.9},
 	}
 	state := &ServerState{faceVerificationClient: fake}
 	result, err := performFaceMatch(state, "img", "txn-1")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, result.Matched)
-	require.Equal(t, 0.9, result.Similarity)
+	require.Equal(t, 0.9, result.Score)
 	require.True(t, fake.deleteCalled)
 }
 
@@ -133,7 +158,7 @@ func TestVerifyFaceBeforeIssuance_MatchError(t *testing.T) {
 func TestVerifyFaceBeforeIssuance_NotMatched(t *testing.T) {
 	fake := &fakeFaceClient{
 		livenessResp: &LivenessStatus{Confirmed: true},
-		matchResp:    &FaceMatchResponse{Matched: false, Similarity: 0.1},
+		matchResp:    &FaceMatchVerdict{Matched: false, Score: 0.1},
 	}
 	state := &ServerState{faceVerificationClient: fake}
 	rec := httptest.NewRecorder()
@@ -166,7 +191,7 @@ func TestVerifyFaceBeforeIssuance_DisabledIgnoresProvidedTransaction(t *testing.
 func TestVerifyFaceBeforeIssuance_Passes(t *testing.T) {
 	fake := &fakeFaceClient{
 		livenessResp: &LivenessStatus{Confirmed: true},
-		matchResp:    &FaceMatchResponse{Matched: true, Similarity: 0.95},
+		matchResp:    &FaceMatchVerdict{Matched: true, Score: 0.95},
 	}
 	state := &ServerState{faceVerificationClient: fake}
 	rec := httptest.NewRecorder()

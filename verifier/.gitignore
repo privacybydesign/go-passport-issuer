@@ -1,0 +1,5 @@
+# build output of `go build` in this directory
+/iris-verifier
+
+# Vendor archive: fetched from the release by third_party/libpassportreader/fetch.sh
+/third_party/libpassportreader/linux/
