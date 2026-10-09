@@ -5,6 +5,7 @@ import (
 	mrtdDoc "go-passport-issuer/document"
 	"go-passport-issuer/models"
 	"testing"
+	"time"
 
 	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/document"
@@ -611,6 +612,45 @@ func TestToPassportData(t *testing.T) {
 		passportDataWithoutAA, err := ToPassportData(doc, false)
 		require.NoError(t, err)
 		require.Equal(t, "No", passportDataWithoutAA.ActiveAuthentication)
+	})
+
+	t.Run("takes issuing authority and date of issue from DG12", func(t *testing.T) {
+		doc := createCompleteDoc(t)
+		dg12, err := document.NewDG12(utils.HexToBytes(TestDg12Hex))
+		require.NoError(t, err)
+		doc.Mf.Lds1.Dg12 = dg12
+
+		passportData, err := ToPassportData(doc, false)
+		require.NoError(t, err)
+
+		require.Equal(t, "JAKARTA - AMBASSADE DE FRANCE EN INDONESIE", passportData.IssuingAuthority)
+		require.Equal(t, time.Date(2017, time.September, 5, 0, 0, 0, 0, time.UTC), passportData.DateOfIssue)
+	})
+
+	t.Run("leaves DG12 fields empty when DG12 is not present", func(t *testing.T) {
+		doc := createCompleteDoc(t)
+
+		passportData, err := ToPassportData(doc, false)
+		require.NoError(t, err)
+
+		require.Empty(t, passportData.IssuingAuthority)
+		require.True(t, passportData.DateOfIssue.IsZero())
+	})
+
+	t.Run("leaves date of issue empty when DG12 date is malformed", func(t *testing.T) {
+		doc := createCompleteDoc(t)
+		doc.Mf.Lds1.Dg12 = &document.DG12{
+			Details: document.DocumentDetails{
+				IssuingAuthority: "Gemeente Amsterdam",
+				DateOfIssue:      "2017xx05",
+			},
+		}
+
+		passportData, err := ToPassportData(doc, false)
+		require.NoError(t, err)
+
+		require.Equal(t, "Gemeente Amsterdam", passportData.IssuingAuthority)
+		require.True(t, passportData.DateOfIssue.IsZero())
 	})
 
 	t.Run("extracts document metadata correctly", func(t *testing.T) {

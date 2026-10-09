@@ -64,6 +64,18 @@ func (jc *DefaultJwtCreator) createJwt(attributes map[string]string) (string, er
 const DATE_FORMAT_CYMD = "2006-01-02"
 const DATE_FORMAT_YEAR = "2006"
 
+// addIssuanceDetails adds the DG12 attributes, which are optional in the
+// credential scheme and left out when the document does not carry them.
+func addIssuanceDetails(attributes map[string]string, data models.PassportData) {
+	if data.IssuingAuthority != "" {
+		attributes["issuingAuthority"] = data.IssuingAuthority
+	}
+
+	if !data.DateOfIssue.IsZero() {
+		attributes["dateOfIssue"] = data.DateOfIssue.Format(DATE_FORMAT_CYMD)
+	}
+}
+
 func isValidPassportDocumentType(docType string) error {
 	if strings.HasPrefix(docType, "P") {
 		return nil
@@ -95,6 +107,7 @@ func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (st
 		"over65":               passport.Over65,
 		"activeAuthentication": passport.ActiveAuthentication,
 	}
+	addIssuanceDetails(attributes, passport)
 
 	return jc.createJwt(attributes)
 }
@@ -131,6 +144,7 @@ func (jc *DefaultJwtCreator) CreateIdCardJwt(idCard models.PassportData) (string
 		"over65":               idCard.Over65,
 		"activeAuthentication": idCard.ActiveAuthentication,
 	}
+	addIssuanceDetails(attributes, idCard)
 
 	return jc.createJwt(attributes)
 }
