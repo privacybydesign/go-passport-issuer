@@ -73,7 +73,9 @@ func ParseDateOfIssue(dateStr string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("invalid date format: %s", dateStr)
 	}
 
-	parsedDate, err := time.Parse("20060102", dateStr)
+	layout := "20060102" // "2006" for year, "01" for month, "02" for day
+
+	parsedDate, err := time.Parse(layout, dateStr)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("error parsing date: %w", err)
 	}

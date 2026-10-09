@@ -201,6 +201,8 @@ func TestDg12AttributesOmitted(t *testing.T) {
 }
 
 func jwtAttributes(t *testing.T, token string) map[string]any {
+	t.Helper()
+
 	parsed, err := jwt.ParseWithClaims(token, jwt.MapClaims{}, jwtKeyFunc)
 	require.NoError(t, err)
 

@@ -282,7 +282,7 @@ func extractIssuanceDetails(doc document.Document) (authority string, issued tim
 
 	issued, err := mrtdDoc.ParseDateOfIssue(dg12.Details.DateOfIssue)
 	if err != nil {
-		slog.Info("Skipping DG12 date of issue due to parsing error", "error", err)
+		slog.Warn("skipping DG12 date of issue: failed to parse", "error", err)
 		return authority, time.Time{}
 	}
 
