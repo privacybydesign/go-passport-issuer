@@ -40,6 +40,20 @@ func TestParseDateOfIssue(t *testing.T) {
 	})
 }
 
+func TestDecodeText(t *testing.T) {
+	t.Run("ascii", func(t *testing.T) {
+		require.Equal(t, "UNITED STATES DEPARTMENT OF STATE", DecodeText("UNITED STATES DEPARTMENT OF STATE"))
+	})
+
+	t.Run("utf-8", func(t *testing.T) {
+		require.Equal(t, "Préfecture de Lyon", DecodeText("Préfecture de Lyon"))
+	})
+
+	t.Run("latin-1", func(t *testing.T) {
+		require.Equal(t, "Préfecture de Lyon", DecodeText("Pr\xe9fecture de Lyon"))
+	})
+}
+
 func TestParseExpiryDate(t *testing.T) {
 	t.Run("valid date parses correctly", func(t *testing.T) {
 		result, err := ParseExpiryDate("250315")

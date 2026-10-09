@@ -275,7 +275,7 @@ func extractIssuanceDetails(doc document.Document) (authority string, issued tim
 		return "", time.Time{}
 	}
 
-	authority = dg12.Details.IssuingAuthority
+	authority = mrtdDoc.DecodeText(dg12.Details.IssuingAuthority)
 	if dg12.Details.DateOfIssue == "" {
 		return authority, time.Time{}
 	}

@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"sort"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/charmap"
 )
 
 // ErrActiveAuthRequired is returned when a document chip advertises an Active
@@ -81,6 +84,19 @@ func ParseDateOfIssue(dateStr string) (time.Time, error) {
 	}
 
 	return parsedDate, nil
+}
+
+// DecodeText returns chip text as valid UTF-8. ICAO 9303 encodes DG11/DG12
+// text as UTF-8, but older chips may use ISO 8859-1, so text that is not
+// valid UTF-8 is decoded as Latin-1.
+func DecodeText(text string) string {
+	if utf8.ValidString(text) {
+		return text
+	}
+
+	// every byte sequence is valid Latin-1, so decoding cannot fail
+	decoded, _ := charmap.ISO8859_1.NewDecoder().String(text)
+	return decoded
 }
 
 func ParseDateOfBirth(dateStr string) (time.Time, error) {
