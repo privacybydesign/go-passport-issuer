@@ -56,6 +56,9 @@ It should look like this:
     },
     "id_card": {
       "full_credential": "pbdf-staging.pbdf.idcard"
+    },
+    "age": {
+      "full_credential": "pbdf-staging.pbdf.age"
     }
   },
   "storage_type": "memory",
@@ -68,6 +71,8 @@ It should look like this:
 }
 ```
 The `jwt_private_key_path` should point to a valid RSA private key in PEM format, which is used to sign JWT tokens for the IRMA server.
+
+The `age` credential is optional. Without it the issuer only issues the document credential, and `/api/start-validation` reports `"age_credential_offered": false`. The credential type must have the attributes `over1` to `over99`, so its issuer key needs at least 101 bases.
 
 ### Running the application
 
@@ -318,6 +323,16 @@ Content-Type: application/json
   "liveness_transaction_id": "a1b2c3d4-..."  // Required when face verification is enabled
 }
 ```
+
+Set `issue` to choose the credentials in the issuance session:
+
+| `issue` | Issues |
+| --- | --- |
+| `document` (default) | the document credential |
+| `document_and_age` | the document credential and the age credential |
+| `age_only` | the age credential |
+
+The age credential has the attributes `over1` to `over99`, each `Yes` or `No`, filled from the date of birth on the document. It is valid for one month, because a `No` goes out of date as the holder gets older. The other checks, including face verification, apply to every value of `issue`. `document_and_age` and `age_only` are rejected with status 400 unless `/api/start-validation` reports `"age_credential_offered": true`.
 
 **Note**: When face verification is enabled (`regula_face_api_url` set), issuance is fail-closed: the request is rejected with status 400 unless a `liveness_transaction_id` is provided, its liveness is confirmed, and the live face matches the document portrait (similarity ≥ threshold). When face verification is disabled, issuance proceeds without it.
 
