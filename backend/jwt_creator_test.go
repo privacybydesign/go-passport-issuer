@@ -158,7 +158,7 @@ func TestIdCardDocumentTypeIsRefusedAsPassport(t *testing.T) {
 
 func TestDecodeValidateJwt(t *testing.T) {
 	// 1) create the jwt
-	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", "", 25)
 	require.NoError(t, err)
 
 	req := models.PassportData{
@@ -182,7 +182,7 @@ func TestDecodeValidateJwt(t *testing.T) {
 		ActiveAuthentication: "true",
 	}
 
-	tokenString, err := jc.CreatePassportJwt(req)
+	tokenString, err := jc.CreatePassportJwt(req, models.IssueDocument)
 	require.NoError(t, err)
 	require.NotEmpty(t, tokenString)
 
@@ -240,6 +240,7 @@ func TestBatchSizeConfiguration(t *testing.T) {
 				"./test-secrets/priv.pem",
 				"passport_issuer",
 				"pbdf-staging.pbdf.passport",
+				"",
 				tc.batchSize,
 			)
 			require.NoError(t, err)
@@ -292,14 +293,15 @@ func TestBatchSizeConfiguration(t *testing.T) {
 			}
 
 			// Test that the issuanceRequest has the correct batch size
-			issuanceReq := jc.createIssuanceRequest(passportAttributes)
+			issuanceReq, err := jc.createIssuanceRequest(passportAttributes, testPassport.DateOfBirth, models.IssueDocument)
+			require.NoError(t, err)
 			require.NotNil(t, issuanceReq)
 			require.Len(t, issuanceReq.Credentials, 1, "Should have exactly one credential request")
 			require.Equal(t, tc.batchSize, issuanceReq.Credentials[0].SdJwtBatchSize,
 				"IssuanceRequest credential should have the configured batch size")
 
 			// Create JWT and verify it can be created successfully
-			jwtString, err := jc.CreatePassportJwt(testPassport)
+			jwtString, err := jc.CreatePassportJwt(testPassport, models.IssueDocument)
 			require.NoError(t, err)
 			require.NotEmpty(t, jwtString)
 
@@ -331,7 +333,7 @@ func jwtKeyFunc(token *jwt.Token) (any, error) {
 
 func TestNewIrmaJwtCreator_ErrorCases(t *testing.T) {
 	t.Run("file not found", func(t *testing.T) {
-		_, err := NewIrmaJwtCreator("./nonexistent.pem", "issuer", "credential", 25)
+		_, err := NewIrmaJwtCreator("./nonexistent.pem", "issuer", "credential", "", 25)
 		require.Error(t, err)
 	})
 
@@ -345,7 +347,7 @@ func TestNewIrmaJwtCreator_ErrorCases(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, tmpFile.Close())
 
-		_, err = NewIrmaJwtCreator(tmpFile.Name(), "issuer", "credential", 25)
+		_, err = NewIrmaJwtCreator(tmpFile.Name(), "issuer", "credential", "", 25)
 		require.Error(t, err)
 	})
 }
@@ -358,31 +360,31 @@ func loadImage(t *testing.T) string {
 }
 
 func requireValidIdCard(t *testing.T, data models.PassportData) {
-	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.idcard", 25)
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.idcard", "", 25)
 	require.NoError(t, err)
-	jwt, err := jc.CreateIdCardJwt(data)
+	jwt, err := jc.CreateIdCardJwt(data, models.IssueDocument)
 	require.NoError(t, err)
 	require.NotEmpty(t, jwt)
 }
 
 func requireInvalidIdCard(t *testing.T, data models.PassportData) {
-	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.idcard", 25)
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.idcard", "", 25)
 	require.NoError(t, err)
-	_, err = jc.CreateIdCardJwt(data)
+	_, err = jc.CreateIdCardJwt(data, models.IssueDocument)
 	require.Error(t, err)
 }
 
 func requireValidPassport(t *testing.T, data models.PassportData) {
-	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", "", 25)
 	require.NoError(t, err)
-	jwt, err := jc.CreatePassportJwt(data)
+	jwt, err := jc.CreatePassportJwt(data, models.IssueDocument)
 	require.NoError(t, err)
 	require.NotEmpty(t, jwt)
 }
 
 func requireInvalidPassport(t *testing.T, data models.PassportData) {
-	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", 25)
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.passport", "", 25)
 	require.NoError(t, err)
-	_, err = jc.CreatePassportJwt(data)
+	_, err = jc.CreatePassportJwt(data, models.IssueDocument)
 	require.Error(t, err)
 }

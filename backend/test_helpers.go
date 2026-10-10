@@ -160,15 +160,15 @@ func readBinToHex(t *testing.T, path string) string {
 
 type fakeJwtCreator struct{ jwt string }
 
-func (f fakeJwtCreator) CreatePassportJwt(_ models.PassportData) (string, error) {
+func (f fakeJwtCreator) CreatePassportJwt(_ models.PassportData, _ models.IssuanceScope) (string, error) {
 	return f.jwt, nil
 }
 
-func (f fakeJwtCreator) CreateIdCardJwt(_ models.PassportData) (string, error) {
+func (f fakeJwtCreator) CreateIdCardJwt(_ models.PassportData, _ models.IssuanceScope) (string, error) {
 	return f.jwt, nil
 }
 
-func (f fakeJwtCreator) CreateEDLJwt(_ models.EDLData) (string, error) {
+func (f fakeJwtCreator) CreateEDLJwt(_ models.EDLData, _ models.IssuanceScope) (string, error) {
 	return f.jwt, nil
 }
 
