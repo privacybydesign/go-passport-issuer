@@ -44,7 +44,6 @@ type EDLData struct {
 	Categories []EDLCategory `json:"categories,omitempty"`
 }
 
-// EDLCategory is one driving licence category printed on the licence.
 type EDLCategory struct {
 	Code string `json:"code"`
 	// Zero when the chip leaves the issue date empty.

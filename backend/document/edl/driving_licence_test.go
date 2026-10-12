@@ -198,7 +198,7 @@ func TestPassiveAuthenticationEDLWithBadSOD(t *testing.T) {
 	require.ErrorContains(t, err, "SOD signature verification failed")
 }
 
-func TestToDrivingLicenceDataMapsCategories(t *testing.T) {
+func TestEDLDataCategories(t *testing.T) {
 	dg6, err := edl.ParseEDLDG6(decodeTestCase(t, DG_6_TEST))
 	require.NoError(t, err)
 

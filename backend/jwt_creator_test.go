@@ -461,7 +461,7 @@ func TestEdlCategoryAttributes(t *testing.T) {
 	})
 }
 
-func TestCreateEDLJwtIncludesCategories(t *testing.T) {
+func TestCreateEDLJwtCategories(t *testing.T) {
 	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.drivinglicence", 25)
 	require.NoError(t, err)
 
