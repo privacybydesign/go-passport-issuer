@@ -162,6 +162,8 @@ func (jc *DefaultJwtCreator) CreateEDLJwt(edl models.EDLData) (string, error) {
 	return jc.createJwt(attributes)
 }
 
+const EDL_CATEGORY_PREFIX = "category"
+
 // EDL_CATEGORY_CODES are the driving licence categories the drivinglicence
 // credential type has attributes for, in the order of the licence card: the
 // EU model's rows (Directive 2006/126/EC, Annex I) plus the Dutch T. B1 is
@@ -170,15 +172,12 @@ var EDL_CATEGORY_CODES = []string{
 	"AM", "A1", "A2", "A", "B1", "B", "C1", "C", "D1", "D", "BE", "C1E", "CE", "D1E", "DE", "T",
 }
 
-// edlCategoryAttributes returns the category attributes for a driving licence.
-// All of them are always issued, empty ("") when there is no value: an
-// attribute that is not issued does not exist in the SD-JWT, so a verifier
-// asking for it would find no matching credential and send the holder off to
-// obtain a new one. When the chip yielded categories, every categoryX is
-// yes/no and the dates are set for held categories (empty when the chip left
-// one out). A category the parser had to skip is therefore issued as "no".
-// When the chip yielded none, the flags stay empty too: unknown, never a
-// false "no". Codes outside EDL_CATEGORY_CODES are dropped.
+// edlCategoryAttributes returns every category attribute, "" when there is
+// no value. An attribute that is not issued is absent from the SD-JWT, and a
+// verifier asking for it would find no matching credential. Flags are yes/no
+// when the chip yielded categories (a category the parser skipped reads as
+// "no") and "" when it yielded none: unknown, not a false "no". Codes
+// outside EDL_CATEGORY_CODES are dropped.
 func edlCategoryAttributes(categories []models.EDLCategory) map[string]string {
 	held := map[string]models.EDLCategory{}
 	for _, c := range categories {
@@ -209,9 +208,9 @@ func edlCategoryAttributes(categories []models.EDLCategory) map[string]string {
 				flag = "yes"
 			}
 		}
-		attributes["category"+code] = flag
-		attributes["category"+code+"DateOfIssue"] = date(c.DateOfIssue)
-		attributes["category"+code+"DateOfExpiry"] = date(c.DateOfExpiry)
+		attributes[EDL_CATEGORY_PREFIX+code] = flag
+		attributes[EDL_CATEGORY_PREFIX+code+"DateOfIssue"] = date(c.DateOfIssue)
+		attributes[EDL_CATEGORY_PREFIX+code+"DateOfExpiry"] = date(c.DateOfExpiry)
 	}
 	return attributes
 }
