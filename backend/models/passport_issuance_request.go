@@ -40,4 +40,13 @@ type EDLData struct {
 	Over21               string    `json:"over21"`
 	Over65               string    `json:"over65"`
 	ActiveAuthentication string    `json:"active_authentication"`
+	// Categories as read from the chip; empty when the chip held none.
+	Categories []EDLCategory `json:"categories,omitempty"`
+}
+
+type EDLCategory struct {
+	Code string `json:"code"`
+	// Zero when the chip leaves the issue date empty.
+	DateOfIssue  time.Time `json:"date_of_issue"`
+	DateOfExpiry time.Time `json:"date_of_expiry"`
 }

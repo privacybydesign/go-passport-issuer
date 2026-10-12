@@ -4,7 +4,10 @@ import (
 	"crypto/rsa"
 	"fmt"
 	"go-passport-issuer/models"
+	"log/slog"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -154,8 +157,62 @@ func (jc *DefaultJwtCreator) CreateEDLJwt(edl models.EDLData) (string, error) {
 		"over65":               edl.Over65,
 		"activeAuthentication": edl.ActiveAuthentication,
 	}
+	maps.Copy(attributes, edlCategoryAttributes(edl.Categories))
 
 	return jc.createJwt(attributes)
+}
+
+const EDL_CATEGORY_PREFIX = "category"
+
+// EDL_CATEGORY_CODES are the driving licence categories the drivinglicence
+// credential type has attributes for, in the order of the licence card: the
+// EU model's rows (Directive 2006/126/EC, Annex I) plus the Dutch T. B1 is
+// printed on every EU licence but not issued in the Netherlands (RDW).
+var EDL_CATEGORY_CODES = []string{
+	"AM", "A1", "A2", "A", "B1", "B", "C1", "C", "D1", "D", "BE", "C1E", "CE", "D1E", "DE", "T",
+}
+
+// edlCategoryAttributes returns every category attribute, "" when there is
+// no value. An attribute that is not issued is absent from the SD-JWT, and a
+// verifier asking for it would find no matching credential. Flags are yes/no
+// when the chip yielded categories (a category the parser skipped reads as
+// "no") and "" when it yielded none: unknown, not a false "no". Codes
+// outside EDL_CATEGORY_CODES are dropped.
+func edlCategoryAttributes(categories []models.EDLCategory) map[string]string {
+	held := map[string]models.EDLCategory{}
+	for _, c := range categories {
+		code := strings.ToUpper(strings.TrimSpace(c.Code))
+		if !slices.Contains(EDL_CATEGORY_CODES, code) {
+			slog.Warn("dropping unknown driving licence category", "category", c.Code)
+			continue
+		}
+		if _, dup := held[code]; !dup {
+			held[code] = c
+		}
+	}
+
+	date := func(t time.Time) string {
+		if t.IsZero() {
+			return ""
+		}
+		return t.Format(DATE_FORMAT_CYMD)
+	}
+
+	attributes := map[string]string{}
+	for _, code := range EDL_CATEGORY_CODES {
+		c, ok := held[code]
+		flag := ""
+		if len(categories) > 0 {
+			flag = "no"
+			if ok {
+				flag = "yes"
+			}
+		}
+		attributes[EDL_CATEGORY_PREFIX+code] = flag
+		attributes[EDL_CATEGORY_PREFIX+code+"DateOfIssue"] = date(c.DateOfIssue)
+		attributes[EDL_CATEGORY_PREFIX+code+"DateOfExpiry"] = date(c.DateOfExpiry)
+	}
+	return attributes
 }
 
 // createIssuanceRequest creates an IRMA issuance request with the passport data
