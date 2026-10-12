@@ -386,3 +386,99 @@ func requireInvalidPassport(t *testing.T, data models.PassportData) {
 	_, err = jc.CreatePassportJwt(data)
 	require.Error(t, err)
 }
+
+func TestEdlCategoryAttributes(t *testing.T) {
+	issued := time.Date(2015, time.March, 1, 0, 0, 0, 0, time.UTC)
+	expires := time.Date(2030, time.March, 1, 0, 0, 0, 0, time.UTC)
+
+	t.Run("no categories on the chip issues none", func(t *testing.T) {
+		require.Empty(t, edlCategoryAttributes(nil))
+	})
+
+	t.Run("held categories get yes and dates, the rest no", func(t *testing.T) {
+		attrs := edlCategoryAttributes([]models.EDLCategory{
+			{Code: "B", DateOfIssue: issued, DateOfExpiry: expires},
+			{Code: "AM", DateOfExpiry: expires},
+		})
+
+		require.Equal(t, "yes", attrs["categoryB"])
+		require.Equal(t, "2015-03-01", attrs["categoryBDateOfIssue"])
+		require.Equal(t, "2030-03-01", attrs["categoryBDateOfExpiry"])
+		require.Equal(t, "yes", attrs["categoryAM"])
+		require.NotContains(t, attrs, "categoryAMDateOfIssue", "empty issue date is not issued")
+		require.Equal(t, "2030-03-01", attrs["categoryAMDateOfExpiry"])
+		for _, code := range EDL_CATEGORY_CODES {
+			require.Contains(t, attrs, "category"+code)
+			if code != "B" && code != "AM" {
+				require.Equal(t, "no", attrs["category"+code])
+				require.NotContains(t, attrs, "category"+code+"DateOfIssue")
+				require.NotContains(t, attrs, "category"+code+"DateOfExpiry")
+			}
+		}
+		require.Len(t, attrs, len(EDL_CATEGORY_CODES)+3)
+	})
+
+	t.Run("unknown codes are dropped", func(t *testing.T) {
+		attrs := edlCategoryAttributes([]models.EDLCategory{
+			{Code: "X9", DateOfIssue: issued, DateOfExpiry: expires},
+			{Code: "C", DateOfIssue: issued, DateOfExpiry: expires},
+		})
+		require.NotContains(t, attrs, "categoryX9")
+		require.Equal(t, "yes", attrs["categoryC"])
+		require.Len(t, attrs, len(EDL_CATEGORY_CODES)+2)
+	})
+
+	t.Run("only unknown codes still issues every flag as no", func(t *testing.T) {
+		attrs := edlCategoryAttributes([]models.EDLCategory{{Code: "X9", DateOfExpiry: expires}})
+		require.Len(t, attrs, len(EDL_CATEGORY_CODES))
+		for _, v := range attrs {
+			require.Equal(t, "no", v)
+		}
+	})
+
+	t.Run("B1 is a normal category", func(t *testing.T) {
+		attrs := edlCategoryAttributes([]models.EDLCategory{{Code: "B1", DateOfExpiry: expires}})
+		require.Equal(t, "yes", attrs["categoryB1"])
+		require.Equal(t, "2030-03-01", attrs["categoryB1DateOfExpiry"])
+		require.Equal(t, "no", attrs["categoryB"])
+	})
+
+	t.Run("codes are normalised and the first duplicate wins", func(t *testing.T) {
+		later := time.Date(2031, time.January, 1, 0, 0, 0, 0, time.UTC)
+		attrs := edlCategoryAttributes([]models.EDLCategory{
+			{Code: " be ", DateOfExpiry: expires},
+			{Code: "BE", DateOfExpiry: later},
+		})
+		require.Equal(t, "yes", attrs["categoryBE"])
+		require.Equal(t, "2030-03-01", attrs["categoryBEDateOfExpiry"])
+	})
+}
+
+func TestCreateEDLJwtIncludesCategories(t *testing.T) {
+	jc, err := NewIrmaJwtCreator("./test-secrets/priv.pem", "passport_issuer", "pbdf-staging.pbdf.drivinglicence", 25)
+	require.NoError(t, err)
+
+	tokenString, err := jc.CreateEDLJwt(models.EDLData{
+		DocumentNumber: "D1234567",
+		DateOfBirth:    time.Date(1990, time.June, 15, 0, 0, 0, 0, time.UTC),
+		DateOfExpiry:   time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
+		Categories: []models.EDLCategory{{
+			Code:         "B",
+			DateOfIssue:  time.Date(2015, time.March, 1, 0, 0, 0, 0, time.UTC),
+			DateOfExpiry: time.Date(2030, time.March, 1, 0, 0, 0, 0, time.UTC),
+		}},
+	})
+	require.NoError(t, err)
+
+	parsed, err := jwt.ParseWithClaims(tokenString, jwt.MapClaims{}, jwtKeyFunc)
+	require.NoError(t, err)
+	claims := parsed.Claims.(jwt.MapClaims)
+	credentials := claims["iprequest"].(map[string]any)["request"].(map[string]any)["credentials"].([]any)
+	attrs := credentials[0].(map[string]any)["attributes"].(map[string]any)
+
+	require.Equal(t, "D1234567", attrs["documentNumber"])
+	require.Equal(t, "yes", attrs["categoryB"])
+	require.Equal(t, "2015-03-01", attrs["categoryBDateOfIssue"])
+	require.Equal(t, "2030-03-01", attrs["categoryBDateOfExpiry"])
+	require.Equal(t, "no", attrs["categoryC"])
+}

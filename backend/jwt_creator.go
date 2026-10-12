@@ -4,7 +4,10 @@ import (
 	"crypto/rsa"
 	"fmt"
 	"go-passport-issuer/models"
+	"log/slog"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -154,8 +157,57 @@ func (jc *DefaultJwtCreator) CreateEDLJwt(edl models.EDLData) (string, error) {
 		"over65":               edl.Over65,
 		"activeAuthentication": edl.ActiveAuthentication,
 	}
+	maps.Copy(attributes, edlCategoryAttributes(edl.Categories))
 
 	return jc.createJwt(attributes)
+}
+
+// EDL_CATEGORY_CODES are the driving licence categories the drivinglicence
+// credential type has attributes for, in the order of the licence card: the
+// EU model's rows (Directive 2006/126/EC, Annex I) plus the Dutch T. B1 is
+// printed on every EU licence but not issued in the Netherlands (RDW).
+var EDL_CATEGORY_CODES = []string{
+	"AM", "A1", "A2", "A", "B1", "B", "C1", "C", "D1", "D", "BE", "C1E", "CE", "D1E", "DE", "T",
+}
+
+// edlCategoryAttributes returns the category attributes for a driving licence.
+// The held flags are all-or-nothing: when the chip yielded no categories none
+// are issued, otherwise every category gets categoryX = yes/no, plus its dates
+// when held. A category the parser had to skip is therefore issued as "no"
+// (docs/adr/0001). Codes outside EDL_CATEGORY_CODES are dropped.
+func edlCategoryAttributes(categories []models.EDLCategory) map[string]string {
+	attributes := map[string]string{}
+	if len(categories) == 0 {
+		return attributes
+	}
+
+	held := map[string]models.EDLCategory{}
+	for _, c := range categories {
+		code := strings.ToUpper(strings.TrimSpace(c.Code))
+		if !slices.Contains(EDL_CATEGORY_CODES, code) {
+			slog.Warn("dropping unknown driving licence category", "category", c.Code)
+			continue
+		}
+		if _, dup := held[code]; !dup {
+			held[code] = c
+		}
+	}
+
+	for _, code := range EDL_CATEGORY_CODES {
+		c, ok := held[code]
+		if !ok {
+			attributes["category"+code] = "no"
+			continue
+		}
+		attributes["category"+code] = "yes"
+		if !c.DateOfIssue.IsZero() {
+			attributes["category"+code+"DateOfIssue"] = c.DateOfIssue.Format(DATE_FORMAT_CYMD)
+		}
+		if !c.DateOfExpiry.IsZero() {
+			attributes["category"+code+"DateOfExpiry"] = c.DateOfExpiry.Format(DATE_FORMAT_CYMD)
+		}
+	}
+	return attributes
 }
 
 // createIssuanceRequest creates an IRMA issuance request with the passport data

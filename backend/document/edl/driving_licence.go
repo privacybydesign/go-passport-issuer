@@ -222,6 +222,14 @@ func ToDrivingLicenceData(doc DrivingLicenceDocument, activeAuth bool) (request 
 		ActiveAuthentication: mrtdDoc.BoolToYesNo(activeAuth),
 	}
 
+	for _, c := range doc.Dg1.Categories {
+		request.Categories = append(request.Categories, models.EDLCategory{
+			Code:         c.Category,
+			DateOfIssue:  c.DateOfIssue,
+			DateOfExpiry: c.DateOfExpiry,
+		})
+	}
+
 	if len(pngs) > 0 {
 		request.Photo = pngs[0]
 	}
