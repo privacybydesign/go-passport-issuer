@@ -170,11 +170,13 @@ var EDL_CATEGORY_CODES = []string{
 	"AM", "A1", "A2", "A", "B1", "B", "C1", "C", "D1", "D", "BE", "C1E", "CE", "D1E", "DE", "T",
 }
 
+const EDL_CATEGORY_PREFIX = "category"
+
 // edlCategoryAttributes returns the category attributes for a driving licence.
 // The held flags are all-or-nothing: when the chip yielded no categories none
 // are issued, otherwise every category gets categoryX = yes/no, plus its dates
-// when held. A category the parser had to skip is therefore issued as "no"
-// (docs/adr/0001). Codes outside EDL_CATEGORY_CODES are dropped.
+// when held. A category the parser had to skip is therefore issued as "no".
+// Codes outside EDL_CATEGORY_CODES are dropped.
 func edlCategoryAttributes(categories []models.EDLCategory) map[string]string {
 	attributes := map[string]string{}
 	if len(categories) == 0 {
@@ -196,17 +198,18 @@ func edlCategoryAttributes(categories []models.EDLCategory) map[string]string {
 	for _, code := range EDL_CATEGORY_CODES {
 		c, ok := held[code]
 		if !ok {
-			attributes["category"+code] = "no"
+			attributes[EDL_CATEGORY_PREFIX+code] = "no"
 			continue
 		}
-		attributes["category"+code] = "yes"
+		attributes[EDL_CATEGORY_PREFIX+code] = "yes"
 		if !c.DateOfIssue.IsZero() {
-			attributes["category"+code+"DateOfIssue"] = c.DateOfIssue.Format(DATE_FORMAT_CYMD)
+			attributes[EDL_CATEGORY_PREFIX+code+"DateOfIssue"] = c.DateOfIssue.Format(DATE_FORMAT_CYMD)
 		}
 		if !c.DateOfExpiry.IsZero() {
-			attributes["category"+code+"DateOfExpiry"] = c.DateOfExpiry.Format(DATE_FORMAT_CYMD)
+			attributes[EDL_CATEGORY_PREFIX+code+"DateOfExpiry"] = c.DateOfExpiry.Format(DATE_FORMAT_CYMD)
 		}
 	}
+
 	return attributes
 }
 
