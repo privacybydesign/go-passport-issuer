@@ -390,32 +390,39 @@ func requireInvalidPassport(t *testing.T, data models.PassportData) {
 func TestEdlCategoryAttributes(t *testing.T) {
 	issued := time.Date(2015, time.March, 1, 0, 0, 0, 0, time.UTC)
 	expires := time.Date(2030, time.March, 1, 0, 0, 0, 0, time.UTC)
+	all := 3 * len(EDL_CATEGORY_CODES)
 
-	t.Run("no categories on the chip issues none", func(t *testing.T) {
-		require.Empty(t, edlCategoryAttributes(nil))
+	t.Run("no categories on the chip: every attribute, all empty", func(t *testing.T) {
+		attrs := edlCategoryAttributes(nil)
+		require.Len(t, attrs, all)
+		for k, v := range attrs {
+			require.Empty(t, v, k)
+		}
 	})
 
-	t.Run("held categories get yes and dates, the rest no", func(t *testing.T) {
+	t.Run("held categories get yes and dates, the rest no with empty dates", func(t *testing.T) {
 		attrs := edlCategoryAttributes([]models.EDLCategory{
 			{Code: "B", DateOfIssue: issued, DateOfExpiry: expires},
 			{Code: "AM", DateOfExpiry: expires},
 		})
 
+		require.Len(t, attrs, all)
 		require.Equal(t, "yes", attrs["categoryB"])
 		require.Equal(t, "2015-03-01", attrs["categoryBDateOfIssue"])
 		require.Equal(t, "2030-03-01", attrs["categoryBDateOfExpiry"])
 		require.Equal(t, "yes", attrs["categoryAM"])
-		require.NotContains(t, attrs, "categoryAMDateOfIssue", "empty issue date is not issued")
+		require.Equal(t, "", attrs["categoryAMDateOfIssue"], "empty issue date is issued empty")
 		require.Equal(t, "2030-03-01", attrs["categoryAMDateOfExpiry"])
 		for _, code := range EDL_CATEGORY_CODES {
-			require.Contains(t, attrs, "category"+code)
-			if code != "B" && code != "AM" {
-				require.Equal(t, "no", attrs["category"+code])
-				require.NotContains(t, attrs, "category"+code+"DateOfIssue")
-				require.NotContains(t, attrs, "category"+code+"DateOfExpiry")
+			if code == "B" || code == "AM" {
+				continue
 			}
+			require.Equal(t, "no", attrs["category"+code])
+			require.Contains(t, attrs, "category"+code+"DateOfIssue")
+			require.Equal(t, "", attrs["category"+code+"DateOfIssue"])
+			require.Contains(t, attrs, "category"+code+"DateOfExpiry")
+			require.Equal(t, "", attrs["category"+code+"DateOfExpiry"])
 		}
-		require.Len(t, attrs, len(EDL_CATEGORY_CODES)+3)
 	})
 
 	t.Run("unknown codes are dropped", func(t *testing.T) {
@@ -425,14 +432,14 @@ func TestEdlCategoryAttributes(t *testing.T) {
 		})
 		require.NotContains(t, attrs, "categoryX9")
 		require.Equal(t, "yes", attrs["categoryC"])
-		require.Len(t, attrs, len(EDL_CATEGORY_CODES)+2)
+		require.Len(t, attrs, all)
 	})
 
 	t.Run("only unknown codes still issues every flag as no", func(t *testing.T) {
 		attrs := edlCategoryAttributes([]models.EDLCategory{{Code: "X9", DateOfExpiry: expires}})
-		require.Len(t, attrs, len(EDL_CATEGORY_CODES))
-		for _, v := range attrs {
-			require.Equal(t, "no", v)
+		require.Len(t, attrs, all)
+		for _, code := range EDL_CATEGORY_CODES {
+			require.Equal(t, "no", attrs["category"+code])
 		}
 	})
 
@@ -481,4 +488,5 @@ func TestCreateEDLJwtIncludesCategories(t *testing.T) {
 	require.Equal(t, "2015-03-01", attrs["categoryBDateOfIssue"])
 	require.Equal(t, "2030-03-01", attrs["categoryBDateOfExpiry"])
 	require.Equal(t, "no", attrs["categoryC"])
+	require.Equal(t, "", attrs["categoryCDateOfExpiry"], "issued, empty")
 }

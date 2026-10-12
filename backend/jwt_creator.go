@@ -171,16 +171,15 @@ var EDL_CATEGORY_CODES = []string{
 }
 
 // edlCategoryAttributes returns the category attributes for a driving licence.
-// The held flags are all-or-nothing: when the chip yielded no categories none
-// are issued, otherwise every category gets categoryX = yes/no, plus its dates
-// when held. A category the parser had to skip is therefore issued as "no"
-// (docs/adr/0001). Codes outside EDL_CATEGORY_CODES are dropped.
+// All of them are always issued, empty ("") when there is no value: an
+// attribute that is not issued does not exist in the SD-JWT, so a verifier
+// asking for it would find no matching credential and send the holder off to
+// obtain a new one. When the chip yielded categories, every categoryX is
+// yes/no and the dates are set for held categories (empty when the chip left
+// one out). A category the parser had to skip is therefore issued as "no"
+// (docs/adr/0001). When the chip yielded none, the flags stay empty too:
+// unknown, never a false "no". Codes outside EDL_CATEGORY_CODES are dropped.
 func edlCategoryAttributes(categories []models.EDLCategory) map[string]string {
-	attributes := map[string]string{}
-	if len(categories) == 0 {
-		return attributes
-	}
-
 	held := map[string]models.EDLCategory{}
 	for _, c := range categories {
 		code := strings.ToUpper(strings.TrimSpace(c.Code))
@@ -193,19 +192,26 @@ func edlCategoryAttributes(categories []models.EDLCategory) map[string]string {
 		}
 	}
 
+	date := func(t time.Time) string {
+		if t.IsZero() {
+			return ""
+		}
+		return t.Format(DATE_FORMAT_CYMD)
+	}
+
+	attributes := map[string]string{}
 	for _, code := range EDL_CATEGORY_CODES {
 		c, ok := held[code]
-		if !ok {
-			attributes["category"+code] = "no"
-			continue
+		flag := ""
+		if len(categories) > 0 {
+			flag = "no"
+			if ok {
+				flag = "yes"
+			}
 		}
-		attributes["category"+code] = "yes"
-		if !c.DateOfIssue.IsZero() {
-			attributes["category"+code+"DateOfIssue"] = c.DateOfIssue.Format(DATE_FORMAT_CYMD)
-		}
-		if !c.DateOfExpiry.IsZero() {
-			attributes["category"+code+"DateOfExpiry"] = c.DateOfExpiry.Format(DATE_FORMAT_CYMD)
-		}
+		attributes["category"+code] = flag
+		attributes["category"+code+"DateOfIssue"] = date(c.DateOfIssue)
+		attributes["category"+code+"DateOfExpiry"] = date(c.DateOfExpiry)
 	}
 	return attributes
 }
