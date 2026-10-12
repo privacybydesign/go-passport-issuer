@@ -176,9 +176,9 @@ var EDL_CATEGORY_CODES = []string{
 // asking for it would find no matching credential and send the holder off to
 // obtain a new one. When the chip yielded categories, every categoryX is
 // yes/no and the dates are set for held categories (empty when the chip left
-// one out). A category the parser had to skip is therefore issued as "no"
-// (docs/adr/0001). When the chip yielded none, the flags stay empty too:
-// unknown, never a false "no". Codes outside EDL_CATEGORY_CODES are dropped.
+// one out). A category the parser had to skip is therefore issued as "no".
+// When the chip yielded none, the flags stay empty too: unknown, never a
+// false "no". Codes outside EDL_CATEGORY_CODES are dropped.
 func edlCategoryAttributes(categories []models.EDLCategory) map[string]string {
 	held := map[string]models.EDLCategory{}
 	for _, c := range categories {
