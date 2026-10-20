@@ -37,6 +37,7 @@ jobs:
           tags: |
             type=semver,pattern={{major}}.{{minor}}.{{patch}}
             type=edge,enable=${{ steps.is-head-main.outcome == 'success' }}
+            type=raw,value=latest,enable=${{ steps.is-head-main.outcome == 'success' }}
             type=ref,event=branch,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Set up Docker Buildx
