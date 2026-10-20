@@ -49,6 +49,45 @@ type ServerConfig struct {
 	// Serve the API documentation on /api/docs and /api/docs/swagger.yaml.
 	// Disabled unless explicitly enabled, so the docs stay off in production.
 	EnableApiDocs bool `json:"enable_api_docs,omitempty"`
+	// HTTP server timeouts in seconds. Zero selects the default; a negative
+	// value disables that timeout entirely (net/http semantics).
+	//
+	// WriteTimeout is an *absolute* deadline covering the whole request —
+	// handler execution plus the response write — not just the write call.
+	// The issuance handlers call the Regula Face API sequentially (liveness
+	// status, face match, transaction delete), each bounded by that client's
+	// own 30s timeout, so a short server WriteTimeout can elapse mid-handler
+	// and abort the final response write with an "i/o timeout" even though the
+	// request had already succeeded server-side. The default is therefore sized
+	// well above the worst-case handler duration.
+	ReadTimeoutSeconds  int `json:"read_timeout_seconds,omitempty"`
+	WriteTimeoutSeconds int `json:"write_timeout_seconds,omitempty"`
+	IdleTimeoutSeconds  int `json:"idle_timeout_seconds,omitempty"`
+}
+
+// Default HTTP server timeouts. WriteTimeout must comfortably exceed the slowest
+// handler; face verification chains multiple Regula calls (30s client timeout
+// each), so 120s leaves headroom without disabling slow-client protection.
+const (
+	defaultReadTimeoutSeconds  = 30
+	defaultWriteTimeoutSeconds = 120
+	defaultIdleTimeoutSeconds  = 120
+	// readHeaderTimeout bounds only the (small) request headers, so it can stay
+	// tight regardless of handler duration; it protects against slowloris.
+	readHeaderTimeout = 15 * time.Second
+)
+
+// serverTimeout resolves a configured timeout (in seconds) to a duration: zero
+// selects the default, a negative value disables the timeout (returns 0).
+func serverTimeout(configuredSeconds, defaultSeconds int) time.Duration {
+	switch {
+	case configuredSeconds < 0:
+		return 0 // explicitly disabled
+	case configuredSeconds == 0:
+		return time.Duration(defaultSeconds) * time.Second
+	default:
+		return time.Duration(configuredSeconds) * time.Second
+	}
 }
 
 type ServerState struct {
@@ -199,10 +238,20 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	srv := &http.Server{
 		Handler: router,
 		Addr:    addr,
-		// Good practice: enforce timeouts for servers you create!
-		WriteTimeout: 15 * time.Second,
-		ReadTimeout:  15 * time.Second,
+		// Enforce timeouts for servers you create. ReadHeaderTimeout stays tight
+		// (headers are small) while WriteTimeout is generous enough to cover the
+		// slowest handler — see ServerConfig timeout fields for why.
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       serverTimeout(config.ReadTimeoutSeconds, defaultReadTimeoutSeconds),
+		WriteTimeout:      serverTimeout(config.WriteTimeoutSeconds, defaultWriteTimeoutSeconds),
+		IdleTimeout:       serverTimeout(config.IdleTimeoutSeconds, defaultIdleTimeoutSeconds),
 	}
+
+	slog.Info("Server timeouts configured",
+		"read_header", readHeaderTimeout,
+		"read", srv.ReadTimeout,
+		"write", srv.WriteTimeout,
+		"idle", srv.IdleTimeout)
 
 	slog.Info("Server created successfully", "address", addr)
 	return &Server{
