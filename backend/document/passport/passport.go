@@ -266,6 +266,29 @@ func normalizeSex(sex string) string {
 	}
 }
 
+// extractIssuanceDetails returns the issuing authority and date of issue from
+// DG12. DG12 is optional in ICAO 9303, so absent or malformed values are left
+// empty instead of failing issuance.
+func extractIssuanceDetails(doc document.Document) (authority string, issued time.Time) {
+	dg12 := doc.Mf.Lds1.Dg12
+	if dg12 == nil {
+		return "", time.Time{}
+	}
+
+	authority = mrtdDoc.DecodeText(dg12.Details.IssuingAuthority)
+	if dg12.Details.DateOfIssue == "" {
+		return authority, time.Time{}
+	}
+
+	issued, err := mrtdDoc.ParseDateOfIssue(dg12.Details.DateOfIssue)
+	if err != nil {
+		slog.Warn("skipping DG12 date of issue: failed to parse", "error", err)
+		return authority, time.Time{}
+	}
+
+	return authority, issued
+}
+
 func ToPassportData(doc document.Document, activeAuth bool) (request models.PassportData, err error) {
 	slog.Debug("Converting document to passport issuance request")
 
@@ -294,6 +317,8 @@ func ToPassportData(doc document.Document, activeAuth bool) (request models.Pass
 	// Normalize sex value to handle non-binary (X) and unspecified (<)
 	gender := normalizeSex(doc.Mf.Lds1.Dg1.Mrz.Sex)
 
+	issuingAuthority, dateOfIssue := extractIssuanceDetails(doc)
+
 	request = models.PassportData{
 		DocumentNumber:       doc.Mf.Lds1.Dg1.Mrz.DocumentNumber,
 		DocumentType:         doc.Mf.Lds1.Dg1.Mrz.DocumentCode,
@@ -304,6 +329,8 @@ func ToPassportData(doc document.Document, activeAuth bool) (request models.Pass
 		DateOfBirth:          dob,
 		YearOfBirth:          dob.Format("2006"),
 		DateOfExpiry:         doe,
+		IssuingAuthority:     issuingAuthority,
+		DateOfIssue:          dateOfIssue,
 		Gender:               gender,
 		Country:              doc.Mf.Lds1.Dg1.Mrz.IssuingState,
 		Over12:               mrtdDoc.BoolToYesNo(dob.Before(time.Now().AddDate(-12, 0, 0))),
