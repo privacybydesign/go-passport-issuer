@@ -69,6 +69,9 @@ type ServerState struct {
 	// to the app by handleStartValidatePassport. Empty only when face
 	// verification is disabled for this environment.
 	regulaFaceApiPublicUrl string
+	// ageCredentialOffered is true when the age credential is configured, so
+	// requests may ask for it and /api/start-validation announces it.
+	ageCredentialOffered bool
 }
 
 type SpaHandler struct {
@@ -372,7 +375,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 
 // handleIssueEDL verifies and issues driving licence credential
 // @Summary Verify and issue driving licence credential
-// @Description Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG13) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.
+// @Description Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG13) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400. Set issue to document_and_age to add the age credential (over1 to over99) to the session, or to age_only to issue only the age credential; both are rejected with 400 unless /start-validation reports age_credential_offered.
 // @Tags Driving Licence
 // @Accept json
 // @Produce json
@@ -398,6 +401,10 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if !requireIssuanceScope(state, w, request.Issue) {
+		return
+	}
+
 	slog.Debug("Converting driving license data for issuance", "session_id", request.SessionId)
 	issuanceRequest, err := state.converter.ToDrivingLicenceData(*doc, activeRes)
 	if err != nil {
@@ -420,7 +427,7 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 	}
 
 	slog.Debug("Creating driving license JWT", "session_id", request.SessionId)
-	jwt, err := state.jwtCreators.DrivingLicence.CreateEDLJwt(issuanceRequest)
+	jwt, err := state.jwtCreators.DrivingLicence.CreateEDLJwt(issuanceRequest, request.Issue)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ERR_JWT_CREATION, ERR_JWT_CREATION, err)
 		return
@@ -516,7 +523,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 
 // handleIssueIdCard verifies and issues ID card credential
 // @Summary Verify and issue ID card credential
-// @Description Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.
+// @Description Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400. Set issue to document_and_age to add the age credential (over1 to over99) to the session, or to age_only to issue only the age credential; both are rejected with 400 unless /start-validation reports age_credential_offered.
 // @Tags ID Card
 // @Accept json
 // @Produce json
@@ -542,6 +549,10 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if !requireIssuanceScope(state, w, request.Issue) {
+		return
+	}
+
 	slog.Debug("Converting passport data for ID card issuance", "session_id", request.SessionId)
 	issuanceRequest, err := state.converter.ToPassportData(doc, activeAuth)
 
@@ -561,7 +572,7 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 	}
 
 	slog.Debug("Creating ID card JWT", "session_id", request.SessionId)
-	jwt, err := state.jwtCreators.IdCard.CreateIdCardJwt(issuanceRequest)
+	jwt, err := state.jwtCreators.IdCard.CreateIdCardJwt(issuanceRequest, request.Issue)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ERR_JWT_CREATION, ERR_JWT_CREATION, err)
 		return
@@ -576,7 +587,7 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 
 // handleIssuePassport verifies and issues passport credential
 // @Summary Verify and issue passport credential
-// @Description Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.
+// @Description Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400. Set issue to document_and_age to add the age credential (over1 to over99) to the session, or to age_only to issue only the age credential; both are rejected with 400 unless /start-validation reports age_credential_offered.
 // @Tags Passport
 // @Accept json
 // @Produce json
@@ -602,6 +613,10 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	if !requireIssuanceScope(state, w, request.Issue) {
+		return
+	}
+
 	slog.Debug("Converting passport data for issuance", "session_id", request.SessionId)
 	issuanceRequest, err := state.converter.ToPassportData(doc, activeAuth)
 
@@ -621,7 +636,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	}
 
 	slog.Debug("Creating passport JWT", "session_id", request.SessionId)
-	jwt, err := state.jwtCreators.Passport.CreatePassportJwt(issuanceRequest)
+	jwt, err := state.jwtCreators.Passport.CreatePassportJwt(issuanceRequest, request.Issue)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ERR_JWT_CREATION, ERR_JWT_CREATION, err)
 		return
@@ -778,11 +793,15 @@ type ValidatePassportResponse struct {
 	// Present iff face verification is enabled for this environment. Absent
 	// means the app skips the face verification step.
 	FaceVerification *FaceVerificationAnnouncement `json:"face_verification,omitempty"`
+	// True when the issue endpoints accept the "document_and_age" and
+	// "age_only" values of the issue field. The app offers no age credential
+	// when this is false or absent.
+	AgeCredentialOffered bool `json:"age_credential_offered" example:"true"`
 }
 
 // handleStartValidatePassport starts a document validation session
 // @Summary Start document validation session
-// @Description Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests. When face verification is enabled for this environment, the response carries a face_verification object naming the Face API the liveness session must run against; the app skips the face verification step when the object is absent.
+// @Description Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests. When face verification is enabled for this environment, the response carries a face_verification object naming the Face API the liveness session must run against; the app skips the face verification step when the object is absent. The age_credential_offered flag tells the app whether the issue endpoints accept the age credential.
 // @Tags Session
 // @Produce json
 // @Success 200 {object} ValidatePassportResponse
@@ -825,8 +844,9 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 	slog.Debug("Nonce stored successfully", "session_id", sessionId)
 
 	response := ValidatePassportResponse{
-		SessionId: sessionId,
-		Nonce:     string(nonce),
+		SessionId:            sessionId,
+		Nonce:                string(nonce),
+		AgeCredentialOffered: state.ageCredentialOffered,
 	}
 	// Announce face verification when it applies. The app runs or skips the
 	// whole step on the presence of this field, for every flavor; startup
@@ -956,6 +976,24 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 		slog.Debug("JSON response written successfully", "status_code", status, "payload_size", len(payload))
 	}
 	return nil
+}
+
+// requireIssuanceScope rejects an issue request that names an unknown scope,
+// or asks for the age credential while it is not configured. It returns true
+// when issuance may proceed. It runs before face verification so a rejected
+// request does not consume the liveness transaction.
+func requireIssuanceScope(state *ServerState, w http.ResponseWriter, scope models.IssuanceScope) bool {
+	if !scope.Valid() {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "unknown issuance scope", nil, "issue", scope)
+		return false
+	}
+
+	if scope.IncludesAge() && !state.ageCredentialOffered {
+		respondWithErr(w, http.StatusBadRequest, "age credential not offered", "age credential requested but not configured", nil, "issue", scope)
+		return false
+	}
+
+	return true
 }
 
 // Face verification helpers

@@ -2,7 +2,9 @@ package main
 
 import (
 	"crypto/rsa"
+	"errors"
 	"fmt"
+	mrtdDoc "go-passport-issuer/document"
 	"go-passport-issuer/models"
 	"log/slog"
 	"maps"
@@ -16,14 +18,17 @@ import (
 )
 
 type JwtCreator interface {
-	CreatePassportJwt(passport models.PassportData) (jwt string, err error)
-	CreateEDLJwt(edl models.EDLData) (jwt string, err error)
-	CreateIdCardJwt(data models.PassportData) (jwt string, err error)
+	CreatePassportJwt(passport models.PassportData, scope models.IssuanceScope) (jwt string, err error)
+	CreateEDLJwt(edl models.EDLData, scope models.IssuanceScope) (jwt string, err error)
+	CreateIdCardJwt(data models.PassportData, scope models.IssuanceScope) (jwt string, err error)
 }
+
+var errAgeCredentialNotConfigured = errors.New("age credential is not configured")
 
 func NewIrmaJwtCreator(privateKeyPath string,
 	issuerId string,
 	credential string,
+	ageCredential string,
 	sdJwtBatchSize uint,
 ) (*DefaultJwtCreator, error) {
 	keyBytes, err := os.ReadFile(privateKeyPath)
@@ -42,6 +47,7 @@ func NewIrmaJwtCreator(privateKeyPath string,
 		issuerId:       issuerId,
 		privateKey:     privateKey,
 		credential:     credential,
+		ageCredential:  ageCredential,
 		sdJwtBatchSize: sdJwtBatchSize,
 	}, nil
 }
@@ -50,11 +56,15 @@ type DefaultJwtCreator struct {
 	privateKey     *rsa.PrivateKey
 	issuerId       string
 	credential     string
+	ageCredential  string
 	sdJwtBatchSize uint
 }
 
-func (jc *DefaultJwtCreator) createJwt(attributes map[string]string) (string, error) {
-	issuanceRequest := jc.createIssuanceRequest(attributes)
+func (jc *DefaultJwtCreator) createJwt(attributes map[string]string, dateOfBirth time.Time, scope models.IssuanceScope) (string, error) {
+	issuanceRequest, err := jc.createIssuanceRequest(attributes, dateOfBirth, scope)
+	if err != nil {
+		return "", err
+	}
 
 	return irma.SignSessionRequest(
 		issuanceRequest,
@@ -67,6 +77,8 @@ func (jc *DefaultJwtCreator) createJwt(attributes map[string]string) (string, er
 const DATE_FORMAT_CYMD = "2006-01-02"
 const DATE_FORMAT_YEAR = "2006"
 
+const ageCredentialValidityMonths = 1
+
 func isValidPassportDocumentType(docType string) error {
 	if strings.HasPrefix(docType, "P") {
 		return nil
@@ -74,7 +86,7 @@ func isValidPassportDocumentType(docType string) error {
 	return fmt.Errorf("document with type %s cannot be issued as a passport", docType)
 }
 
-func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (string, error) {
+func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData, scope models.IssuanceScope) (string, error) {
 	if err := isValidPassportDocumentType(passport.DocumentType); err != nil {
 		return "", err
 	}
@@ -99,7 +111,7 @@ func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (st
 		"activeAuthentication": passport.ActiveAuthentication,
 	}
 
-	return jc.createJwt(attributes)
+	return jc.createJwt(attributes, passport.DateOfBirth, scope)
 }
 
 func isValidIdCardDocumentType(docType string) error {
@@ -109,7 +121,7 @@ func isValidIdCardDocumentType(docType string) error {
 	return nil
 }
 
-func (jc *DefaultJwtCreator) CreateIdCardJwt(idCard models.PassportData) (string, error) {
+func (jc *DefaultJwtCreator) CreateIdCardJwt(idCard models.PassportData, scope models.IssuanceScope) (string, error) {
 	if err := isValidIdCardDocumentType(idCard.DocumentType); err != nil {
 		return "", err
 	}
@@ -135,10 +147,10 @@ func (jc *DefaultJwtCreator) CreateIdCardJwt(idCard models.PassportData) (string
 		"activeAuthentication": idCard.ActiveAuthentication,
 	}
 
-	return jc.createJwt(attributes)
+	return jc.createJwt(attributes, idCard.DateOfBirth, scope)
 }
 
-func (jc *DefaultJwtCreator) CreateEDLJwt(edl models.EDLData) (string, error) {
+func (jc *DefaultJwtCreator) CreateEDLJwt(edl models.EDLData, scope models.IssuanceScope) (string, error) {
 	attributes := map[string]string{
 		"photo":                edl.Photo,
 		"documentNumber":       edl.DocumentNumber,
@@ -159,7 +171,7 @@ func (jc *DefaultJwtCreator) CreateEDLJwt(edl models.EDLData) (string, error) {
 	}
 	maps.Copy(attributes, edlCategoryAttributes(edl.Categories))
 
-	return jc.createJwt(attributes)
+	return jc.createJwt(attributes, edl.DateOfBirth, scope)
 }
 
 const EDL_CATEGORY_PREFIX = "category"
@@ -215,17 +227,39 @@ func edlCategoryAttributes(categories []models.EDLCategory) map[string]string {
 	return attributes
 }
 
-// createIssuanceRequest creates an IRMA issuance request with the passport data
-// This is a separate method to allow for easier testing
-func (jc *DefaultJwtCreator) createIssuanceRequest(attributes map[string]string) *irma.IssuanceRequest {
-	validity := irma.Timestamp(time.Unix(time.Now().AddDate(1, 0, 0).Unix(), 0)) // 1 year from now
+// createIssuanceRequest creates an IRMA issuance request with the credentials
+// the scope asks for. This is a separate method to allow for easier testing
+func (jc *DefaultJwtCreator) createIssuanceRequest(attributes map[string]string, dateOfBirth time.Time, scope models.IssuanceScope) (*irma.IssuanceRequest, error) {
+	var credentials []*irma.CredentialRequest
 
-	return irma.NewIssuanceRequest([]*irma.CredentialRequest{
-		{
+	if scope.IncludesDocument() {
+		validity := irma.Timestamp(time.Unix(time.Now().AddDate(1, 0, 0).Unix(), 0)) // 1 year from now
+
+		credentials = append(credentials, &irma.CredentialRequest{
 			CredentialTypeID: irma.NewCredentialTypeIdentifier(jc.credential),
 			Attributes:       attributes,
 			SdJwtBatchSize:   jc.sdJwtBatchSize,
 			Validity:         &validity,
-		},
-	})
+		})
+	}
+
+	if scope.IncludesAge() {
+		if jc.ageCredential == "" {
+			return nil, errAgeCredentialNotConfigured
+		}
+
+		// A "no" goes stale as the holder ages. Capping at the next birthday
+		// could leave a validity of one day, so use a fixed short validity.
+		now := time.Now()
+		validity := irma.Timestamp(time.Unix(now.AddDate(0, ageCredentialValidityMonths, 0).Unix(), 0))
+
+		credentials = append(credentials, &irma.CredentialRequest{
+			CredentialTypeID: irma.NewCredentialTypeIdentifier(jc.ageCredential),
+			Attributes:       mrtdDoc.AgeAttributes(dateOfBirth, now),
+			SdJwtBatchSize:   jc.sdJwtBatchSize,
+			Validity:         &validity,
+		})
+	}
+
+	return irma.NewIssuanceRequest(credentials), nil
 }
