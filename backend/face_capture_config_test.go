@@ -14,7 +14,7 @@ import (
 func TestFaceCaptureConfigServesPublicFaceApiUrl(t *testing.T) {
 	state := &ServerState{
 		// What the backend itself talks to, over the internal network.
-		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", 0),
+		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", testRegulaThreshold),
 		// What the browser must use.
 		regulaFaceApiPublicUrl: "https://faceapi.staging.yivi.app",
 	}
@@ -61,7 +61,7 @@ func TestFaceCaptureConfigNotFoundWhenDisabled(t *testing.T) {
 // answers GET.
 func TestFaceCaptureConfigRouteIsGetOnly(t *testing.T) {
 	srv, err := NewServer(&ServerState{
-		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", 0),
+		faceVerificationClient: NewRegulaFaceClient("http://regula-face-api:41101", testRegulaThreshold),
 		regulaFaceApiPublicUrl: "https://faceapi.example",
 	}, ServerConfig{})
 	require.NoError(t, err)

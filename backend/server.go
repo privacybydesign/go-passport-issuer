@@ -1,18 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
 
+	"go-passport-issuer/analytics"
 	"go-passport-issuer/document/edl"
 	"go-passport-issuer/images"
 	"go-passport-issuer/models"
@@ -69,6 +72,34 @@ type ServerState struct {
 	// to the app by handleStartValidatePassport. Empty only when face
 	// verification is disabled for this environment.
 	regulaFaceApiPublicUrl string
+	// faceMethods decides which face verification method a session gets. Left
+	// unconfigured (zero value), the presence of faceVerificationClient stands
+	// for "Regula only", which is what the state meant before methods existed;
+	// see methodPolicy.
+	faceMethods FaceMethodPolicy
+	// irisClient is nil unless the Iris method is enabled.
+	irisClient IrisClient
+	// irisVerifierPublicUrl is the wallet-reachable origin of the Iris verifier
+	// (wss://…), from which the per-session stream URL is derived.
+	irisVerifierPublicUrl string
+	// recorder receives the face verification recordings; nil records nothing.
+	recorder analytics.Recorder
+}
+
+// methodPolicy returns the configured method policy, or Regula-only when none
+// was configured and a Regula client is present.
+func (s *ServerState) methodPolicy() FaceMethodPolicy {
+	if s.faceMethods.configured() {
+		return s.faceMethods
+	}
+	return regulaOnlyPolicy(s.faceVerificationClient != nil)
+}
+
+// record hands an event to the recorder, if any.
+func (s *ServerState) record(ctx context.Context, e analytics.Record) {
+	if s.recorder != nil {
+		s.recorder.Record(ctx, e)
+	}
 }
 
 type SpaHandler struct {
@@ -109,15 +140,16 @@ func (s *Server) Stop() error {
 // file located at the index path on the SPA handler will be served. This
 // is suitable behavior for serving an SPA (single page application).
 // https://github.com/gorilla/mux?tab=readme-ov-file#serving-single-page-applications
+// Serving a file or the index is ordinary traffic, and a health probe hits it
+// every few seconds, so the success paths log nothing: a run at debug level
+// stays readable. Only a genuine error is worth a line.
 func (h SpaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	slog.Debug("SPA handler serving request", "path", r.URL.Path)
 	// Join internally call path.Clean to prevent directory traversal
 	path := filepath.Join(h.staticPath, r.URL.Path)
 	// check whether a file exists or is a directory at the given path
 	fi, err := os.Stat(path)
 	if os.IsNotExist(err) {
 		// file does not exist, serve index.html
-		slog.Debug("Serving index.html for path", "path", r.URL.Path)
 		http.ServeFile(w, r, filepath.Join(h.staticPath, h.indexPath))
 		return
 	}
@@ -134,13 +166,11 @@ func (h SpaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if fi.IsDir() {
 		// path is a directory, serve index.html
-		slog.Debug("Serving index.html for directory path", "path", r.URL.Path)
 		http.ServeFile(w, r, filepath.Join(h.staticPath, h.indexPath))
 		return
 	}
 
 	// otherwise, use http.FileServer to serve the static file
-	slog.Debug("Serving static file", "path", path)
 	http.FileServer(http.Dir(h.staticPath)).ServeHTTP(w, r)
 }
 
@@ -229,15 +259,29 @@ type VerificationResponse struct {
 	IsExpired bool `json:"is_expired" example:"false"`
 	// Optional face verification result
 	FaceMatch *FaceMatchResult `json:"face_match,omitempty"`
+	// The Iris face session opened for this document; present only when the
+	// session's assigned face verification method is iris
+	FaceSession *FaceSessionAnnouncement `json:"face_session,omitempty"`
 }
 
 // FaceMatchResult contains the result of comparing the document chip portrait
-// with the live face captured during a Regula liveness session.
+// with the live face captured during a Regula liveness session. It is the wire
+// shape of a FaceMatchVerdict; only the Regula method reports one, so the score
+// is named for that method's scale.
 type FaceMatchResult struct {
 	// True if the document portrait and live face match above the similarity threshold
 	Matched bool `json:"matched" example:"true"`
 	// Similarity score between the document portrait and live face
 	Similarity float64 `json:"similarity" example:"0.92"`
+}
+
+// result is the verdict in the shape a verify response carries, and nil for a
+// verdict that was never reached.
+func (v *FaceMatchVerdict) result() *FaceMatchResult {
+	if v == nil {
+		return nil
+	}
+	return &FaceMatchResult{Matched: v.Matched, Similarity: v.Score}
 }
 
 // HealthResponse contains the health status of the service
@@ -319,7 +363,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 	const endpoint = "verify-driving-licence"
 	slog.Info("Received request", "endpoint", endpoint)
 
-	doc, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
+	doc, request, session, activeRes, err := VerifyDrivingLicenceRequest(r, state)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving license", err,
 			"endpoint", endpoint, "session_id", request.SessionId)
@@ -334,7 +378,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 	// Optional face matching against the live face from the liveness session.
 	// Advisory only for verification; skipped entirely when face verification
 	// is disabled (no Regula client to match — or delete — with).
-	var faceMatch *FaceMatchResult
+	var faceMatch *FaceMatchVerdict
 	if request.LivenessTransactionId != "" && doc.Dg6 != nil && state.faceVerificationEnabled() {
 		slog.Info("Performing face verification for driving license")
 		// Use the original DG6 chip image (not the display PNG) for matching.
@@ -346,7 +390,7 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 			if err != nil {
 				slog.Warn("Face matching failed", "error", err)
 			} else if faceMatch != nil {
-				slog.Debug("Face match completed", "matched", faceMatch.Matched, "similarity", faceMatch.Similarity)
+				slog.Debug("Face match completed", "matched", faceMatch.Matched, "similarity", faceMatch.Score)
 			}
 		}
 	}
@@ -355,13 +399,25 @@ func handleVerifyDrivingLicence(state *ServerState, w http.ResponseWriter, r *ht
 		AuthenticContent: true,
 		AuthenticChip:    activeRes,
 		IsExpired:        isExpired,
-		FaceMatch:        faceMatch,
+		FaceMatch:        faceMatch.result(),
 	}
 
-	// Invalidate the one-time session before writing the response so the token
-	// cannot be replayed even if the write below fails.
-	removeSessionToken(state.tokenStorage, request.SessionId)
+	// An Iris session gets its face session here, from the portrait this
+	// issuer has just authenticated. The wallet streams to it and hands the id
+	// back at issuance.
+	if session.Method == FaceMethodIris {
+		faceSession, err := openIrisFaceSession(r.Context(), state, request.SessionId, edlPortraitBytes(doc), documentTypeDrivingLicence)
+		if err != nil {
+			respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to open iris face session", err,
+				"endpoint", endpoint, "session_id", request.SessionId)
+			return
+		}
+		response.FaceSession = faceSession
+	}
 
+	// The session is deliberately not consumed here: the same session (and
+	// its chip read) continues into the issue call, which consumes it, or it
+	// expires with its TTL.
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
@@ -390,7 +446,7 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 
 	const endpoint = "issue-driving-licence"
 	slog.Info("Received request", "endpoint", endpoint)
-	doc, request, activeRes, err := VerifyDrivingLicenceRequest(r, state)
+	doc, request, session, activeRes, err := VerifyDrivingLicenceRequest(r, state)
 
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to verify driving licence", err,
@@ -405,17 +461,15 @@ func handleIssueEDL(state *ServerState, w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Face verification before issuance (fail-closed when Regula is configured).
-	// Uses the original DG6 chip image (not the display PNG) for matching.
-	var edlImage string
-	if doc.Dg6 != nil {
-		if img, imgErr := doc.Dg6.RawBase64(); imgErr != nil {
-			slog.Warn("Failed to extract DG6 image for face matching", "error", imgErr)
-		} else {
-			edlImage = img
-		}
-	}
-	if !verifyFaceBeforeIssuance(state, w, edlImage, request.LivenessTransactionId, "driving-licence") {
+	// Face verification before issuance (fail-closed when enabled), for the
+	// method this session was assigned. Uses the original DG6 chip image (not
+	// the display PNG).
+	if !gateFaceVerification(state, w, faceGateInput{
+		session:      session,
+		request:      request,
+		portrait:     edlPortraitBytes(doc),
+		documentType: documentTypeDrivingLicence,
+	}) {
 		return
 	}
 
@@ -454,7 +508,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 	const endpoint = "verify-passport"
 	slog.Info("Received request", "endpoint", endpoint)
 
-	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
+	doc, activeAuth, request, session, err := VerifyPassportRequest(r, state)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err,
 			"endpoint", endpoint, "session_id", request.SessionId)
@@ -476,7 +530,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 	// Optional face matching against the live face from the liveness session.
 	// Advisory only for verification; skipped entirely when face verification
 	// is disabled (no Regula client to match — or delete — with).
-	var faceMatch *FaceMatchResult
+	var faceMatch *FaceMatchVerdict
 	if request.LivenessTransactionId != "" && state.faceVerificationEnabled() {
 		slog.Info("Performing face verification")
 		// Use the original DG2 chip image (not the display PNG) for matching.
@@ -489,7 +543,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 				slog.Warn("Face matching failed", "error", err)
 				// Don't fail the entire verification if face matching fails
 			} else if faceMatch != nil {
-				slog.Debug("Face match completed", "matched", faceMatch.Matched, "similarity", faceMatch.Similarity)
+				slog.Debug("Face match completed", "matched", faceMatch.Matched, "similarity", faceMatch.Score)
 			}
 		}
 	}
@@ -499,13 +553,25 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 		AuthenticContent: true,
 		AuthenticChip:    activeAuth,
 		IsExpired:        isExpired,
-		FaceMatch:        faceMatch,
+		FaceMatch:        faceMatch.result(),
 	}
 
-	// Invalidate the one-time session before writing the response so the token
-	// cannot be replayed even if the write below fails.
-	removeSessionToken(state.tokenStorage, request.SessionId)
+	// An Iris session gets its face session here, from the portrait this
+	// issuer has just authenticated. The wallet streams to it and hands the id
+	// back at issuance. ID cards come through this endpoint too.
+	if session.Method == FaceMethodIris {
+		faceSession, err := openIrisFaceSession(r.Context(), state, request.SessionId, passportPortraitBytes(doc), documentTypePassport)
+		if err != nil {
+			respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to open iris face session", err,
+				"endpoint", endpoint, "session_id", request.SessionId)
+			return
+		}
+		response.FaceSession = faceSession
+	}
 
+	// The session is deliberately not consumed here: the same session (and
+	// its chip read) continues into the issue call, which consumes it, or it
+	// expires with its TTL.
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_MARSHAL, err)
 		return
@@ -535,7 +601,7 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 	const endpoint = "issue-id-card"
 	slog.Info("Received request", "endpoint", endpoint)
 
-	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
+	doc, activeAuth, request, session, err := VerifyPassportRequest(r, state)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err,
 			"endpoint", endpoint, "session_id", request.SessionId)
@@ -550,13 +616,15 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Face verification before issuance (fail-closed when Regula is configured).
-	// Uses the original DG2 chip image (not the display PNG) for matching.
-	idCardImage, imgErr := images.RawDG2ImageBase64(doc.Mf.Lds1.Dg2)
-	if imgErr != nil {
-		slog.Warn("Failed to extract DG2 image for face matching", "error", imgErr)
-	}
-	if !verifyFaceBeforeIssuance(state, w, idCardImage, request.LivenessTransactionId, "id-card") {
+	// Face verification before issuance (fail-closed when enabled), for the
+	// method this session was assigned. Uses the original DG2 chip image (not
+	// the display PNG).
+	if !gateFaceVerification(state, w, faceGateInput{
+		session:      session,
+		request:      request,
+		portrait:     passportPortraitBytes(doc),
+		documentType: documentTypeIdCard,
+	}) {
 		return
 	}
 
@@ -595,7 +663,7 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 	const endpoint = "issue-passport"
 	slog.Info("Received request", "endpoint", endpoint)
 
-	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
+	doc, activeAuth, request, session, err := VerifyPassportRequest(r, state)
 	if err != nil {
 		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err,
 			"endpoint", endpoint, "session_id", request.SessionId)
@@ -610,13 +678,15 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Face verification before issuance (fail-closed when Regula is configured).
-	// Uses the original DG2 chip image (not the display PNG) for matching.
-	passportImage, imgErr := images.RawDG2ImageBase64(doc.Mf.Lds1.Dg2)
-	if imgErr != nil {
-		slog.Warn("Failed to extract DG2 image for face matching", "error", imgErr)
-	}
-	if !verifyFaceBeforeIssuance(state, w, passportImage, request.LivenessTransactionId, "passport") {
+	// Face verification before issuance (fail-closed when enabled), for the
+	// method this session was assigned. Uses the original DG2 chip image (not
+	// the display PNG).
+	if !gateFaceVerification(state, w, faceGateInput{
+		session:      session,
+		request:      request,
+		portrait:     passportPortraitBytes(doc),
+		documentType: documentTypePassport,
+	}) {
 		return
 	}
 
@@ -641,34 +711,59 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 // aa_signature, otherwise an error is returned and the caller rejects the request
 // with 400. When the chip has no AA key, the returned bool is false and issuance
 // proceeds. The returned bool reports whether active authentication succeeded.
-func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.ValidationRequest, error) {
+//
+// The returned SessionRecord is the session the request validated against,
+// carrying the face verification method assigned to it.
+func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Document, bool, models.ValidationRequest, SessionRecord, error) {
 	slog.Debug("Starting passport verification request processing")
 
 	request, err := decodeValidationRequest(r)
 	if err != nil {
-		return document.Document{}, false, request, err
+		return document.Document{}, false, request, SessionRecord{}, err
 	}
 
 	slog.Debug("Validating session", "session_id", request.SessionId)
-	if err := validateSession(state.tokenStorage, request.SessionId, request.Nonce); err != nil {
-		return document.Document{}, false, request, err
+	session, err := validateSession(state.tokenStorage, request.SessionId, request.Nonce)
+	if err != nil {
+		return document.Document{}, false, request, SessionRecord{}, err
 	}
 
 	slog.Debug("Performing passive authentication", "session_id", request.SessionId)
 	var doc document.Document
 	doc, err = state.documentValidator.PassivePassport(request, state.passportCertPool)
 	if err != nil {
-		return document.Document{}, false, request, fmt.Errorf("%s: %w", ERR_PASSIVE_FAILED, err)
+		return document.Document{}, false, request, session, fmt.Errorf("%s: %w", ERR_PASSIVE_FAILED, err)
 	}
 
 	slog.Debug("Passive authentication successful, performing active authentication", "session_id", request.SessionId)
 	activeAuth, err := state.documentValidator.ActivePassport(request, doc)
 	if err != nil {
-		return document.Document{}, false, request, fmt.Errorf("%s: %w", ERR_ACTIVE_FAILED, err)
+		return document.Document{}, false, request, session, fmt.Errorf("%s: %w", ERR_ACTIVE_FAILED, err)
 	}
 
 	slog.Debug("Active authentication completed", "session_id", request.SessionId, "result", activeAuth)
-	return doc, activeAuth, request, nil
+	return doc, activeAuth, request, session, nil
+}
+
+// passportPortraitBytes returns the raw first DG2 portrait (JPEG/JPEG 2000 as
+// on the chip) of a passport or ID card, or nil when there is none.
+func passportPortraitBytes(doc document.Document) []byte {
+	dg2 := doc.Mf.Lds1.Dg2
+	if dg2 == nil || len(dg2.Images) == 0 || len(dg2.Images[0].Image) == 0 {
+		slog.Warn("No DG2 portrait available for face verification")
+		return nil
+	}
+	return dg2.Images[0].Image
+}
+
+// edlPortraitBytes returns the raw DG6 portrait of a driving licence, or nil
+// when there is none.
+func edlPortraitBytes(doc *edl.DrivingLicenceDocument) []byte {
+	if doc == nil || doc.Dg6 == nil || len(doc.Dg6.ImageData) == 0 {
+		slog.Warn("No DG6 portrait available for face verification")
+		return nil
+	}
+	return doc.Dg6.ImageData
 }
 
 // VerifyDrivingLicenceRequest decodes and validates a driving-licence request. It
@@ -679,59 +774,45 @@ func VerifyPassportRequest(r *http.Request, state *ServerState) (document.Docume
 // the request with 400. When the chip has no AA key, the returned bool is false
 // and issuance proceeds. The returned bool reports whether active authentication
 // succeeded.
-func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.DrivingLicenceDocument, request models.ValidationRequest, activeRes bool, err error) {
+//
+// The returned SessionRecord is the session the request validated against,
+// carrying the face verification method assigned to it.
+func VerifyDrivingLicenceRequest(r *http.Request, state *ServerState) (doc *edl.DrivingLicenceDocument, request models.ValidationRequest, session SessionRecord, activeRes bool, err error) {
 	slog.Debug("Starting driving license verification request processing")
 
 	request, err = decodeValidationRequest(r)
 	if err != nil {
-		return doc, request, false, err
+		return doc, request, session, false, err
 	}
 
 	slog.Debug("Validating session", "session_id", request.SessionId)
-	if err := validateSession(state.tokenStorage, request.SessionId, request.Nonce); err != nil {
-		return doc, request, false, err
+	session, err = validateSession(state.tokenStorage, request.SessionId, request.Nonce)
+	if err != nil {
+		return doc, request, session, false, err
 	}
 
 	slog.Debug("Performing passive authentication for driving license", "session_id", request.SessionId)
 	sod, err := state.documentValidator.PassiveEDL(request, state.drivingLicenceCertPool)
 	if err != nil {
-		return doc, request, false, fmt.Errorf("%s: %w", ERR_PASSIVE_FAILED, err)
+		return doc, request, session, false, fmt.Errorf("%s: %w", ERR_PASSIVE_FAILED, err)
 	}
 
 	slog.Debug("Passive authentication successful, performing active authentication", "session_id", request.SessionId)
 	result, err := state.documentValidator.ActiveEDL(request, sod)
 	if err != nil {
-		return doc, request, false, fmt.Errorf("%s: %w", ERR_ACTIVE_FAILED, err)
+		return doc, request, session, false, fmt.Errorf("%s: %w", ERR_ACTIVE_FAILED, err)
 	}
 
 	slog.Debug("Active authentication completed, parsing EDL document", "session_id", request.SessionId, "result", result)
 	doc, err = state.drivingLicenceParser.ParseEDLDocument(request.DataGroups, request.EFSOD)
 	if err != nil {
-		return doc, request, false, fmt.Errorf("failed to parse EDL document: %w", err)
+		return doc, request, session, false, fmt.Errorf("failed to parse EDL document: %w", err)
 	}
 	slog.Debug("EDL document parsed successfully", "session_id", request.SessionId)
-	return doc, request, result, nil
+	return doc, request, session, result, nil
 }
 
 // -----------------------------------------------------------------------------------
-
-// validateSession validates session and nonce
-func validateSession(storage TokenStorage, sessionId, nonce string) error {
-	slog.Debug("Validating session and nonce", "session_id", sessionId)
-	storedNonce, err := storage.RetrieveToken(sessionId)
-	if err != nil {
-		slog.Warn("Failed to retrieve token from storage", "session_id", sessionId, "error", err)
-		return fmt.Errorf("%s: %w", ERR_TOKEN_RETRIEVAL, err)
-	}
-
-	if storedNonce == "" || storedNonce != nonce {
-		slog.Warn("Invalid nonce or session", "session_id", sessionId, "nonce_empty", storedNonce == "", "nonce_match", storedNonce == nonce)
-		return fmt.Errorf("%s", ERR_INVALID_NONCE_SESSION)
-	}
-
-	slog.Debug("Session validation successful", "session_id", sessionId)
-	return nil
-}
 
 // removeSessionToken invalidates the one-time session token, logging an error if
 // removal fails. It is invoked before the response is written so that a validated
@@ -760,13 +841,19 @@ func decodeValidationRequest(r *http.Request) (models.ValidationRequest, error) 
 }
 
 // FaceVerificationAnnouncement tells the app that face verification applies to
-// this document session. Its *presence* is the signal — there is no enabled
-// flag inside it, and the app treats an absent announcement as "skip the whole
-// step".
+// this document session and which method it was assigned. Its *presence* is
+// the signal — there is no enabled flag inside it, and the app treats an absent
+// announcement as "skip the whole step".
 type FaceVerificationAnnouncement struct {
+	// The face verification method assigned to this session: regula, iris or
+	// iris_ondevice. Wallets from before methods existed ignore it and run
+	// Regula, which is the only method they are ever assigned.
+	Method FaceMethod `json:"method,omitempty" example:"regula"`
 	// Browser/app-reachable origin of the Regula Face API the liveness session
-	// must run against — the same service this issuer matches against.
-	FaceApiUrl string `json:"face_api_url" example:"https://faceapi.staging.yivi.app"`
+	// must run against — the same service this issuer matches against. Present
+	// for the regula method only: iris carries its endpoint in the verify
+	// response instead, and iris_ondevice has nothing to address at all.
+	FaceApiUrl string `json:"face_api_url,omitempty" example:"https://faceapi.staging.yivi.app"`
 }
 
 // ValidatePassportResponse contains the session ID and nonce for document validation
@@ -782,10 +869,13 @@ type ValidatePassportResponse struct {
 
 // handleStartValidatePassport starts a document validation session
 // @Summary Start document validation session
-// @Description Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests. When face verification is enabled for this environment, the response carries a face_verification object naming the Face API the liveness session must run against; the app skips the face verification step when the object is absent.
+// @Description Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests. The body is optional: a wallet may declare which face verification methods it can run (and, on a retry, which it was assigned before); no body means Regula only. When face verification is enabled for this environment, the response carries a face_verification object naming the assigned method and, for regula, the Face API the liveness session must run against; the app skips the face verification step when the object is absent. Responds 400 when none of the wallet's methods is enabled here.
 // @Tags Session
+// @Accept json
 // @Produce json
+// @Param request body StartValidationRequest false "Optional capability declaration"
 // @Success 200 {object} ValidatePassportResponse
+// @Failure 400 {string} string "face verification required: please update the Yivi app"
 // @Failure 500 {string} string "error:internal"
 // @Router /start-validation [post]
 func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *http.Request) {
@@ -796,6 +886,24 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 	}
 
 	slog.Info("Received request to start document validation")
+
+	declaration, err := decodeStartValidationRequest(r)
+	if err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", "failed to decode start-validation body", err)
+		return
+	}
+
+	// Assign the face verification method before anything is stored, so a
+	// wallet that cannot be served learns it now rather than at issuance.
+	var method FaceMethod
+	if state.faceVerificationEnabled() {
+		method, err = state.methodPolicy().Assign(declaration.FaceVerification)
+		if err != nil {
+			respondWithErr(w, http.StatusBadRequest, faceVerificationRequiredBody,
+				"no face verification method available for this wallet", err)
+			return
+		}
+	}
 
 	// Generate a session ID
 	slog.Debug("Generating session ID")
@@ -815,14 +923,25 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 	}
 	slog.Debug("Nonce generated", "session_id", sessionId)
 
-	// Store the nonce in Redis, should be removed when the jwt is handed over to the app
-	slog.Debug("Storing nonce in token storage", "session_id", sessionId)
-	err = state.tokenStorage.StoreToken(sessionId, nonce)
+	// Store the session (nonce plus the method assignment) until the jwt is
+	// handed over to the app.
+	record := SessionRecord{Nonce: nonce, Method: method}
+	if method != "" {
+		record.AssignedAt = time.Now()
+		if declaration.FaceVerification != nil {
+			record.Attempt = declaration.FaceVerification.Attempt
+		}
+		if declaration.Client != nil {
+			record.Client = *declaration.Client
+		}
+	}
+	slog.Debug("Storing session in token storage", "session_id", sessionId)
+	err = storeSessionRecord(state.tokenStorage, sessionId, record)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, "failed to store nonce", err)
 		return
 	}
-	slog.Debug("Nonce stored successfully", "session_id", sessionId)
+	slog.Debug("Session stored successfully", "session_id", sessionId)
 
 	response := ValidatePassportResponse{
 		SessionId: sessionId,
@@ -830,11 +949,28 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 	}
 	// Announce face verification when it applies. The app runs or skips the
 	// whole step on the presence of this field, for every flavor; startup
-	// validation guarantees a non-empty public URL when enabled.
-	if state.faceVerificationEnabled() {
-		response.FaceVerification = &FaceVerificationAnnouncement{
-			FaceApiUrl: state.regulaFaceApiPublicUrl,
+	// validation guarantees the URLs each enabled method needs. A wallet from
+	// before methods existed is always assigned Regula and sees today's
+	// response plus a `method` key it ignores.
+	if method != "" {
+		response.FaceVerification = &FaceVerificationAnnouncement{Method: method}
+		if method == FaceMethodRegula {
+			response.FaceVerification.FaceApiUrl = state.regulaFaceApiPublicUrl
 		}
+		// The candidates the method was chosen from, recorded beside the
+		// choice: a wallet that declared nothing leaves this empty, which is
+		// what tells an assignment split apart from the configured weights.
+		var capabilities []FaceMethod
+		if d := declaration.FaceVerification; d != nil && len(d.Capabilities) > 0 {
+			capabilities = declaredCapabilities(d)
+		}
+		state.record(r.Context(), analytics.Record{
+			Kind:         analytics.KindAssigned,
+			Method:       method,
+			Capabilities: capabilities,
+			Client:       record.Client,
+			AttemptKind:  record.attemptKind(),
+		})
 	}
 
 	if err := writeJSON(w, http.StatusOK, response); err != nil {
@@ -842,8 +978,28 @@ func handleStartValidatePassport(state *ServerState, w http.ResponseWriter, r *h
 		return
 	}
 
-	slog.Info("Document validation started successfully", "session_id", sessionId)
+	slog.Info("Document validation started successfully", "session_id", sessionId, "face_method", method)
+}
 
+// decodeStartValidationRequest reads the optional start-validation body. No
+// body, an empty body or `null` is what wallets before the capability
+// declaration send and yields an empty request.
+func decodeStartValidationRequest(r *http.Request) (StartValidationRequest, error) {
+	var request StartValidationRequest
+	if r.Body == nil {
+		return request, nil
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 64<<10))
+	if err != nil {
+		return request, fmt.Errorf("read request body: %w", err)
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return request, nil
+	}
+	if err := json.Unmarshal(body, &request); err != nil {
+		return request, fmt.Errorf("decode request body: %w", err)
+	}
+	return request, nil
 }
 
 //go:embed associations/android_asset_links.json
@@ -965,7 +1121,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) error {
 // server-side before matching, and always deletes the liveness transaction
 // afterwards so biometric session data is not retained. It returns nil (with no
 // error) when no liveness transaction is provided, meaning matching is skipped.
-func performFaceMatch(state *ServerState, documentImageBase64, livenessTransactionID string) (*FaceMatchResult, error) {
+func performFaceMatch(state *ServerState, documentImageBase64, livenessTransactionID string) (*FaceMatchVerdict, error) {
 	slog.Debug("Starting face matching process")
 
 	if state.faceVerificationClient == nil {
@@ -1012,58 +1168,28 @@ func performFaceMatch(state *ServerState, documentImageBase64, livenessTransacti
 		return nil, fmt.Errorf("face matching failed: %w", err)
 	}
 
-	slog.Info("Face matching completed", "matched", response.Matched, "similarity", response.Similarity)
-	return &FaceMatchResult{
-		Matched:    response.Matched,
-		Similarity: response.Similarity,
-	}, nil
+	slog.Info("Face matching completed", "matched", response.Matched, "similarity", response.Score)
+	return response, nil
 }
 
-// verifyFaceBeforeIssuance enforces face verification before credential
-// issuance. It returns true when issuance may proceed.
+// verifyFaceBeforeIssuance enforces the Regula face verification before
+// credential issuance. It returns true when issuance may proceed.
 //
 // When disabled (no Regula client), the step does not exist and issuance
 // proceeds. When enabled, verification is fail-closed: issuance is rejected
 // unless a confirmed liveness transaction is provided and the live face
 // matches the document portrait above the threshold — anything softer would
 // let a failed match be downgraded into a pass by withholding the id.
+//
+// gateFaceVerification is the per-method entry point the handlers use; this
+// remains the Regula path's own name.
 func verifyFaceBeforeIssuance(state *ServerState, w http.ResponseWriter, documentImage, livenessTransactionID, documentType string) bool {
 	if !state.faceVerificationEnabled() {
 		slog.Debug("Face verification disabled, skipping", "document_type", documentType)
 		return true
 	}
-
-	if livenessTransactionID == "" {
-		slog.Warn("Liveness transaction required for issuance", "document_type", documentType)
-		// App versions without face verification built in land here once an
-		// issuer enables it. The body reaches their error-details dialog and
-		// support tickets verbatim; make it self-explanatory.
-		respondWithErr(w, http.StatusBadRequest,
-			"face verification required: this version of the app does not support face verification, please update the Yivi app to add this document",
-			"no liveness transaction provided for issuance", nil, "document_type", documentType)
-		return false
-	}
-
-	slog.Info("Performing face verification before issuance", "document_type", documentType)
-	faceMatch, err := performFaceMatch(state, documentImage, livenessTransactionID)
-	if err != nil {
-		slog.Warn("Face verification failed during issuance", "document_type", documentType, "error", err)
-		respondWithErr(w, http.StatusBadRequest, "face verification failed", "face verification error during issuance", err, "document_type", documentType)
-		return false
-	}
-
-	if faceMatch == nil || !faceMatch.Matched {
-		similarity := 0.0
-		if faceMatch != nil {
-			similarity = faceMatch.Similarity
-		}
-		slog.Warn("Face verification failed - similarity below threshold", "similarity", similarity)
-		respondWithErr(w, http.StatusBadRequest, "face verification failed", "face does not match document photo", fmt.Errorf("similarity: %f", similarity))
-		return false
-	}
-
-	slog.Debug("Face verification passed", "similarity", faceMatch.Similarity)
-	return true
+	ok, _, _ := regulaGate(state, w, documentImage, livenessTransactionID, documentType)
+	return ok
 }
 
 // writeIssuanceResponse invalidates the one-time session token and writes the

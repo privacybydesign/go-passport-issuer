@@ -18,7 +18,7 @@ func TestRegulaFaceClient_HealthCheck(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewRegulaFaceClient(server.URL, 0)
+	client := NewRegulaFaceClient(server.URL, testRegulaThreshold)
 	err := client.HealthCheck()
 	if err != nil {
 		t.Errorf("HealthCheck failed: %v", err)
@@ -67,15 +67,15 @@ func TestRegulaFaceClient_MatchFaceWithLiveness_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewRegulaFaceClient(server.URL, 0)
+	client := NewRegulaFaceClient(server.URL, testRegulaThreshold)
 	result, err := client.MatchFaceWithLiveness("chipImageBase64", "txn-123")
 
 	if err != nil {
 		t.Errorf("MatchFaceWithLiveness failed: %v", err)
 	}
 
-	if result.Similarity != 0.87 {
-		t.Errorf("Expected similarity 0.87, got %f", result.Similarity)
+	if result.Score != 0.87 {
+		t.Errorf("Expected similarity 0.87, got %f", result.Score)
 	}
 
 	if !result.Matched {
@@ -96,7 +96,7 @@ func TestRegulaFaceClient_GetLivenessStatus(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewRegulaFaceClient(server.URL, 0)
+	client := NewRegulaFaceClient(server.URL, testRegulaThreshold)
 	status, err := client.GetLivenessStatus("txn-123")
 	if err != nil {
 		t.Fatalf("GetLivenessStatus failed: %v", err)
@@ -113,7 +113,7 @@ func TestRegulaFaceClient_GetLivenessStatus_NotConfirmed(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewRegulaFaceClient(server.URL, 0)
+	client := NewRegulaFaceClient(server.URL, testRegulaThreshold)
 	status, err := client.GetLivenessStatus("txn-123")
 	if err != nil {
 		t.Fatalf("GetLivenessStatus failed: %v", err)
@@ -138,7 +138,7 @@ func TestRegulaFaceClient_DeleteLivenessTransaction(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewRegulaFaceClient(server.URL, 0)
+	client := NewRegulaFaceClient(server.URL, testRegulaThreshold)
 	if err := client.DeleteLivenessTransaction("txn-123"); err != nil {
 		t.Errorf("DeleteLivenessTransaction failed: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestRegulaFaceClient_DeleteLivenessTransaction(t *testing.T) {
 // badURLClient returns a client whose base URL contains a control character so
 // that http.NewRequest fails when building any request.
 func badURLClient() *RegulaFaceClient {
-	return NewRegulaFaceClient("http://\x7f", 0)
+	return NewRegulaFaceClient("http://\x7f", testRegulaThreshold)
 }
 
 // unreachableClient returns a client pointing at a server that has been closed,
@@ -157,7 +157,7 @@ func unreachableClient(t *testing.T) *RegulaFaceClient {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	url := server.URL
 	server.Close()
-	return NewRegulaFaceClient(url, 0)
+	return NewRegulaFaceClient(url, testRegulaThreshold)
 }
 
 // clientReturningStatus returns a client backed by a server that always responds
@@ -167,7 +167,7 @@ func clientReturningStatus(t *testing.T, status int) (*RegulaFaceClient, func())
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(status)
 	}))
-	return NewRegulaFaceClient(server.URL, 0), server.Close
+	return NewRegulaFaceClient(server.URL, testRegulaThreshold), server.Close
 }
 
 // clientReturningBody returns a client backed by a server that responds 200 with
@@ -178,7 +178,7 @@ func clientReturningBody(t *testing.T, body string) (*RegulaFaceClient, func()) 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(body))
 	}))
-	return NewRegulaFaceClient(server.URL, 0), server.Close
+	return NewRegulaFaceClient(server.URL, testRegulaThreshold), server.Close
 }
 
 func TestRegulaFaceClient_ErrorPaths(t *testing.T) {
@@ -275,7 +275,7 @@ func TestRegulaFaceClient_ErrorPaths(t *testing.T) {
 
 func TestNewRegulaFaceClient(t *testing.T) {
 	baseURL := "http://localhost:41101"
-	client := NewRegulaFaceClient(baseURL, 0)
+	client := NewRegulaFaceClient(baseURL, testRegulaThreshold)
 
 	if client == nil {
 		t.Fatal("Expected client to be created")
@@ -285,8 +285,9 @@ func TestNewRegulaFaceClient(t *testing.T) {
 		t.Errorf("Expected baseURL %s, got %s", baseURL, client.baseURL)
 	}
 
-	if client.threshold != DefaultFaceMatchThreshold {
-		t.Errorf("Expected default threshold %f, got %f", DefaultFaceMatchThreshold, client.threshold)
+	// The configured threshold is used as given; there is no default.
+	if client.threshold != testRegulaThreshold {
+		t.Errorf("Expected threshold %f, got %f", testRegulaThreshold, client.threshold)
 	}
 
 	if client.httpClient == nil {
