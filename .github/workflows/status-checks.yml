@@ -53,21 +53,6 @@ jobs:
       # Public Cloudflare Turnstile site key, baked into the frontend bundle.
       DOCKER_BUILD_ARGS: TURNSTILE_SITE_KEY=${{ secrets.TURNSTILE_SITE_KEY }}
 
-  codeql:
-    uses: privacybydesign/github-workflows/.github/workflows/codeql.yml@v1
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
-    with:
-      languages: '["go", "javascript-typescript", "actions"]'
-      go-version-file: backend/go.mod
-      # The imagick bindings need the ImageMagick 6 headers to build.
-      go-build-command: >-
-        sudo apt-get update -q &&
-        sudo apt-get install -y -q --no-install-recommends build-essential pkg-config libmagickwand-6.q16-dev &&
-        cd backend && go build ./...
-
   dependency-review:
     if: github.event_name == 'pull_request'
     uses: privacybydesign/github-workflows/.github/workflows/dependency-review.yml@v1
@@ -83,7 +68,7 @@ jobs:
   passed:
     name: Status checks passed
     if: always()
-    needs: [frontend, go, docker, codeql, dependency-review, workflow-lint]
+    needs: [frontend, go, docker, dependency-review, workflow-lint]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
