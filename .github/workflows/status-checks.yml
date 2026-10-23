@@ -1,127 +1,96 @@
-# Workflow to check whether changes to master fulfill all requirements.
+# Status checks, using the shared workflows from privacybydesign/github-workflows.
+# The gate job "Status checks passed" is the one check the org ruleset requires.
 name: Status checks
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
+  merge_group:
   schedule:
-    # Run every monday on 9:00 in the morning (UTC).
-    - cron: "0 9 * * 1"
-  # Make it possible to trigger the checks manually.
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
-    build-frontend:
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+  frontend:
+    uses: privacybydesign/github-workflows/.github/workflows/node-checks.yml@v1
+    permissions:
+      contents: read
+    with:
+      working-directory: frontend
+      scripts: build
+      ignore-scripts: true
 
-        - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-          with:
-            node-version: '24'
-            cache: npm
-            cache-dependency-path: frontend/package-lock.json
+  go:
+    uses: privacybydesign/github-workflows/.github/workflows/go-checks.yml@v1
+    permissions:
+      contents: read
+    with:
+      working-directory: backend
+      apt-packages: build-essential pkg-config libmagickwand-6.q16-dev # ImageMagick 6 (cgo)
+      test-dockerfile: Dockerfile.test
+      coverage-file: /coverage/coverage.out # Dockerfile.test writes here
+      codecov: true
+      codecov-flags: backend
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-        - name: Install dependencies
-          working-directory: frontend
-          run: npm ci
+  # Builds and scans the image without pushing it; Delivery pushes from main.
+  docker:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    uses: privacybydesign/github-workflows/.github/workflows/docker-publish.yml@v1
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      id-token: write
+      attestations: write
+    with:
+      push-image: false
+    secrets:
+      # Public Cloudflare Turnstile site key, baked into the frontend bundle.
+      DOCKER_BUILD_ARGS: TURNSTILE_SITE_KEY=${{ secrets.TURNSTILE_SITE_KEY }}
 
-        - name: Build
-          working-directory: frontend
-          run: npm run build
+  codeql:
+    uses: privacybydesign/github-workflows/.github/workflows/codeql.yml@v1
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    with:
+      languages: '["go", "javascript-typescript", "actions"]'
+      go-version-file: backend/go.mod
+      # The imagick bindings need the ImageMagick 6 headers to build.
+      go-build-command: >-
+        sudo apt-get update -q &&
+        sudo apt-get install -y -q --no-install-recommends build-essential pkg-config libmagickwand-6.q16-dev &&
+        cd backend && go build ./...
 
-    analyze-go:
-      runs-on: ubuntu-latest
-      steps:
-        - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
-          with:
-            go-version-file: backend/go.mod
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    uses: privacybydesign/github-workflows/.github/workflows/dependency-review.yml@v1
+    permissions:
+      contents: read
+      pull-requests: write
 
-        - name: Install ImageMagick build deps
-          run: |
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends \
-              build-essential pkg-config libmagickwand-6.q16-dev
-        - name: Install GolangCI-Lint
-          run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
+  workflow-lint:
+    uses: privacybydesign/github-workflows/.github/workflows/workflow-lint.yml@v1
+    permissions:
+      contents: read
 
-        - name: Run linter
-          working-directory: backend
-          run: golangci-lint run --timeout 5m
-
-    test-go:
-      runs-on: ubuntu-latest
-      steps:
-        - name: Checkout
-          uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-        - name: Docker meta
-          id: meta
-          uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
-          with:
-            images: ghcr.io/${{ github.repository }}
-            tags: |
-              type=semver,pattern={{major}}.{{minor}}.{{patch}}
-              type=raw,value=edge
-
-        - name: Login to GitHub Container Registry
-          uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-          with:
-            registry: ghcr.io
-            username: ${{ github.actor }}
-            password: ${{ secrets.GITHUB_TOKEN }}
-
-        - name: Build Docker image for testing
-          run: docker build -t passport-issuer-tests --file Dockerfile.test .
-
-        - name: Create coverage directory
-          run: mkdir -p coverage
-
-        - name: Run tests (emit coverage.out)
-          # Mount ./coverage from the runner into /coverage in the container
-          run: |
-            docker run --rm \
-              -v "${{ github.workspace }}/coverage:/coverage" \
-              passport-issuer-tests
-
-        - name: Upload coverage to Codecov
-          uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
-          with:
-            files: coverage/coverage.out
-            flags: backend
-            fail_ci_if_error: true
-          env:
-            # Required for private repos. Not needed if your repo is public and tokenless upload is enabled.
-            CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-
-
-    build-docker-image:
-      runs-on: ubuntu-latest
-      steps:
-        - name: Checkout
-          uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-        - name: Docker meta
-          id: meta
-          uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9 # v6.1.0
-          with:
-            images: ghcr.io/${{ github.repository }}
-            tags: |
-              type=semver,pattern={{major}}.{{minor}}.{{patch}}
-              type=raw,value=edge
-        - name: Login to GitHub Container Registry
-          uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-          with:
-            registry: ghcr.io
-            username: ${{ github.actor }}
-            password: ${{ secrets.GITHUB_TOKEN }}
-
-        - name: Build container
-          uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
-          with:
-            context: .
-            push: false
-            tags: ${{ steps.meta.outputs.tags }}
-            labels: ${{ steps.meta.outputs.labels }}
+  passed:
+    name: Status checks passed
+    if: always()
+    needs: [frontend, go, docker, codeql, dependency-review, workflow-lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: All required jobs succeeded
+        env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          if grep -qE '"(failure|cancelled)"' <<< "$RESULTS"; then exit 1; fi
