@@ -1,6 +1,6 @@
 module go-passport-issuer
 
-go 1.26.0
+go 1.26.10
 
 require (
 	github.com/gmrtd/gmrtd v0.48.0

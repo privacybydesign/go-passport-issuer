@@ -6,12 +6,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func boolPtr(v bool) *bool { return &v }
+//go:fix inline
+func boolPtr(v bool) *bool { return new(v) }
 
 // Explicit values are honoured (given valid connection settings).
 func TestResolveFaceVerification_ExplicitValues(t *testing.T) {
 	enabled, err := resolveFaceVerificationEnabled(&Config{
-		FaceVerificationEnabled: boolPtr(true),
+		FaceVerificationEnabled: new(true),
 		RegulaFaceApiUrl:        "http://regula-face-api:41101",
 		RegulaFaceApiPublicUrl:  "https://faceapi.example",
 	})
@@ -22,7 +23,7 @@ func TestResolveFaceVerification_ExplicitValues(t *testing.T) {
 	// environment can be switched off without ripping out its connection
 	// settings.
 	enabled, err = resolveFaceVerificationEnabled(&Config{
-		FaceVerificationEnabled: boolPtr(false),
+		FaceVerificationEnabled: new(false),
 		RegulaFaceApiUrl:        "http://regula-face-api:41101",
 		RegulaFaceApiPublicUrl:  "https://faceapi.example",
 	})
@@ -50,13 +51,13 @@ func TestResolveFaceVerification_AbsentKeyDerivesFromUrl(t *testing.T) {
 // public URL would send apps into a step with nowhere to run liveness.
 func TestResolveFaceVerification_EnabledRequiresBothUrls(t *testing.T) {
 	_, err := resolveFaceVerificationEnabled(&Config{
-		FaceVerificationEnabled: boolPtr(true),
+		FaceVerificationEnabled: new(true),
 		RegulaFaceApiPublicUrl:  "https://faceapi.example",
 	})
 	require.ErrorContains(t, err, "regula_face_api_url")
 
 	_, err = resolveFaceVerificationEnabled(&Config{
-		FaceVerificationEnabled: boolPtr(true),
+		FaceVerificationEnabled: new(true),
 		RegulaFaceApiUrl:        "http://regula-face-api:41101",
 	})
 	require.ErrorContains(t, err, "regula_face_api_public_url")
