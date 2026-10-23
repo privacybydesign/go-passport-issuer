@@ -6,9 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-//go:fix inline
-func boolPtr(v bool) *bool { return new(v) }
-
 // Explicit values are honoured (given valid connection settings).
 func TestResolveFaceVerification_ExplicitValues(t *testing.T) {
 	enabled, err := resolveFaceVerificationEnabled(&Config{
