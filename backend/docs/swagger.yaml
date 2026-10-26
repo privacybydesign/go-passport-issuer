@@ -48,6 +48,13 @@ definitions:
     type: object
   main.ValidatePassportResponse:
     properties:
+      age_credential_offered:
+        description: |-
+          True when the issue endpoints accept the "document_and_age" and
+          "age_only" values of the issue field. The app offers no age credential
+          when this is false or absent.
+        example: true
+        type: boolean
       face_verification:
         allOf:
         - $ref: '#/definitions/main.FaceVerificationAnnouncement'
@@ -82,6 +89,16 @@ definitions:
         example: false
         type: boolean
     type: object
+  models.IssuanceScope:
+    enum:
+    - document
+    - document_and_age
+    - age_only
+    type: string
+    x-enum-varnames:
+    - IssueDocument
+    - IssueDocumentAndAge
+    - IssueAgeOnly
   models.ValidationRequest:
     properties:
       aa_signature:
@@ -97,6 +114,14 @@ definitions:
         description: Hex-encoded Security Object (EF.SOD) containing document signature
         example: 778201ab...
         type: string
+      issue:
+        allOf:
+        - $ref: '#/definitions/models.IssuanceScope'
+        description: |-
+          Credentials to issue: "document" (default), "document_and_age" or
+          "age_only". Only used by the issue endpoints. The age credential is
+          offered only when /api/start-validation reports age_credential_offered.
+        example: document_and_age
       liveness_transaction_id:
         description: |-
           Identifier of a completed Regula liveness transaction. The live face
@@ -170,7 +195,9 @@ paths:
         Active authentication (chip challenge-response) is mandatory when the chip
         supports it: if the chip carries an AA public key (DG13) the request must
         include a valid nonce and aa_signature, otherwise issuance is rejected with
-        400.'
+        400. Set issue to document_and_age to add the age credential (over1 to over99)
+        to the session, or to age_only to issue only the age credential; both are
+        rejected with 400 unless /start-validation reports age_credential_offered.'
       parameters:
       - description: Validation request with document data
         in: body
@@ -205,7 +232,10 @@ paths:
         authentication (SOD signature) is always mandatory. Active authentication
         (chip challenge-response) is mandatory when the chip supports it: if the chip
         carries an AA public key (DG15) the request must include a valid nonce and
-        aa_signature, otherwise issuance is rejected with 400.'
+        aa_signature, otherwise issuance is rejected with 400. Set issue to document_and_age
+        to add the age credential (over1 to over99) to the session, or to age_only
+        to issue only the age credential; both are rejected with 400 unless /start-validation
+        reports age_credential_offered.'
       parameters:
       - description: Validation request with document data
         in: body
@@ -240,7 +270,10 @@ paths:
         authentication (SOD signature) is always mandatory. Active authentication
         (chip challenge-response) is mandatory when the chip supports it: if the chip
         carries an AA public key (DG15) the request must include a valid nonce and
-        aa_signature, otherwise issuance is rejected with 400.'
+        aa_signature, otherwise issuance is rejected with 400. Set issue to document_and_age
+        to add the age credential (over1 to over99) to the session, or to age_only
+        to issue only the age credential; both are rejected with 400 unless /start-validation
+        reports age_credential_offered.'
       parameters:
       - description: Validation request with document data
         in: body
@@ -274,7 +307,8 @@ paths:
         verification/issuance requests. When face verification is enabled for this
         environment, the response carries a face_verification object naming the Face
         API the liveness session must run against; the app skips the face verification
-        step when the object is absent.
+        step when the object is absent. The age_credential_offered flag tells the
+        app whether the issue endpoints accept the age credential.
       produces:
       - application/json
       responses:

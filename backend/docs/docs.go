@@ -69,7 +69,7 @@ const docTemplate = `{
         },
         "/issue-driving-licence": {
             "post": {
-                "description": "Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG13) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.",
+                "description": "Verifies the Electronic Driving Licence (EDL) and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG13) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400. Set issue to document_and_age to add the age credential (over1 to over99) to the session, or to age_only to issue only the age credential; both are rejected with 400 unless /start-validation reports age_credential_offered.",
                 "consumes": [
                     "application/json"
                 ],
@@ -115,7 +115,7 @@ const docTemplate = `{
         },
         "/issue-id-card": {
             "post": {
-                "description": "Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.",
+                "description": "Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400. Set issue to document_and_age to add the age credential (over1 to over99) to the session, or to age_only to issue only the age credential; both are rejected with 400 unless /start-validation reports age_credential_offered.",
                 "consumes": [
                     "application/json"
                 ],
@@ -161,7 +161,7 @@ const docTemplate = `{
         },
         "/issue-passport": {
             "post": {
-                "description": "Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.",
+                "description": "Verifies the passport and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400. Set issue to document_and_age to add the age credential (over1 to over99) to the session, or to age_only to issue only the age credential; both are rejected with 400 unless /start-validation reports age_credential_offered.",
                 "consumes": [
                     "application/json"
                 ],
@@ -207,7 +207,7 @@ const docTemplate = `{
         },
         "/start-validation": {
             "post": {
-                "description": "Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests. When face verification is enabled for this environment, the response carries a face_verification object naming the Face API the liveness session must run against; the app skips the face verification step when the object is absent.",
+                "description": "Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests. When face verification is enabled for this environment, the response carries a face_verification object naming the Face API the liveness session must run against; the app skips the face verification step when the object is absent. The age_credential_offered flag tells the app whether the issue endpoints accept the age credential.",
                 "produces": [
                     "application/json"
                 ],
@@ -388,6 +388,11 @@ const docTemplate = `{
         "main.ValidatePassportResponse": {
             "type": "object",
             "properties": {
+                "age_credential_offered": {
+                    "description": "True when the issue endpoints accept the \"document_and_age\" and\n\"age_only\" values of the issue field. The app offers no age credential\nwhen this is false or absent.",
+                    "type": "boolean",
+                    "example": true
+                },
                 "face_verification": {
                     "description": "Present iff face verification is enabled for this environment. Absent\nmeans the app skips the face verification step.",
                     "allOf": [
@@ -436,6 +441,19 @@ const docTemplate = `{
                 }
             }
         },
+        "models.IssuanceScope": {
+            "type": "string",
+            "enum": [
+                "document",
+                "document_and_age",
+                "age_only"
+            ],
+            "x-enum-varnames": [
+                "IssueDocument",
+                "IssueDocumentAndAge",
+                "IssueAgeOnly"
+            ]
+        },
         "models.ValidationRequest": {
             "type": "object",
             "properties": {
@@ -455,6 +473,15 @@ const docTemplate = `{
                     "description": "Hex-encoded Security Object (EF.SOD) containing document signature",
                     "type": "string",
                     "example": "778201ab..."
+                },
+                "issue": {
+                    "description": "Credentials to issue: \"document\" (default), \"document_and_age\" or\n\"age_only\". Only used by the issue endpoints. The age credential is\noffered only when /api/start-validation reports age_credential_offered.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/models.IssuanceScope"
+                        }
+                    ],
+                    "example": "document_and_age"
                 },
                 "liveness_transaction_id": {
                     "description": "Identifier of a completed Regula liveness transaction. The live face\ncaptured during that session is compared against the document chip\nportrait for face verification (optional).",
