@@ -14,7 +14,7 @@ import (
 )
 
 func requireDataGroupIsNil(t *testing.T, doc document.Document, dataGroupName string) {
-	dataGroups := map[string]interface{}{
+	dataGroups := map[string]any{
 		"DG11": doc.Mf.Lds1.Dg11,
 		"DG12": doc.Mf.Lds1.Dg12,
 		"DG13": doc.Mf.Lds1.Dg13,
