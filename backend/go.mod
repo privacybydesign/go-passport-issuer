@@ -11,7 +11,7 @@ require (
 	github.com/swaggo/swag v1.16.6
 )
 
-require github.com/fxamacker/cbor/v2 v2.9.2 // indirect
+require github.com/fxamacker/cbor/v2 v2.9.6 // indirect
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
@@ -38,8 +38,8 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/valyala/fastjson v1.6.10 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/mod v0.39.0 // indirect
-	golang.org/x/tools v0.48.0 // indirect
+	golang.org/x/mod v0.40.0 // indirect
+	golang.org/x/tools v0.49.0 // indirect
 	gopkg.in/gographics/imagick.v2 v2.6.4 // indirect; pinned via replace directive below — see comment there.
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
@@ -125,4 +125,4 @@ require (
 // against future v2.7.x releases. Remove once cbeff is updated.
 replace gopkg.in/gographics/imagick.v2 => gopkg.in/gographics/imagick.v2 v2.6.4
 
-replace github.com/gmrtd/gmrtd => github.com/privacybydesign/gmrtd v1.2.0
+replace github.com/gmrtd/gmrtd => github.com/privacybydesign/gmrtd v1.7.0
