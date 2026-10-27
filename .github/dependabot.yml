@@ -8,6 +8,7 @@ updates:
     schedule: { interval: weekly, day: monday }
     groups:
       actions: { patterns: ["*"] }
+      actions-security: { applies-to: security-updates, patterns: ["*"] }
     cooldown: { default-days: 7 }
 
   - package-ecosystem: docker
@@ -22,6 +23,7 @@ updates:
     schedule: { interval: weekly, day: monday }
     groups:
       go: { patterns: ["*"], update-types: [minor, patch] }
+      go-security: { applies-to: security-updates, patterns: ["*"] }
     cooldown: { default-days: 7 }
 
   - package-ecosystem: npm
@@ -30,4 +32,5 @@ updates:
     groups:
       npm-production: { dependency-type: production, update-types: [minor, patch] }
       npm-development: { dependency-type: development, update-types: [minor, patch] }
+      npm-security: { applies-to: security-updates, patterns: ["*"] }
     cooldown: { default-days: 7 }
