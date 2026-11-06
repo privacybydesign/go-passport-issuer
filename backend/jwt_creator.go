@@ -19,6 +19,7 @@ type JwtCreator interface {
 	CreatePassportJwt(passport models.PassportData) (jwt string, err error)
 	CreateEDLJwt(edl models.EDLData) (jwt string, err error)
 	CreateIdCardJwt(data models.PassportData) (jwt string, err error)
+	CreateResidencePermitJwt(data models.PassportData) (jwt string, err error)
 }
 
 func NewIrmaJwtCreator(privateKeyPath string,
@@ -74,32 +75,36 @@ func isValidPassportDocumentType(docType string) error {
 	return fmt.Errorf("document with type %s cannot be issued as a passport", docType)
 }
 
+// passportDataAttributes returns the attributes for the passport, idcard and
+// residencepermit credential types, which all have the same attributes.
+func passportDataAttributes(data models.PassportData) map[string]string {
+	return map[string]string{
+		"photo":                data.Photo,
+		"documentNumber":       data.DocumentNumber,
+		"documentType":         data.DocumentType,
+		"firstName":            data.FirstName,
+		"lastName":             data.LastName,
+		"nationality":          data.Nationality,
+		"dateOfBirth":          data.DateOfBirth.Format(DATE_FORMAT_CYMD),
+		"yearOfBirth":          data.DateOfBirth.Format(DATE_FORMAT_YEAR),
+		"isEuCitizen":          data.IsEuCitizen,
+		"dateOfExpiry":         data.DateOfExpiry.Format(DATE_FORMAT_CYMD),
+		"gender":               data.Gender,
+		"country":              data.Country,
+		"over12":               data.Over12,
+		"over16":               data.Over16,
+		"over18":               data.Over18,
+		"over21":               data.Over21,
+		"over65":               data.Over65,
+		"activeAuthentication": data.ActiveAuthentication,
+	}
+}
+
 func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (string, error) {
 	if err := isValidPassportDocumentType(passport.DocumentType); err != nil {
 		return "", err
 	}
-	attributes := map[string]string{
-		"photo":                passport.Photo,
-		"documentNumber":       passport.DocumentNumber,
-		"documentType":         passport.DocumentType,
-		"firstName":            passport.FirstName,
-		"lastName":             passport.LastName,
-		"nationality":          passport.Nationality,
-		"dateOfBirth":          passport.DateOfBirth.Format(DATE_FORMAT_CYMD),
-		"yearOfBirth":          passport.DateOfBirth.Format(DATE_FORMAT_YEAR),
-		"isEuCitizen":          passport.IsEuCitizen,
-		"dateOfExpiry":         passport.DateOfExpiry.Format(DATE_FORMAT_CYMD),
-		"gender":               passport.Gender,
-		"country":              passport.Country,
-		"over12":               passport.Over12,
-		"over16":               passport.Over16,
-		"over18":               passport.Over18,
-		"over21":               passport.Over21,
-		"over65":               passport.Over65,
-		"activeAuthentication": passport.ActiveAuthentication,
-	}
-
-	return jc.createJwt(attributes)
+	return jc.createJwt(passportDataAttributes(passport))
 }
 
 func isValidIdCardDocumentType(docType string) error {
@@ -113,29 +118,34 @@ func (jc *DefaultJwtCreator) CreateIdCardJwt(idCard models.PassportData) (string
 	if err := isValidIdCardDocumentType(idCard.DocumentType); err != nil {
 		return "", err
 	}
+	return jc.createJwt(passportDataAttributes(idCard))
+}
 
-	attributes := map[string]string{
-		"photo":                idCard.Photo,
-		"documentNumber":       idCard.DocumentNumber,
-		"documentType":         idCard.DocumentType,
-		"firstName":            idCard.FirstName,
-		"lastName":             idCard.LastName,
-		"nationality":          idCard.Nationality,
-		"dateOfBirth":          idCard.DateOfBirth.Format(DATE_FORMAT_CYMD),
-		"yearOfBirth":          idCard.DateOfBirth.Format(DATE_FORMAT_YEAR),
-		"isEuCitizen":          idCard.IsEuCitizen,
-		"dateOfExpiry":         idCard.DateOfExpiry.Format(DATE_FORMAT_CYMD),
-		"gender":               idCard.Gender,
-		"country":              idCard.Country,
-		"over12":               idCard.Over12,
-		"over16":               idCard.Over16,
-		"over18":               idCard.Over18,
-		"over21":               idCard.Over21,
-		"over65":               idCard.Over65,
-		"activeAuthentication": idCard.ActiveAuthentication,
+// RESIDENCE_PERMIT_DOCUMENT_CODES are the MRZ document codes of issued
+// residence permits, the same list vcmrtd recognises them by. Some of them,
+// like IR and IT, are also valid ID-card codes.
+var RESIDENCE_PERMIT_DOCUMENT_CODES = []string{
+	"AD", "AR", "CR", "IB", "IE", "IF", "IK", "IO", "IR", "IT", "IW", "IZ", "RP", "RT",
+}
+
+// isValidResidencePermit checks the document code and that the holder is not
+// a national of the issuing state: no state issues its own nationals a
+// residence permit, so such a card is an ID card.
+func isValidResidencePermit(docType, nationality, issuingState string) error {
+	if !slices.Contains(RESIDENCE_PERMIT_DOCUMENT_CODES, strings.ReplaceAll(docType, "<", "")) {
+		return fmt.Errorf("document with type %s cannot be issued as a residence permit", docType)
 	}
+	if nationality == issuingState {
+		return fmt.Errorf("document issued by %s to one of its own nationals cannot be issued as a residence permit", issuingState)
+	}
+	return nil
+}
 
-	return jc.createJwt(attributes)
+func (jc *DefaultJwtCreator) CreateResidencePermitJwt(permit models.PassportData) (string, error) {
+	if err := isValidResidencePermit(permit.DocumentType, permit.Nationality, permit.Country); err != nil {
+		return "", err
+	}
+	return jc.createJwt(passportDataAttributes(permit))
 }
 
 func (jc *DefaultJwtCreator) CreateEDLJwt(edl models.EDLData) (string, error) {

@@ -164,6 +164,9 @@ func NewServer(state *ServerState, config ServerConfig) (*Server, error) {
 	router.HandleFunc("/api/issue-id-card", func(w http.ResponseWriter, r *http.Request) {
 		handleIssueIdCard(state, w, r)
 	})
+	router.HandleFunc("/api/issue-residence-permit", func(w http.ResponseWriter, r *http.Request) {
+		handleIssueResidencePermit(state, w, r)
+	})
 	router.HandleFunc("/api/verify-passport", func(w http.ResponseWriter, r *http.Request) {
 		handleVerifyPassport(state, w, r)
 	})
@@ -572,6 +575,66 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 	}
 
 	slog.Info("ID card issued successfully", "session_id", request.SessionId)
+}
+
+// handleIssueResidencePermit verifies and issues residence permit credential
+// @Summary Verify and issue residence permit credential
+// @Description Verifies the residence permit and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. The document code must be one of a residence permit (such as IR, AR or RP), and the holder must not be a national of the issuing state. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.
+// @Tags Residence Permit
+// @Accept json
+// @Produce json
+// @Param request body models.ValidationRequest true "Validation request with document data"
+// @Success 200 {object} IssuanceResponse
+// @Failure 400 {string} string "invalid request"
+// @Failure 500 {string} string "error:internal"
+// @Router /issue-residence-permit [post]
+func handleIssueResidencePermit(state *ServerState, w http.ResponseWriter, r *http.Request) {
+	defer closeRequestBody(r)
+
+	if !requirePOST(w, r) {
+		return
+	}
+
+	const endpoint = "issue-residence-permit"
+	slog.Info("Received request", "endpoint", endpoint)
+
+	doc, activeAuth, request, err := VerifyPassportRequest(r, state)
+	if err != nil {
+		respondWithErr(w, http.StatusBadRequest, "invalid request", ERR_PASSPORT_VERIFICATION, err,
+			"endpoint", endpoint, "session_id", request.SessionId)
+		return
+	}
+
+	slog.Debug("Converting passport data for residence permit issuance", "session_id", request.SessionId)
+	issuanceRequest, err := state.converter.ToPassportData(doc, activeAuth)
+
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
+		return
+	}
+
+	// Face verification before issuance (fail-closed when Regula is configured).
+	// Uses the original DG2 chip image (not the display PNG) for matching.
+	permitImage, imgErr := images.RawDG2ImageBase64(doc.Mf.Lds1.Dg2)
+	if imgErr != nil {
+		slog.Warn("Failed to extract DG2 image for face matching", "error", imgErr)
+	}
+	if !verifyFaceBeforeIssuance(state, w, permitImage, request.LivenessTransactionId, "residence-permit") {
+		return
+	}
+
+	slog.Debug("Creating residence permit JWT", "session_id", request.SessionId)
+	jwt, err := state.jwtCreators.ResidencePermit.CreateResidencePermitJwt(issuanceRequest)
+	if err != nil {
+		respondWithErr(w, http.StatusInternalServerError, ERR_JWT_CREATION, ERR_JWT_CREATION, err)
+		return
+	}
+
+	if !writeIssuanceResponse(state, w, jwt, request.SessionId) {
+		return
+	}
+
+	slog.Info("Residence permit issued successfully", "session_id", request.SessionId)
 }
 
 // handleIssuePassport verifies and issues passport credential
