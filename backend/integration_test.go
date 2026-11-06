@@ -15,6 +15,7 @@ import (
 
 const PASSPORT_ISSUE_ENDPOINT = "/api/issue-passport"
 const EDL_ISSUE_ENDPOINT = "/api/issue-driving-licence"
+const RESIDENCE_PERMIT_ISSUE_ENDPOINT = "/api/issue-residence-permit"
 const TEST_HOST = "http://localhost:8081%s"
 
 func TestIssueDocumentSuccessRemovesSessionID(t *testing.T) {
@@ -24,6 +25,7 @@ func TestIssueDocumentSuccessRemovesSessionID(t *testing.T) {
 	}{
 		{"Passport", PASSPORT_ISSUE_ENDPOINT},
 		{"DrivingLicence", EDL_ISSUE_ENDPOINT},
+		{"ResidencePermit", RESIDENCE_PERMIT_ISSUE_ENDPOINT},
 	}
 
 	for _, tc := range testCases {

@@ -30,8 +30,9 @@ func startTestServer(t *testing.T, storage TokenStorage) *Server {
 	t.Helper()
 
 	jwtCreators := AllJwtCreators{
-		Passport:       fakeJwtCreator{jwt: "test-jwt"},
-		DrivingLicence: fakeJwtCreator{jwt: "test-jwt"},
+		Passport:        fakeJwtCreator{jwt: "test-jwt"},
+		DrivingLicence:  fakeJwtCreator{jwt: "test-jwt"},
+		ResidencePermit: fakeJwtCreator{jwt: "test-jwt"},
 	}
 	testState := &ServerState{
 		irmaServerURL:        "https://irma.example",
@@ -165,6 +166,10 @@ func (f fakeJwtCreator) CreatePassportJwt(_ models.PassportData) (string, error)
 }
 
 func (f fakeJwtCreator) CreateIdCardJwt(_ models.PassportData) (string, error) {
+	return f.jwt, nil
+}
+
+func (f fakeJwtCreator) CreateResidencePermitJwt(_ models.PassportData) (string, error) {
 	return f.jwt, nil
 }
 

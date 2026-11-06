@@ -205,6 +205,52 @@ const docTemplate = `{
                 }
             }
         },
+        "/issue-residence-permit": {
+            "post": {
+                "description": "Verifies the residence permit and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. The document code must be one of a residence permit (such as IR, AR or RP), and the holder must not be a national of the issuing state. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Residence Permit"
+                ],
+                "summary": "Verify and issue residence permit credential",
+                "parameters": [
+                    {
+                        "description": "Validation request with document data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ValidationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.IssuanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "error:internal",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/start-validation": {
             "post": {
                 "description": "Initializes a new validation session and generates a nonce for active authentication. The nonce should be used to perform active authentication on the document chip. The session ID and nonce must be included in subsequent verification/issuance requests. When face verification is enabled for this environment, the response carries a face_verification object naming the Face API the liveness session must run against; the app skips the face verification step when the object is absent.",
