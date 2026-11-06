@@ -6,6 +6,7 @@ import (
 	"go-passport-issuer/document/passport"
 	"go-passport-issuer/models"
 	"testing"
+	"time"
 
 	"github.com/gmrtd/gmrtd/cms"
 	"github.com/gmrtd/gmrtd/document"
@@ -195,4 +196,29 @@ func TestPassiveAuthenticationEDLWithBadSOD(t *testing.T) {
 
 	_, err := edl.PassiveAuthenticationEDL(data, &trustedCerts)
 	require.ErrorContains(t, err, "SOD signature verification failed")
+}
+
+func TestEDLDataCategories(t *testing.T) {
+	dg6, err := edl.ParseEDLDG6(decodeTestCase(t, DG_6_TEST))
+	require.NoError(t, err)
+
+	issued := time.Date(2015, time.March, 1, 0, 0, 0, 0, time.UTC)
+	expires := time.Date(2030, time.March, 1, 0, 0, 0, 0, time.UTC)
+	doc := edl.DrivingLicenceDocument{
+		Dg1: &edl.DG1{
+			DateOfBirth: time.Date(1990, time.June, 15, 0, 0, 0, 0, time.UTC),
+			Categories: []edl.DrivingLicenseCategory{
+				{Category: "B", DateOfIssue: issued, DateOfExpiry: expires},
+				{Category: "AM", DateOfExpiry: expires},
+			},
+		},
+		Dg6: dg6,
+	}
+
+	data, err := edl.ToDrivingLicenceData(doc, true)
+	require.NoError(t, err)
+	require.Equal(t, []models.EDLCategory{
+		{Code: "B", DateOfIssue: issued, DateOfExpiry: expires},
+		{Code: "AM", DateOfExpiry: expires},
+	}, data.Categories)
 }
