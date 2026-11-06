@@ -28,10 +28,16 @@ var testConfig = ServerConfig{
 
 func startTestServer(t *testing.T, storage TokenStorage) *Server {
 	t.Helper()
+	return startTestServerWithConverter(t, storage, fakeConverter{})
+}
+
+func startTestServerWithConverter(t *testing.T, storage TokenStorage, converter fakeConverter) *Server {
+	t.Helper()
 
 	jwtCreators := AllJwtCreators{
 		Passport:        fakeJwtCreator{jwt: "test-jwt"},
 		DrivingLicence:  fakeJwtCreator{jwt: "test-jwt"},
+		IdCard:          fakeJwtCreator{jwt: "test-jwt"},
 		ResidencePermit: fakeJwtCreator{jwt: "test-jwt"},
 	}
 	testState := &ServerState{
@@ -41,7 +47,7 @@ func startTestServer(t *testing.T, storage TokenStorage) *Server {
 		passportCertPool:     &cms.CombinedCertPool{},
 		documentValidator:    fakeValidator{},
 		drivingLicenceParser: fakeEDLParser{},
-		converter:            fakeConverter{},
+		converter:            converter,
 	}
 
 	srv, err := NewServer(testState, testConfig)
@@ -195,10 +201,15 @@ func (fakeValidator) ActivePassport(_ models.ValidationRequest, _ document.Docum
 	return true, nil
 }
 
-type fakeConverter struct{}
+// fakeConverter returns passportData from ToPassportData, or a Dutch passport
+// when it is nil.
+type fakeConverter struct{ passportData *models.PassportData }
 
-func (fakeConverter) ToPassportData(_ document.Document, _ bool) (models.PassportData, error) {
-	return models.PassportData{DocumentNumber: "X"}, nil
+func (c fakeConverter) ToPassportData(_ document.Document, _ bool) (models.PassportData, error) {
+	if c.passportData != nil {
+		return *c.passportData, nil
+	}
+	return models.PassportData{DocumentNumber: "X", DocumentType: "P", Nationality: "NLD", Country: "NLD"}, nil
 }
 func (fakeConverter) ToDrivingLicenceData(_ edl.DrivingLicenceDocument, _ bool) (models.EDLData, error) {
 	return models.EDLData{DocumentNumber: "123"}, nil

@@ -107,15 +107,22 @@ func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (st
 	return jc.createJwt(passportDataAttributes(passport))
 }
 
-func isValidIdCardDocumentType(docType string) error {
+// isValidIdCard checks the document code and that the holder is a national of
+// the issuing state. A state issues its national ID card only to its own
+// nationals, so this keeps a residence permit, which can carry an ID-card
+// code such as IR, from being issued as an ID card.
+func isValidIdCard(docType, nationality, issuingState string) error {
 	if !strings.HasPrefix(docType, "I") {
 		return fmt.Errorf("document with type %s cannot be issued as an ID-card", docType)
+	}
+	if nationality != issuingState {
+		return fmt.Errorf("document issued by %s to a national of %s cannot be issued as an ID-card", issuingState, nationality)
 	}
 	return nil
 }
 
 func (jc *DefaultJwtCreator) CreateIdCardJwt(idCard models.PassportData) (string, error) {
-	if err := isValidIdCardDocumentType(idCard.DocumentType); err != nil {
+	if err := isValidIdCard(idCard.DocumentType, idCard.Nationality, idCard.Country); err != nil {
 		return "", err
 	}
 	return jc.createJwt(passportDataAttributes(idCard))
