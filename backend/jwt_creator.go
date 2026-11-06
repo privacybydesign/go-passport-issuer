@@ -68,6 +68,18 @@ func (jc *DefaultJwtCreator) createJwt(attributes map[string]string) (string, er
 const DATE_FORMAT_CYMD = "2006-01-02"
 const DATE_FORMAT_YEAR = "2006"
 
+// addIssuanceDetails adds the DG12 attributes, which are optional in the
+// credential scheme and left out when the document does not carry them.
+func addIssuanceDetails(attributes map[string]string, data models.PassportData) {
+	if data.IssuingAuthority != "" {
+		attributes["issuingAuthority"] = data.IssuingAuthority
+	}
+
+	if !data.DateOfIssue.IsZero() {
+		attributes["dateOfIssue"] = data.DateOfIssue.Format(DATE_FORMAT_CYMD)
+	}
+}
+
 func isValidPassportDocumentType(docType string) error {
 	if strings.HasPrefix(docType, "P") {
 		return nil
@@ -104,7 +116,10 @@ func (jc *DefaultJwtCreator) CreatePassportJwt(passport models.PassportData) (st
 	if err := isValidPassportDocumentType(passport.DocumentType); err != nil {
 		return "", err
 	}
-	return jc.createJwt(passportDataAttributes(passport))
+	attributes := passportDataAttributes(passport)
+	addIssuanceDetails(attributes, passport)
+
+	return jc.createJwt(attributes)
 }
 
 // isValidIdCard checks the document code and that the holder is a national of
@@ -125,7 +140,10 @@ func (jc *DefaultJwtCreator) CreateIdCardJwt(idCard models.PassportData) (string
 	if err := isValidIdCard(idCard.DocumentType, idCard.Nationality, idCard.Country); err != nil {
 		return "", err
 	}
-	return jc.createJwt(passportDataAttributes(idCard))
+	attributes := passportDataAttributes(idCard)
+	addIssuanceDetails(attributes, idCard)
+
+	return jc.createJwt(attributes)
 }
 
 // RESIDENCE_PERMIT_DOCUMENT_CODES are the MRZ document codes of issued
