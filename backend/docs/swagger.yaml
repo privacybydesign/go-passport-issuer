@@ -201,7 +201,9 @@ paths:
       consumes:
       - application/json
       description: 'Verifies the ID card and issues an IRMA credential. Returns a
-        JWT that can be used with the IRMA server to obtain the credential. Passive
+        JWT that can be used with the IRMA server to obtain the credential. The document
+        code must start with I and the holder must be a national of the issuing state,
+        so a residence permit is refused with 400 error:wrong-document-type. Passive
         authentication (SOD signature) is always mandatory. Active authentication
         (chip challenge-response) is mandatory when the chip supports it: if the chip
         carries an AA public key (DG15) the request must include a valid nonce and
@@ -273,8 +275,9 @@ paths:
       description: 'Verifies the residence permit and issues an IRMA credential. Returns
         a JWT that can be used with the IRMA server to obtain the credential. The
         document code must be one of a residence permit (such as IR, AR or RP), and
-        the holder must not be a national of the issuing state. Passive authentication
-        (SOD signature) is always mandatory. Active authentication (chip challenge-response)
+        the holder must not be a national of the issuing state; otherwise issuance
+        is refused with 400 error:wrong-document-type. Passive authentication (SOD
+        signature) is always mandatory. Active authentication (chip challenge-response)
         is mandatory when the chip supports it: if the chip carries an AA public key
         (DG15) the request must include a valid nonce and aa_signature, otherwise
         issuance is rejected with 400.'

@@ -25,7 +25,7 @@ func TestCreatingJwt(t *testing.T) {
 		YearOfBirth:          "1990",
 		DateOfExpiry:         time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
 		Gender:               "F",
-		Country:              "Netherlands",
+		Country:              "NLD",
 		Over12:               "true",
 		Over16:               "true",
 		Over18:               "true",
@@ -49,7 +49,7 @@ func TestIdCardWithDocType_I_IsValid(t *testing.T) {
 		YearOfBirth:          "1990",
 		DateOfExpiry:         time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
 		Gender:               "F",
-		Country:              "Netherlands",
+		Country:              "NLD",
 		Over12:               "true",
 		Over16:               "true",
 		Over18:               "true",
@@ -73,7 +73,7 @@ func TestPassportWithDocType_PP_IsValid(t *testing.T) {
 		YearOfBirth:          "1990",
 		DateOfExpiry:         time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
 		Gender:               "F",
-		Country:              "Netherlands",
+		Country:              "NLD",
 		Over12:               "true",
 		Over16:               "true",
 		Over18:               "true",
@@ -97,7 +97,7 @@ func TestIdCardWithDocType_IT_IsValid(t *testing.T) {
 		YearOfBirth:          "1990",
 		DateOfExpiry:         time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
 		Gender:               "F",
-		Country:              "Netherlands",
+		Country:              "NLD",
 		Over12:               "true",
 		Over16:               "true",
 		Over18:               "true",
@@ -121,7 +121,7 @@ func TestPassportDocumentTypeIsRefusedAsIdCard(t *testing.T) {
 		YearOfBirth:          "1990",
 		DateOfExpiry:         time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
 		Gender:               "F",
-		Country:              "Netherlands",
+		Country:              "NLD",
 		Over12:               "true",
 		Over16:               "true",
 		Over18:               "true",
@@ -145,7 +145,7 @@ func TestIdCardDocumentTypeIsRefusedAsPassport(t *testing.T) {
 		YearOfBirth:          "1990",
 		DateOfExpiry:         time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
 		Gender:               "F",
-		Country:              "Netherlands",
+		Country:              "NLD",
 		Over12:               "true",
 		Over16:               "true",
 		Over18:               "true",
@@ -173,7 +173,7 @@ func TestDecodeValidateJwt(t *testing.T) {
 		YearOfBirth:          "1990",
 		DateOfExpiry:         time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
 		Gender:               "F",
-		Country:              "Netherlands",
+		Country:              "NLD",
 		Over12:               "true",
 		Over16:               "true",
 		Over18:               "true",
@@ -262,7 +262,7 @@ func TestBatchSizeConfiguration(t *testing.T) {
 				YearOfBirth:          "1990",
 				DateOfExpiry:         time.Date(2030, time.January, 1, 0, 0, 0, 0, time.UTC),
 				Gender:               "M",
-				Country:              "Netherlands",
+				Country:              "NLD",
 				Over12:               "true",
 				Over16:               "true",
 				Over18:               "true",
@@ -370,6 +370,44 @@ func requireInvalidIdCard(t *testing.T, data models.PassportData) {
 	require.NoError(t, err)
 	_, err = jc.CreateIdCardJwt(data)
 	require.Error(t, err)
+}
+
+func TestIdCardRefusesResidencePermits(t *testing.T) {
+	testCases := []struct {
+		name         string
+		documentType string
+		nationality  string
+		issuingState string
+	}{
+		{"Dutch permit IR", "IR", "SYR", "NLD"},
+		{"permit IT", "IT", "UKR", "ITA"},
+		{"code I issued to a foreigner", "I", "SYR", "NLD"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			requireInvalidIdCard(t, models.PassportData{
+				Photo:                loadImage(t),
+				DocumentNumber:       "X1234567",
+				DocumentType:         tc.documentType,
+				FirstName:            "Alice",
+				LastName:             "Johnson",
+				Nationality:          tc.nationality,
+				IsEuCitizen:          "false",
+				DateOfBirth:          time.Date(1990, time.June, 15, 0, 0, 0, 0, time.UTC),
+				YearOfBirth:          "1990",
+				DateOfExpiry:         time.Date(2030, time.June, 15, 0, 0, 0, 0, time.UTC),
+				Gender:               "F",
+				Country:              tc.issuingState,
+				Over12:               "true",
+				Over16:               "true",
+				Over18:               "true",
+				Over21:               "true",
+				Over65:               "false",
+				ActiveAuthentication: "true",
+			})
+		})
+	}
 }
 
 func TestResidencePermitDocumentTypes(t *testing.T) {

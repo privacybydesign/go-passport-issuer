@@ -29,6 +29,11 @@ var swaggerSpec []byte
 var redocHTML []byte
 
 const ErrorInternal = "error:internal"
+
+// ErrorWrongDocumentType is the response body when the document is not of the
+// type the endpoint issues, such as a residence permit sent to issue-id-card.
+const ErrorWrongDocumentType = "error:wrong-document-type"
+const ERR_WRONG_DOCUMENT_TYPE = "document is not of the type this endpoint issues"
 const ERR_MARSHAL = "failed to marshal response message"
 const ERR_FAILED_BODY_CLOSE = "failed to close request body: %v"
 const ERR_ISSUANCE_CONVERT = "failed to convert to issuance request"
@@ -519,7 +524,7 @@ func handleVerifyPassport(state *ServerState, w http.ResponseWriter, r *http.Req
 
 // handleIssueIdCard verifies and issues ID card credential
 // @Summary Verify and issue ID card credential
-// @Description Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.
+// @Description Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. The document code must start with I and the holder must be a national of the issuing state, so a residence permit is refused with 400 error:wrong-document-type. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.
 // @Tags ID Card
 // @Accept json
 // @Produce json
@@ -553,6 +558,12 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if err := isValidIdCard(issuanceRequest.DocumentType, issuanceRequest.Nationality, issuanceRequest.Country); err != nil {
+		respondWithErr(w, http.StatusBadRequest, ErrorWrongDocumentType, ERR_WRONG_DOCUMENT_TYPE, err,
+			"endpoint", endpoint, "session_id", request.SessionId)
+		return
+	}
+
 	// Face verification before issuance (fail-closed when Regula is configured).
 	// Uses the original DG2 chip image (not the display PNG) for matching.
 	idCardImage, imgErr := images.RawDG2ImageBase64(doc.Mf.Lds1.Dg2)
@@ -579,7 +590,7 @@ func handleIssueIdCard(state *ServerState, w http.ResponseWriter, r *http.Reques
 
 // handleIssueResidencePermit verifies and issues residence permit credential
 // @Summary Verify and issue residence permit credential
-// @Description Verifies the residence permit and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. The document code must be one of a residence permit (such as IR, AR or RP), and the holder must not be a national of the issuing state. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.
+// @Description Verifies the residence permit and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. The document code must be one of a residence permit (such as IR, AR or RP), and the holder must not be a national of the issuing state; otherwise issuance is refused with 400 error:wrong-document-type. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400.
 // @Tags Residence Permit
 // @Accept json
 // @Produce json
@@ -610,6 +621,12 @@ func handleIssueResidencePermit(state *ServerState, w http.ResponseWriter, r *ht
 
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
+		return
+	}
+
+	if err := isValidResidencePermit(issuanceRequest.DocumentType, issuanceRequest.Nationality, issuanceRequest.Country); err != nil {
+		respondWithErr(w, http.StatusBadRequest, ErrorWrongDocumentType, ERR_WRONG_DOCUMENT_TYPE, err,
+			"endpoint", endpoint, "session_id", request.SessionId)
 		return
 	}
 
@@ -670,6 +687,12 @@ func handleIssuePassport(state *ServerState, w http.ResponseWriter, r *http.Requ
 
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, ErrorInternal, ERR_ISSUANCE_CONVERT, err)
+		return
+	}
+
+	if err := isValidPassportDocumentType(issuanceRequest.DocumentType); err != nil {
+		respondWithErr(w, http.StatusBadRequest, ErrorWrongDocumentType, ERR_WRONG_DOCUMENT_TYPE, err,
+			"endpoint", endpoint, "session_id", request.SessionId)
 		return
 	}
 

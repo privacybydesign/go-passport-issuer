@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	mrtdDoc "go-passport-issuer/document"
+	"go-passport-issuer/models"
 	"net/http"
 	"testing"
 
@@ -15,23 +16,31 @@ import (
 
 const PASSPORT_ISSUE_ENDPOINT = "/api/issue-passport"
 const EDL_ISSUE_ENDPOINT = "/api/issue-driving-licence"
+const ID_CARD_ISSUE_ENDPOINT = "/api/issue-id-card"
 const RESIDENCE_PERMIT_ISSUE_ENDPOINT = "/api/issue-residence-permit"
 const TEST_HOST = "http://localhost:8081%s"
+
+// Chip data of a Dutch ID card and of a Dutch residence permit held by a
+// Syrian national. The permit carries IR, which also passes as an ID-card code.
+var testIdCardData = models.PassportData{DocumentNumber: "X", DocumentType: "I", Nationality: "NLD", Country: "NLD"}
+var testResidencePermitData = models.PassportData{DocumentNumber: "X", DocumentType: "IR", Nationality: "SYR", Country: "NLD"}
 
 func TestIssueDocumentSuccessRemovesSessionID(t *testing.T) {
 	testCases := []struct {
 		name     string
 		endpoint string
+		data     *models.PassportData
 	}{
-		{"Passport", PASSPORT_ISSUE_ENDPOINT},
-		{"DrivingLicence", EDL_ISSUE_ENDPOINT},
-		{"ResidencePermit", RESIDENCE_PERMIT_ISSUE_ENDPOINT},
+		{"Passport", PASSPORT_ISSUE_ENDPOINT, nil},
+		{"DrivingLicence", EDL_ISSUE_ENDPOINT, nil},
+		{"IdCard", ID_CARD_ISSUE_ENDPOINT, &testIdCardData},
+		{"ResidencePermit", RESIDENCE_PERMIT_ISSUE_ENDPOINT, &testResidencePermitData},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			storage := NewInMemoryTokenStorage()
-			startTestServer(t, storage)
+			startTestServerWithConverter(t, storage, fakeConverter{passportData: tc.data})
 
 			session, nonce := startValidation(t)
 			req := newReq(session, nonce)
@@ -90,6 +99,37 @@ func TestTokenRemovalFailureKeepsResponseValid(t *testing.T) {
 			require.Truef(t, json.Valid(body), "response body is not valid JSON: %s", body)
 			var decoded map[string]any
 			require.NoErrorf(t, json.Unmarshal(body, &decoded), "body: %s", body)
+		})
+	}
+}
+
+// TestIssueWrongDocumentTypeIsRefused ensures that each endpoint only issues
+// its own credential: a residence permit is never issued as an ID card, or the
+// other way round.
+func TestIssueWrongDocumentTypeIsRefused(t *testing.T) {
+	testCases := []struct {
+		name     string
+		endpoint string
+		data     models.PassportData
+	}{
+		{"ResidencePermitAsIdCard", ID_CARD_ISSUE_ENDPOINT, testResidencePermitData},
+		{"IdCardAsResidencePermit", RESIDENCE_PERMIT_ISSUE_ENDPOINT, testIdCardData},
+		{"IdCardAsPassport", PASSPORT_ISSUE_ENDPOINT, testIdCardData},
+		{"ResidencePermitAsPassport", PASSPORT_ISSUE_ENDPOINT, testResidencePermitData},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			storage := NewInMemoryTokenStorage()
+			startTestServerWithConverter(t, storage, fakeConverter{passportData: &tc.data})
+
+			session, nonce := startValidation(t)
+			req := newReq(session, nonce)
+
+			url := fmt.Sprintf(TEST_HOST, tc.endpoint)
+			resp, body, _ := postJSON[map[string]any](t, url, req)
+			mustStatus(t, resp, http.StatusBadRequest, body)
+			require.Equal(t, ErrorWrongDocumentType, string(body))
 		})
 	}
 }
