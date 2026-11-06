@@ -150,6 +150,18 @@ func TestAgeScopeAppliesToIdCardAndDrivingLicence(t *testing.T) {
 	require.Len(t, issuanceCredentials(t, edlJwt), 2)
 }
 
+func TestAgeScopeAppliesToResidencePermit(t *testing.T) {
+	jc := newAgeJwtCreator(t, testAgeCredential)
+
+	permit := testPassport(t)
+	permit.DocumentType = "RP"
+	permit.Nationality = "UKR"
+	permit.Country = "NLD"
+	permitJwt, err := jc.CreateResidencePermitJwt(permit, models.IssueDocumentAndAge)
+	require.NoError(t, err)
+	require.Len(t, issuanceCredentials(t, permitJwt), 2)
+}
+
 func TestAgeOnlyStillChecksTheDocumentType(t *testing.T) {
 	jc := newAgeJwtCreator(t, testAgeCredential)
 

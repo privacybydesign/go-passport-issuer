@@ -57,6 +57,9 @@ It should look like this:
     "id_card": {
       "full_credential": "pbdf-staging.pbdf.idcard"
     },
+    "residence_permit": {
+      "full_credential": "pbdf-staging.pbdf.residencepermit"
+    },
     "age": {
       "full_credential": "pbdf-staging.pbdf.age"
     }
@@ -310,9 +313,9 @@ Response with face verification:
 }
 ```
 
-#### Passport/ID Card/Driving Licence Issuance
+#### Passport/ID Card/Residence Permit/Driving Licence Issuance
 ```bash
-POST /api/issue-passport  # or /api/issue-id-card, /api/issue-driving-licence
+POST /api/issue-passport  # or /api/issue-id-card, /api/issue-residence-permit, /api/issue-driving-licence
 Content-Type: application/json
 
 {

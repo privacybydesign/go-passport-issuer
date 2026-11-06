@@ -115,7 +115,7 @@ const docTemplate = `{
         },
         "/issue-id-card": {
             "post": {
-                "description": "Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400. Set issue to document_and_age to add the age credential (over1 to over99) to the session, or to age_only to issue only the age credential; both are rejected with 400 unless /start-validation reports age_credential_offered.",
+                "description": "Verifies the ID card and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. The document code must start with I and the holder must be a national of the issuing state, so a residence permit is refused with 400 error:wrong-document-type. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400. Set issue to document_and_age to add the age credential (over1 to over99) to the session, or to age_only to issue only the age credential; both are rejected with 400 unless /start-validation reports age_credential_offered.",
                 "consumes": [
                     "application/json"
                 ],
@@ -172,6 +172,52 @@ const docTemplate = `{
                     "Passport"
                 ],
                 "summary": "Verify and issue passport credential",
+                "parameters": [
+                    {
+                        "description": "Validation request with document data",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ValidationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.IssuanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "invalid request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "error:internal",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/issue-residence-permit": {
+            "post": {
+                "description": "Verifies the residence permit and issues an IRMA credential. Returns a JWT that can be used with the IRMA server to obtain the credential. The document code must be one of a residence permit (such as IR, AR or RP), and the holder must not be a national of the issuing state; otherwise issuance is refused with 400 error:wrong-document-type. Passive authentication (SOD signature) is always mandatory. Active authentication (chip challenge-response) is mandatory when the chip supports it: if the chip carries an AA public key (DG15) the request must include a valid nonce and aa_signature, otherwise issuance is rejected with 400. Set issue to document_and_age to add the age credential (over1 to over99) to the session, or to age_only to issue only the age credential; both are rejected with 400 unless /start-validation reports age_credential_offered.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Residence Permit"
+                ],
+                "summary": "Verify and issue residence permit credential",
                 "parameters": [
                     {
                         "description": "Validation request with document data",

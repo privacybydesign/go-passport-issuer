@@ -61,18 +61,20 @@ type CredentialConfig struct {
 }
 
 type AllCredentialConfigs struct {
-	Passport       CredentialConfig `json:"passport"`
-	DrivingLicence CredentialConfig `json:"driving_licence"`
-	IdCard         CredentialConfig `json:"id_card"`
+	Passport        CredentialConfig `json:"passport"`
+	DrivingLicence  CredentialConfig `json:"driving_licence"`
+	IdCard          CredentialConfig `json:"id_card"`
+	ResidencePermit CredentialConfig `json:"residence_permit"`
 	// Age is optional. When its full_credential is empty, the age credential is
 	// not offered.
 	Age CredentialConfig `json:"age"`
 }
 
 type AllJwtCreators struct {
-	Passport       JwtCreator
-	DrivingLicence JwtCreator
-	IdCard         JwtCreator
+	Passport        JwtCreator
+	DrivingLicence  JwtCreator
+	IdCard          JwtCreator
+	ResidencePermit JwtCreator
 }
 
 func main() {
@@ -124,6 +126,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	residencePermitJwtCreator, err := NewIrmaJwtCreator(
+		config.JwtPrivateKeyPath,
+		config.IssuerId,
+		config.Credentials.ResidencePermit.FullCredential,
+		config.Credentials.Age.FullCredential,
+		config.SdJwtBatchSize,
+	)
+	if err != nil {
+		slog.Error("failed to instantiate residence permit jwt creator", "error", err)
+		os.Exit(1)
+	}
+
 	edlJwtCreator, err := NewIrmaJwtCreator(
 		config.JwtPrivateKeyPath,
 		config.IssuerId,
@@ -137,9 +151,10 @@ func main() {
 	}
 
 	jwtCreators := AllJwtCreators{
-		Passport:       passportJwtCreator,
-		DrivingLicence: edlJwtCreator,
-		IdCard:         idCardJwtCreator,
+		Passport:        passportJwtCreator,
+		DrivingLicence:  edlJwtCreator,
+		IdCard:          idCardJwtCreator,
+		ResidencePermit: residencePermitJwtCreator,
 	}
 
 	tokenStorage, err := createTokenStorage(&config)

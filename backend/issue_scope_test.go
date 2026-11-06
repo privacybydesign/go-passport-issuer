@@ -28,6 +28,11 @@ func (c *scopeRecordingCreator) CreateIdCardJwt(_ models.PassportData, scope mod
 	return "test-jwt", nil
 }
 
+func (c *scopeRecordingCreator) CreateResidencePermitJwt(_ models.PassportData, scope models.IssuanceScope) (string, error) {
+	c.scopes = append(c.scopes, scope)
+	return "test-jwt", nil
+}
+
 func (c *scopeRecordingCreator) CreateEDLJwt(_ models.EDLData, scope models.IssuanceScope) (string, error) {
 	c.scopes = append(c.scopes, scope)
 	return "test-jwt", nil
@@ -44,14 +49,27 @@ func (photoValidator) PassivePassport(_ models.ValidationRequest, _ *cms.Combine
 }
 
 type issueEndpoint struct {
-	name    string
-	handler func(*ServerState, http.ResponseWriter, *http.Request)
+	name      string
+	handler   func(*ServerState, http.ResponseWriter, *http.Request)
+	converter fakeConverter
 }
 
+func documentConverter(documentType, nationality, issuingState string) fakeConverter {
+	return fakeConverter{passportData: &models.PassportData{
+		DocumentNumber: "X",
+		DocumentType:   documentType,
+		Nationality:    nationality,
+		Country:        issuingState,
+	}}
+}
+
+// The ID card and residence permit handlers check the document type before
+// issuing, so each needs a document the check accepts.
 var issueEndpoints = []issueEndpoint{
-	{"passport", handleIssuePassport},
-	{"id card", handleIssueIdCard},
-	{"driving licence", handleIssueEDL},
+	{"passport", handleIssuePassport, fakeConverter{}},
+	{"id card", handleIssueIdCard, documentConverter("ID", "NLD", "NLD")},
+	{"residence permit", handleIssueResidencePermit, documentConverter("RP", "UKR", "NLD")},
+	{"driving licence", handleIssueEDL, fakeConverter{}},
 }
 
 func newScopeState(creator JwtCreator, ageOffered bool) *ServerState {
@@ -60,7 +78,7 @@ func newScopeState(creator JwtCreator, ageOffered bool) *ServerState {
 
 	return &ServerState{
 		tokenStorage:         storage,
-		jwtCreators:          AllJwtCreators{Passport: creator, IdCard: creator, DrivingLicence: creator},
+		jwtCreators:          AllJwtCreators{Passport: creator, IdCard: creator, ResidencePermit: creator, DrivingLicence: creator},
 		passportCertPool:     &cms.CombinedCertPool{},
 		documentValidator:    photoValidator{},
 		drivingLicenceParser: fakeEDLParser{},
@@ -91,6 +109,7 @@ func TestIssueHandlersPassTheRequestedScope(t *testing.T) {
 			t.Run(endpoint.name+"/"+string(scope), func(t *testing.T) {
 				creator := &scopeRecordingCreator{}
 				state := newScopeState(creator, true)
+				state.converter = endpoint.converter
 
 				rec := issue(t, state, endpoint.handler, scope, "")
 
@@ -107,6 +126,7 @@ func TestIssueRejectsAgeScopeWhenAgeCredentialNotOffered(t *testing.T) {
 			t.Run(endpoint.name+"/"+string(scope), func(t *testing.T) {
 				creator := &scopeRecordingCreator{}
 				state := newScopeState(creator, false)
+				state.converter = endpoint.converter
 
 				rec := issue(t, state, endpoint.handler, scope, "")
 
@@ -124,8 +144,10 @@ func TestIssueStillIssuesTheDocumentWhenAgeCredentialNotOffered(t *testing.T) {
 	for _, endpoint := range issueEndpoints {
 		t.Run(endpoint.name, func(t *testing.T) {
 			creator := &scopeRecordingCreator{}
+			state := newScopeState(creator, false)
+			state.converter = endpoint.converter
 
-			rec := issue(t, newScopeState(creator, false), endpoint.handler, models.IssueDocument, "")
+			rec := issue(t, state, endpoint.handler, models.IssueDocument, "")
 
 			require.Equal(t, http.StatusOK, rec.Code)
 			require.Equal(t, []models.IssuanceScope{models.IssueDocument}, creator.scopes)
@@ -137,8 +159,10 @@ func TestIssueRejectsUnknownScope(t *testing.T) {
 	for _, endpoint := range issueEndpoints {
 		t.Run(endpoint.name, func(t *testing.T) {
 			creator := &scopeRecordingCreator{}
+			state := newScopeState(creator, true)
+			state.converter = endpoint.converter
 
-			rec := issue(t, newScopeState(creator, true), endpoint.handler, "everything", "")
+			rec := issue(t, state, endpoint.handler, "everything", "")
 
 			require.Equal(t, http.StatusBadRequest, rec.Code)
 			require.Empty(t, creator.scopes)
