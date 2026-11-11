@@ -10,14 +10,14 @@
     "@privacybydesign/yivi-css": "^1.0.1",
     "@regulaforensics/vp-frontend-face-components": "^8.4.2420",
     "@privacybydesign/yivi-frontend": "^1.0.5",
-    "i18next": "^26.5.2",
-    "i18next-browser-languagedetector": "^8.1.0",
+    "i18next": "^26.7.1",
+    "i18next-browser-languagedetector": "^8.3.0",
     "js-cookie": "^3.0.8",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-i18next": "^17.1.0",
+    "react-i18next": "^17.1.11",
     "react-international-phone": "^4.5.0",
-    "react-router-dom": "^7.18.4",
+    "react-router-dom": "^7.18.5",
     "react-turnstile": "^1.1.4"
   },
   "devDependencies": {
