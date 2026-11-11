@@ -65,6 +65,9 @@ type AllCredentialConfigs struct {
 	DrivingLicence  CredentialConfig `json:"driving_licence"`
 	IdCard          CredentialConfig `json:"id_card"`
 	ResidencePermit CredentialConfig `json:"residence_permit"`
+	// Age is optional. When its full_credential is empty, the age credential is
+	// not offered.
+	Age CredentialConfig `json:"age"`
 }
 
 type AllJwtCreators struct {
@@ -103,6 +106,7 @@ func main() {
 		config.JwtPrivateKeyPath,
 		config.IssuerId,
 		config.Credentials.Passport.FullCredential,
+		config.Credentials.Age.FullCredential,
 		config.SdJwtBatchSize,
 	)
 	if err != nil {
@@ -114,6 +118,7 @@ func main() {
 		config.JwtPrivateKeyPath,
 		config.IssuerId,
 		config.Credentials.IdCard.FullCredential,
+		config.Credentials.Age.FullCredential,
 		config.SdJwtBatchSize,
 	)
 	if err != nil {
@@ -125,6 +130,7 @@ func main() {
 		config.JwtPrivateKeyPath,
 		config.IssuerId,
 		config.Credentials.ResidencePermit.FullCredential,
+		config.Credentials.Age.FullCredential,
 		config.SdJwtBatchSize,
 	)
 	if err != nil {
@@ -136,6 +142,7 @@ func main() {
 		config.JwtPrivateKeyPath,
 		config.IssuerId,
 		config.Credentials.DrivingLicence.FullCredential,
+		config.Credentials.Age.FullCredential,
 		config.SdJwtBatchSize,
 	)
 	if err != nil {
@@ -198,6 +205,7 @@ func main() {
 		drivingLicenceParser:   DrivingLicenceParserImpl{},
 		faceVerificationClient: faceVerificationClient,
 		regulaFaceApiPublicUrl: config.RegulaFaceApiPublicUrl,
+		ageCredentialOffered:   config.Credentials.Age.FullCredential != "",
 	}
 
 	server, err := NewServer(&serverState, config.ServerConfig)
