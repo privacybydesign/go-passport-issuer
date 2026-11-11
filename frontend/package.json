@@ -21,7 +21,7 @@
     "react-turnstile": "^1.1.4"
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^6.0.0",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@types/js-cookie": "^3.0.3",
     "@types/react": "^19.3.0",
