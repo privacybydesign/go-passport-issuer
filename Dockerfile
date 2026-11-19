@@ -1,12 +1,12 @@
 # ---------- Frontend ----------
-FROM node:24-slim AS frontend-build
+FROM node:26-slim AS frontend-build
 WORKDIR /app/frontend
 COPY frontend .
 RUN npm ci
 RUN npm run build
 
 # ---------- Backend build (needs CGO + IM6 dev headers) ----------
-FROM golang:1.26-bookworm AS backend-build
+FROM golang:1.27-bookworm AS backend-build
 WORKDIR /app/backend
 
 # Imagick (IM6) build deps
