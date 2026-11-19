@@ -35,6 +35,9 @@ jobs:
       contents: read
     with:
       working-directory: backend
+      # Pinned: ubuntu-latest (26.04) only ships ImageMagick 7, and the
+      # imagick.v2 bindings need ImageMagick 6. Unpin once we move to IM7.
+      runs-on: ubuntu-24.04
       apt-packages: build-essential pkg-config libmagickwand-6.q16-dev # ImageMagick 6 (cgo)
       test-dockerfile: Dockerfile.test
       coverage-file: /coverage/coverage.out # Dockerfile.test writes here
