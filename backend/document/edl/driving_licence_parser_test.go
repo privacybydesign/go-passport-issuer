@@ -166,6 +166,22 @@ func TestParseEdlDg6(t *testing.T) {
 	require.Equal(t, dg6Bytes, result.RawData)
 }
 
+func TestParseEdlDg6_NoFacHeader(t *testing.T) {
+	// 75 { 7F61 { 7F60 { 5F2E <3 bytes without a FAC header> } } }
+	dg6Bytes := []byte{
+		0x75, 0x0C,
+		0x7F, 0x61, 0x09,
+		0x7F, 0x60, 0x06,
+		0x5F, 0x2E, 0x03, 0x01, 0x02, 0x03,
+	}
+
+	result, err := edl.ParseEDLDG6(dg6Bytes)
+	require.NoError(t, err)
+	require.Equal(t, []byte{0x01, 0x02, 0x03}, result.ImageData)
+	require.Nil(t, result.ImageDataType)
+	require.Equal(t, dg6Bytes, result.RawData)
+}
+
 func TestParseEdlDg1WithDiacritics(t *testing.T) {
 	dg1Bytes := decodeTestCase(t, DG_1_DIACRITICS_TEST)
 

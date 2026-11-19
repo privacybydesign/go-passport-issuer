@@ -35,6 +35,8 @@ jobs:
       contents: read
     with:
       working-directory: backend
+      # go.mod targets Go 1.27; the workflow default (v2.12.2) is built with Go 1.26.
+      golangci-lint-version: v2.15.0
       # Pinned: ubuntu-latest (26.04) only ships ImageMagick 7, and the
       # imagick.v2 bindings need ImageMagick 6. Unpin once we move to IM7.
       runs-on: ubuntu-24.04
