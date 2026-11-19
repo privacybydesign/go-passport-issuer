@@ -122,10 +122,8 @@ func ParseEDLDG6(dg6Bytes []byte) (*DG6, error) {
 	if len(facialData) < 4 || !bytes.Equal(facialData[:4], []byte{0x46, 0x41, 0x43, 0x00}) {
 		// No FAC header, so return raw data
 		return &DG6{
-			RawData: dg6Bytes,
-			ImageContainer: images.ImageContainer{
-				ImageData: facialData,
-			},
+			RawData:   dg6Bytes,
+			ImageData: facialData,
 		}, nil
 	}
 	// Parse FAC structure to extract image
@@ -179,11 +177,9 @@ func ParseEDLDG6(dg6Bytes []byte) (*DG6, error) {
 	imageData := facialData[offset:]
 
 	return &DG6{
-		RawData: dg6Bytes,
-		ImageContainer: images.ImageContainer{
-			ImageData:     imageData,
-			ImageDataType: &imageDataType,
-		},
+		RawData:       dg6Bytes,
+		ImageData:     imageData,
+		ImageDataType: &imageDataType,
 	}, nil
 }
 
