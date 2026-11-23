@@ -1,12 +1,12 @@
 module go-passport-issuer
 
-go 1.27
+go 1.27.4
 
 require (
 	github.com/gmrtd/gmrtd v1.9.1
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/gorilla/mux v1.8.1
-	github.com/privacybydesign/irmago v1.5.0
+	github.com/privacybydesign/irmago v1.6.0
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/stretchr/testify v1.12.1
 	github.com/swaggo/swag v1.16.6

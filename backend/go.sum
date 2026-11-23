@@ -241,8 +241,8 @@ github.com/privacybydesign/gabi v0.0.0-20260519111214-f8484462b684 h1:en00INqhAm
 github.com/privacybydesign/gabi v0.0.0-20260519111214-f8484462b684/go.mod h1:yPSrEdlOxupU/VVhhbdu7a0adFTq8a2SpOaC4BXCXQc=
 github.com/privacybydesign/gmrtd v1.9.1 h1:XZycZwQJJMQqSSVJKm2zsEhIysA8naC9u7feDRwqtIk=
 github.com/privacybydesign/gmrtd v1.9.1/go.mod h1:mZ/14rGL1aB7N2nfOro1lllyiAsIpINZzHgu0WcB+JY=
-github.com/privacybydesign/irmago v1.5.0 h1:9R5zj1ABu9rWWdepow332GmsllzZ/C9gx+e/dFgWe5M=
-github.com/privacybydesign/irmago v1.5.0/go.mod h1:yHsmePfReIMH4KKANbCvGY2MQYPBP9++odIzhhKENQc=
+github.com/privacybydesign/irmago v1.6.0 h1:4HXxFcKb1uyrKyEpFIFx2v9ZW1mT6aWW4fFXgUsshxw=
+github.com/privacybydesign/irmago v1.6.0/go.mod h1:is5Z89CXNhGc2paqJQPTNG5donT5fvewxTTlRCd+sbE=
 github.com/redis/go-redis/v9 v9.23.0 h1:/TTVdJa8BRNsybwwGGnmiYktHNlUXtbOQxlWpHBPL3s=
 github.com/redis/go-redis/v9 v9.23.0/go.mod h1:EWP2UUk+XDaI1s5nQB5mablZN6vccXlmBQTyfnF87D0=
 github.com/robfig/cron/v3 v3.0.1 h1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=
